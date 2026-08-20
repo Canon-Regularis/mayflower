@@ -31,6 +31,12 @@ target_link_libraries(mayflower_core PUBLIC mf_flags)
 add_executable(omega0 tools/omega0.cpp)
 target_link_libraries(omega0 PRIVATE mayflower_core)
 
+add_executable(marginals tools/marginals.cpp)
+target_link_libraries(marginals PRIVATE mayflower_core)
+
+add_executable(sample tools/sample.cpp)
+target_link_libraries(sample PRIVATE mayflower_core)
+
 enable_testing()
 
 # tests/oracle is header-only and must never link against mayflower_core's
@@ -39,8 +45,28 @@ add_executable(test_counting tests/test_counting.cpp)
 target_include_directories(test_counting PRIVATE tests)
 target_link_libraries(test_counting PRIVATE mayflower_core)
 
+add_executable(test_observations tests/test_observations.cpp)
+target_include_directories(test_observations PRIVATE tests)
+target_link_libraries(test_observations PRIVATE mayflower_core)
+
+add_executable(test_sampler tests/test_sampler.cpp)
+target_include_directories(test_sampler PRIVATE tests)
+target_link_libraries(test_sampler PRIVATE mayflower_core)
+
 add_test(NAME counting COMMAND test_counting)
 set_tests_properties(counting PROPERTIES LABELS "fast" TIMEOUT 300)
 
+add_test(NAME observations COMMAND test_observations)
+set_tests_properties(observations PROPERTIES LABELS "fast" TIMEOUT 300)
+
+add_test(NAME sampler COMMAND test_sampler)
+set_tests_properties(sampler PROPERTIES LABELS "fast" TIMEOUT 600)
+
 add_test(NAME omega0 COMMAND omega0)
 set_tests_properties(omega0 PROPERTIES LABELS "pr" TIMEOUT 900)
+
+add_test(NAME marginals COMMAND marginals)
+set_tests_properties(marginals PROPERTIES LABELS "pr" TIMEOUT 900)
+
+add_test(NAME sample COMMAND sample)
+set_tests_properties(sample PROPERTIES LABELS "pr" TIMEOUT 900)

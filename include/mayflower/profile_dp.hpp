@@ -24,21 +24,18 @@
 //   d == 0, vrem == 0      leave empty, or start a horizontal ship
 //                          (col+L <= width) or a vertical ship (row+L <= height)
 //
-// Observations are per-cell filters, so they shrink the live state set: on the
-// standard instance 10 misses cut it to 12.7% of the prior, 30 misses to 0.4%.
-//
-// M1 remaining work: the order-aware SUNK(x,L) predicate. SUNK means the shot at
-// x sank the ship, so every other cell of that ship was already shot before that
-// point; requiring only cells(ship) subset-of HIT over-counts. This header
-// exposes per-cell constraints only, so no caller can obtain wrong sunk
-// semantics in the meantime. See docs/ORDER_DEPENDENCE.md.
+// Observations enter as a per-cell filter plus a per-placement gate consulted on
+// START transitions, so they shrink the live state set: on the standard instance
+// 10 misses cut it to 12.7% of the prior, 30 misses to 0.4%.
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "mayflower/instance.hpp"
+#include "mayflower/observations.hpp"
 
 namespace mayflower {
 
@@ -49,8 +46,27 @@ struct CountResult {
     std::uint64_t edges = 0;       // transitions relaxed
 };
 
-// `cells` is row-major with size == instance.cellCount(). Pass all-Free for the
-// unconstrained prior count.
+// Per-cell filter plus the per-placement gate.
+//
+// `allowH` and `allowV` are indexed [cellIndex * nLengths + lengthIndex], where
+// lengthIndex indexes Instance::distinctLengths() and cellIndex is the ship's
+// origin (leftmost cell for horizontal, topmost for vertical). Leaving them
+// empty permits every placement, which is the observation-free case.
+struct Constraints {
+    std::vector<CellConstraint> cells;
+    std::vector<std::uint8_t>   allowH;
+    std::vector<std::uint8_t>   allowV;
+
+    [[nodiscard]] bool gated() const { return !allowH.empty(); }
+};
+
+// Build the full constraint set from an ordered observation record. This is the
+// only supported way to obtain sunk-ship semantics.
+Constraints constraintsFrom(const Instance& inst, const History& history);
+
+CountResult countConfigurations(const Instance& inst, const Constraints& constraints);
+
+// Per-cell constraints only, with every placement permitted.
 CountResult countConfigurations(const Instance& inst,
                                 const std::vector<CellConstraint>& cells);
 
@@ -59,9 +75,60 @@ CountResult countConfigurations(const Instance& inst);
 // Exact occupancy marginal for one cell, as a constrained count.
 //
 // Cost is O(cells) full counts for a whole heatmap, or 15 under D4 symmetry.
-// Forward-backward on the same lattice gives every cell marginal in one forward
-// plus one backward pass, about 2x a single count; that lands in M2 and will be
-// validated against this function.
+// `occupancyMap` computes every cell marginal in one forward and one backward
+// pass and should be preferred; this function remains as its reference.
 std::uint64_t occupancyCount(const Instance& inst, int row, int col);
+
+// Every cell's occupancy count, from one forward and one backward sweep.
+// Returns a row-major vector of length cellCount(). `total` receives |Omega|.
+//
+// Invariant: the returned counts sum to shipCells() * total exactly.
+std::vector<std::uint64_t> occupancyMap(const Instance& inst,
+                                        const Constraints& constraints,
+                                        std::uint64_t& total);
+
+std::vector<std::uint64_t> occupancyMap(const Instance& inst, std::uint64_t& total);
+
+// ---------------------------------------------------------------------------
+// Exact uniform sampling by unranking.
+//
+// The lattice is a layered DAG in which every configuration is one source-to-
+// sink path. Weighting each edge by the number of completions below it turns
+// rank r in [0, |Omega|) into a path, so unrank() is a bijection from ranks to
+// configurations. Drawing r uniformly therefore samples Omega uniformly, with
+// no rejection and no MCMC.
+//
+// This is what the board generator must use. Sequential rejection placement
+// (place the 5, then the 4, and so on) is not uniform: it over-weights
+// configurations that leave room for the later ships.
+// ---------------------------------------------------------------------------
+
+struct ShipPlacement {
+    int  row = 0;          // topmost cell for vertical, the row for horizontal
+    int  col = 0;          // leftmost cell for horizontal, the column for vertical
+    int  length = 0;
+    bool horizontal = true;
+};
+
+class Sampler {
+public:
+    Sampler(const Instance& inst, const Constraints& constraints);
+    explicit Sampler(const Instance& inst);
+    ~Sampler();
+    Sampler(Sampler&&) noexcept;
+    Sampler& operator=(Sampler&&) noexcept;
+
+    [[nodiscard]] std::uint64_t total() const;
+
+    // rank must lie in [0, total()). Throws otherwise.
+    [[nodiscard]] std::vector<ShipPlacement> unrank(std::uint64_t rank) const;
+
+    // Number of stored backward-count entries, for memory reporting.
+    [[nodiscard]] std::size_t storedEntries() const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 }  // namespace mayflower

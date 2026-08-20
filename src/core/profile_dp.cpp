@@ -1,8 +1,10 @@
 #include "mayflower/profile_dp.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
+#include <utility>
 
 namespace mayflower {
 namespace {
@@ -43,6 +45,7 @@ inline std::uint64_t mix(std::uint64_t x) {
 // it is a straightforward implementation and not a deliberately slow one.
 class ProfileMap {
 public:
+    ProfileMap() { reserve(16); }
     explicit ProfileMap(std::size_t capacityPow2) { reserve(capacityPow2); }
 
     void reserve(std::size_t capacityPow2) {
@@ -64,7 +67,7 @@ public:
     [[nodiscard]] std::size_t size() const { return dense_.size(); }
 
     void add(const Key& key, std::uint64_t count) {
-        std::size_t slot = (mix(key.ext ^ (std::uint64_t{key.aux} * 0x9E3779B1u))) & mask_;
+        std::size_t slot = probe(key);
         while (true) {
             if (!used_[slot]) {
                 if (dense_.size() * 10 >= capacity_ * 7) {  // load factor 0.7
@@ -86,23 +89,41 @@ public:
         }
     }
 
+    [[nodiscard]] std::uint64_t get(const Key& key) const {
+        std::size_t slot = probe(key);
+        while (used_[slot]) {
+            if (keys_[slot] == key) return vals_[slot];
+            slot = (slot + 1) & mask_;
+        }
+        return 0;
+    }
+
     template <typename Fn>
     void forEach(Fn&& fn) const {
         for (std::size_t slot : dense_) fn(keys_[slot], vals_[slot]);
     }
 
+    [[nodiscard]] std::vector<std::pair<Key, std::uint64_t>> snapshot() const {
+        std::vector<std::pair<Key, std::uint64_t>> out;
+        out.reserve(dense_.size());
+        for (std::size_t slot : dense_) out.emplace_back(keys_[slot], vals_[slot]);
+        return out;
+    }
+
+    void load(const std::vector<std::pair<Key, std::uint64_t>>& entries) {
+        clear();
+        for (const auto& e : entries) add(e.first, e.second);
+    }
+
 private:
+    [[nodiscard]] std::size_t probe(const Key& key) const {
+        return mix(key.ext ^ (std::uint64_t{key.aux} * 0x9E3779B1u)) & mask_;
+    }
+
     void grow() {
-        std::vector<Key>           oldKeys;
-        std::vector<std::uint64_t> oldVals;
-        oldKeys.reserve(dense_.size());
-        oldVals.reserve(dense_.size());
-        for (std::size_t slot : dense_) {
-            oldKeys.push_back(keys_[slot]);
-            oldVals.push_back(vals_[slot]);
-        }
+        const auto old = snapshot();
         reserve(capacity_ * 2);
-        for (std::size_t i = 0; i < oldKeys.size(); ++i) add(oldKeys[i], oldVals[i]);
+        for (const auto& e : old) add(e.first, e.second);
     }
 
     std::size_t capacity_ = 0;
@@ -116,7 +137,7 @@ private:
 // Mixed-radix encoding of how many ships of each distinct length are started.
 struct FleetCounter {
     std::vector<int> lengths;      // ascending distinct lengths
-    std::vector<int> caps;         // multiplicity of each
+    std::vector<int> caps;
     std::vector<int> radixStride;
     int stateCount = 1;
     int fullIndex = 0;
@@ -131,7 +152,7 @@ struct FleetCounter {
             stride *= caps[i] + 1;
         }
         stateCount = stride;
-        fullIndex = stateCount - 1;  // all counts at cap == last mixed-radix index
+        fullIndex = stateCount - 1;
 
         addTable.assign(static_cast<std::size_t>(stateCount) * lengths.size(), -1);
         for (int s = 0; s < stateCount; ++s) {
@@ -148,102 +169,435 @@ struct FleetCounter {
     }
 };
 
+// Everything the transition function needs about one cell.
+struct CellCtx {
+    int  row = 0;
+    int  col = 0;
+    int  shift = 0;
+    bool mustBeEmpty = false;
+    bool mustBeOccupied = false;
+    const std::uint8_t* allowH = nullptr;   // nLengths entries, or nullptr
+    const std::uint8_t* allowV = nullptr;
+};
+
+enum class Kind : std::uint8_t { HorizContinue, VertContinue, Empty, StartH, StartV };
+
+// The single definition of the transition relation. Forward accumulation,
+// backward relaxation, the empty-flow scan and the sampler all drive off this
+// function, so they cannot disagree. The emission order is fixed, which is what
+// makes unranking a stable bijection.
+//
+// emit(destination, kind, length)  -- length is meaningful for StartH/StartV
+template <typename Emit>
+inline void transitions(const Key& key, const CellCtx& ctx, const FleetCounter& fc,
+                        int W, int H, Emit&& emit) {
+    const int vrem  = auxVrem(key.aux);
+    const int fleet = auxFleet(key.aux);
+    const int d     = extDigit(key.ext, ctx.row);
+
+    if (d > 0) {
+        if (vrem > 0 || ctx.mustBeEmpty) return;   // vrem > 0 would overlap
+        emit(Key{key.ext - (std::uint64_t{1} << ctx.shift), key.aux}, Kind::HorizContinue, 0);
+        return;
+    }
+    if (vrem > 0) {
+        if (ctx.mustBeEmpty) return;
+        emit(Key{key.ext, packAux(vrem - 1, fleet)}, Kind::VertContinue, 0);
+        return;
+    }
+    if (!ctx.mustBeOccupied) emit(key, Kind::Empty, 0);
+    if (ctx.mustBeEmpty) return;
+
+    const std::size_t nLengths = fc.lengths.size();
+    for (std::size_t li = 0; li < nLengths; ++li) {
+        const int L  = fc.lengths[li];
+        const int nf = fc.afterStarting(fleet, li);
+        if (nf < 0) continue;
+        if (ctx.col + L <= W && (ctx.allowH == nullptr || ctx.allowH[li])) {
+            emit(Key{key.ext | (static_cast<std::uint64_t>(L - 1) << ctx.shift),
+                     packAux(0, nf)},
+                 Kind::StartH, L);
+        }
+        if (ctx.row + L <= H && (ctx.allowV == nullptr || ctx.allowV[li])) {
+            emit(Key{key.ext, packAux(L - 1, nf)}, Kind::StartV, L);
+        }
+    }
+}
+
+CellCtx makeCtx(const Instance& inst, const Constraints& c, const FleetCounter& fc,
+                int row, int col) {
+    const std::size_t cell = static_cast<std::size_t>(row * inst.width + col);
+    const CellConstraint cc = c.cells[cell];
+    CellCtx ctx;
+    ctx.row = row;
+    ctx.col = col;
+    ctx.shift = 3 * row;
+    ctx.mustBeEmpty = cc == CellConstraint::MustBeEmpty;
+    ctx.mustBeOccupied = cc == CellConstraint::MustBeOccupied;
+    if (c.gated()) {
+        const std::size_t base = cell * fc.lengths.size();
+        ctx.allowH = &c.allowH[base];
+        ctx.allowV = &c.allowV[base];
+    }
+    return ctx;
+}
+
+bool accepting(const Key& key, const FleetCounter& fc) {
+    return key.ext == 0 && auxVrem(key.aux) == 0 && auxFleet(key.aux) == fc.fullIndex;
+}
+
 }  // namespace
 
-CountResult countConfigurations(const Instance& inst,
-                                const std::vector<CellConstraint>& cells) {
+// ---------------------------------------------------------------------------
+
+Constraints constraintsFrom(const Instance& inst, const History& history) {
     inst.validate();
-    if (static_cast<int>(cells.size()) != inst.cellCount())
+    const int W = inst.width, H = inst.height;
+    const std::vector<int> lengths = inst.distinctLengths();
+    const std::size_t nLengths = lengths.size();
+    const std::size_t cells = static_cast<std::size_t>(inst.cellCount());
+
+    Constraints c;
+    c.cells.assign(cells, CellConstraint::Free);
+    for (std::size_t i = 0; i < cells; ++i) {
+        if (!history.shot(static_cast<int>(i))) continue;
+        c.cells[i] = history.outcome(static_cast<int>(i)) == Outcome::Miss
+                         ? CellConstraint::MustBeEmpty
+                         : CellConstraint::MustBeOccupied;
+    }
+
+    c.allowH.assign(cells * nLengths, 0);
+    c.allowV.assign(cells * nLengths, 0);
+    int footprint[8];
+    for (int row = 0; row < H; ++row) {
+        for (int col = 0; col < W; ++col) {
+            const std::size_t cell = static_cast<std::size_t>(row * W + col);
+            for (std::size_t li = 0; li < nLengths; ++li) {
+                const int L = lengths[li];
+                if (col + L <= W) {
+                    for (int k = 0; k < L; ++k) footprint[k] = row * W + col + k;
+                    c.allowH[cell * nLengths + li] =
+                        history.allowsPlacement(footprint, L) ? 1u : 0u;
+                }
+                if (row + L <= H) {
+                    for (int k = 0; k < L; ++k) footprint[k] = (row + k) * W + col;
+                    c.allowV[cell * nLengths + li] =
+                        history.allowsPlacement(footprint, L) ? 1u : 0u;
+                }
+            }
+        }
+    }
+    return c;
+}
+
+CountResult countConfigurations(const Instance& inst, const Constraints& constraints) {
+    inst.validate();
+    if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
         throw std::invalid_argument("constraint vector size must equal cellCount()");
 
-    const int W = inst.width;
-    const int H = inst.height;
+    const int W = inst.width, H = inst.height;
     const FleetCounter fc(inst);
-    const std::size_t nLengths = fc.lengths.size();
 
     ProfileMap cur(1024), next(1024);
     cur.add(Key{0, packAux(0, 0)}, 1);
 
     CountResult result;
-
     for (int col = 0; col < W; ++col) {
         for (int row = 0; row < H; ++row) {
-            const CellConstraint constraint = cells[static_cast<std::size_t>(row * W + col)];
-            const bool mustBeEmpty    = constraint == CellConstraint::MustBeEmpty;
-            const bool mustBeOccupied = constraint == CellConstraint::MustBeOccupied;
-            const int shift = 3 * row;
-
+            const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
             result.peakStates = std::max(result.peakStates, cur.size());
             result.stateVisits += cur.size();
 
             next.clear();
             std::uint64_t edges = 0;
-
             cur.forEach([&](const Key& key, std::uint64_t count) {
-                const int vrem = auxVrem(key.aux);
-                const int fleet = auxFleet(key.aux);
-                const int d = extDigit(key.ext, row);
-
-                if (d > 0) {
-                    if (vrem > 0 || mustBeEmpty) return;   // vrem > 0 would overlap
-                    next.add(Key{key.ext - (std::uint64_t{1} << shift), key.aux}, count);
+                transitions(key, ctx, fc, W, H, [&](const Key& dst, Kind, int) {
+                    next.add(dst, count);
                     ++edges;
-                    return;
-                }
-                if (vrem > 0) {
-                    if (mustBeEmpty) return;
-                    next.add(Key{key.ext, packAux(vrem - 1, fleet)}, count);
-                    ++edges;
-                    return;
-                }
-                if (!mustBeOccupied) {
-                    next.add(key, count);   // leave empty
-                    ++edges;
-                }
-                if (mustBeEmpty) return;
-                for (std::size_t li = 0; li < nLengths; ++li) {
-                    const int L = fc.lengths[li];
-                    const int nf = fc.afterStarting(fleet, li);
-                    if (nf < 0) continue;
-                    if (col + L <= W) {   // start horizontal
-                        next.add(Key{key.ext | (static_cast<std::uint64_t>(L - 1) << shift),
-                                     packAux(0, nf)},
-                                 count);
-                        ++edges;
-                    }
-                    if (row + L <= H) {   // start vertical
-                        next.add(Key{key.ext, packAux(L - 1, nf)}, count);
-                        ++edges;
-                    }
-                }
+                });
             });
-
             result.edges += edges;
             std::swap(cur, next);
         }
-        // row+L <= H already forces vrem == 0 at the column boundary.
     }
 
     std::uint64_t total = 0;
     cur.forEach([&](const Key& key, std::uint64_t count) {
-        if (key.ext == 0 && auxVrem(key.aux) == 0 && auxFleet(key.aux) == fc.fullIndex)
-            total += count;
+        if (accepting(key, fc)) total += count;
     });
     result.count = total;
     return result;
 }
 
+CountResult countConfigurations(const Instance& inst,
+                                const std::vector<CellConstraint>& cells) {
+    Constraints c;
+    c.cells = cells;
+    return countConfigurations(inst, c);
+}
+
 CountResult countConfigurations(const Instance& inst) {
-    std::vector<CellConstraint> free(static_cast<std::size_t>(inst.cellCount()),
-                                     CellConstraint::Free);
-    return countConfigurations(inst, free);
+    Constraints c;
+    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    return countConfigurations(inst, c);
 }
 
 std::uint64_t occupancyCount(const Instance& inst, int row, int col) {
-    std::vector<CellConstraint> cells(static_cast<std::size_t>(inst.cellCount()),
-                                      CellConstraint::Free);
-    cells[static_cast<std::size_t>(row * inst.width + col)] = CellConstraint::MustBeOccupied;
-    return countConfigurations(inst, cells).count;
+    Constraints c;
+    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    c.cells[static_cast<std::size_t>(row * inst.width + col)] = CellConstraint::MustBeOccupied;
+    return countConfigurations(inst, c).count;
+}
+
+// ---------------------------------------------------------------------------
+// Forward-backward marginals.
+//
+// Every configuration either occupies a cell or leaves it empty, and exactly one
+// transition per layer carries it. So for cell t
+//
+//     occupancy(t) = total - flow through the "leave empty" transition at t
+//
+// and the empty transition is the identity on the state, which makes the scan a
+// single walk over the layer computing F[s] * B[s].
+//
+// F is stored only at the W+1 column boundaries and replayed inside a column
+// while B walks backward through it, which keeps the working set to one column
+// instead of the whole lattice.
+// ---------------------------------------------------------------------------
+
+std::vector<std::uint64_t> occupancyMap(const Instance& inst,
+                                        const Constraints& constraints,
+                                        std::uint64_t& total) {
+    inst.validate();
+    if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
+        throw std::invalid_argument("constraint vector size must equal cellCount()");
+
+    const int W = inst.width, H = inst.height;
+    const FleetCounter fc(inst);
+
+    using Layer = std::vector<std::pair<Key, std::uint64_t>>;
+
+    // Forward sweep, snapshotting each column boundary.
+    std::vector<Layer> boundary(static_cast<std::size_t>(W) + 1);
+    {
+        ProfileMap cur(1024), next(1024);
+        cur.add(Key{0, packAux(0, 0)}, 1);
+        boundary[0] = cur.snapshot();
+        for (int col = 0; col < W; ++col) {
+            for (int row = 0; row < H; ++row) {
+                const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
+                next.clear();
+                cur.forEach([&](const Key& key, std::uint64_t count) {
+                    transitions(key, ctx, fc, W, H,
+                                [&](const Key& dst, Kind, int) { next.add(dst, count); });
+                });
+                std::swap(cur, next);
+            }
+            boundary[static_cast<std::size_t>(col) + 1] = cur.snapshot();
+        }
+        total = 0;
+        cur.forEach([&](const Key& key, std::uint64_t count) {
+            if (accepting(key, fc)) total += count;
+        });
+    }
+
+    std::vector<std::uint64_t> occ(static_cast<std::size_t>(inst.cellCount()), 0);
+    if (total == 0) return occ;
+
+    // Backward sweep, one column at a time.
+    ProfileMap bNext(1024), bCur(1024), replayCur(1024), replayNext(1024);
+    bNext.clear();
+    for (const auto& e : boundary[static_cast<std::size_t>(W)])
+        if (accepting(e.first, fc)) bNext.add(e.first, 1);
+
+    std::vector<Layer> fLayers(static_cast<std::size_t>(H));
+
+    for (int col = W - 1; col >= 0; --col) {
+        // Replay the forward layers inside this column from its left boundary.
+        replayCur.load(boundary[static_cast<std::size_t>(col)]);
+        for (int row = 0; row < H; ++row) {
+            fLayers[static_cast<std::size_t>(row)] = replayCur.snapshot();
+            const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
+            replayNext.clear();
+            replayCur.forEach([&](const Key& key, std::uint64_t count) {
+                transitions(key, ctx, fc, W, H,
+                            [&](const Key& dst, Kind, int) { replayNext.add(dst, count); });
+            });
+            std::swap(replayCur, replayNext);
+        }
+
+        for (int row = H - 1; row >= 0; --row) {
+            const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
+            const Layer& F = fLayers[static_cast<std::size_t>(row)];
+            const std::size_t cell = static_cast<std::size_t>(row * W + col);
+
+            std::uint64_t emptyFlow = 0;
+            bCur.clear();
+            for (const auto& e : F) {
+                std::uint64_t completions = 0;
+                transitions(e.first, ctx, fc, W, H,
+                            [&](const Key& dst, Kind kind, int) {
+                    const std::uint64_t b = bNext.get(dst);
+                    completions += b;
+                    if (kind == Kind::Empty) emptyFlow += e.second * b;
+                });
+                if (completions) bCur.add(e.first, completions);
+            }
+            occ[cell] = total - emptyFlow;
+            std::swap(bCur, bNext);
+        }
+    }
+    return occ;
+}
+
+std::vector<std::uint64_t> occupancyMap(const Instance& inst, std::uint64_t& total) {
+    Constraints c;
+    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    return occupancyMap(inst, c, total);
+}
+
+
+// ---------------------------------------------------------------------------
+// Sampler
+// ---------------------------------------------------------------------------
+
+struct Sampler::Impl {
+    Instance     inst;
+    Constraints  constraints;
+    FleetCounter fc;
+    int W = 0, H = 0, cells = 0;
+    std::uint64_t total = 0;
+    std::vector<ProfileMap> b;   // backward completion counts, one map per layer
+    std::size_t entries = 0;
+
+    Impl(const Instance& i, const Constraints& c)
+        : inst(i), constraints(c), fc(i), W(i.width), H(i.height), cells(i.cellCount()) {
+        build();
+    }
+
+    void build() {
+        using Layer = std::vector<std::pair<Key, std::uint64_t>>;
+
+        // Forward sweep, snapshotting column boundaries.
+        std::vector<Layer> boundary(static_cast<std::size_t>(W) + 1);
+        ProfileMap cur(1024), next(1024);
+        cur.add(Key{0, packAux(0, 0)}, 1);
+        boundary[0] = cur.snapshot();
+        for (int col = 0; col < W; ++col) {
+            for (int row = 0; row < H; ++row) {
+                const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
+                next.clear();
+                cur.forEach([&](const Key& key, std::uint64_t count) {
+                    transitions(key, ctx, fc, W, H,
+                                [&](const Key& dst, Kind, int) { next.add(dst, count); });
+                });
+                std::swap(cur, next);
+            }
+            boundary[static_cast<std::size_t>(col) + 1] = cur.snapshot();
+        }
+        total = 0;
+        cur.forEach([&](const Key& key, std::uint64_t count) {
+            if (accepting(key, fc)) total += count;
+        });
+
+        // Backward sweep, filling every layer. F is replayed one column at a
+        // time from its left boundary, so only one column of forward layers is
+        // held at once.
+        b.assign(static_cast<std::size_t>(cells) + 1, ProfileMap{});
+        for (const auto& e : boundary[static_cast<std::size_t>(W)])
+            if (accepting(e.first, fc)) b[static_cast<std::size_t>(cells)].add(e.first, 1);
+
+        ProfileMap replayCur(1024), replayNext(1024);
+        std::vector<Layer> fLayers(static_cast<std::size_t>(H));
+        for (int col = W - 1; col >= 0; --col) {
+            replayCur.load(boundary[static_cast<std::size_t>(col)]);
+            for (int row = 0; row < H; ++row) {
+                fLayers[static_cast<std::size_t>(row)] = replayCur.snapshot();
+                const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
+                replayNext.clear();
+                replayCur.forEach([&](const Key& key, std::uint64_t count) {
+                    transitions(key, ctx, fc, W, H,
+                                [&](const Key& dst, Kind, int) { replayNext.add(dst, count); });
+                });
+                std::swap(replayCur, replayNext);
+            }
+            for (int row = H - 1; row >= 0; --row) {
+                const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
+                const std::size_t layer = static_cast<std::size_t>(col * H + row);
+                const Layer& F = fLayers[static_cast<std::size_t>(row)];
+                for (const auto& e : F) {
+                    std::uint64_t completions = 0;
+                    transitions(e.first, ctx, fc, W, H,
+                                [&](const Key& dst, Kind, int) {
+                        completions += b[layer + 1].get(dst);
+                    });
+                    if (completions) b[layer].add(e.first, completions);
+                }
+            }
+        }
+        entries = 0;
+        for (const ProfileMap& m : b) entries += m.size();
+    }
+};
+
+Sampler::Sampler(const Instance& inst, const Constraints& constraints)
+    : impl_(std::make_unique<Impl>(inst, constraints)) {}
+
+Sampler::Sampler(const Instance& inst) : impl_(nullptr) {
+    Constraints c;
+    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    impl_ = std::make_unique<Impl>(inst, c);
+}
+
+Sampler::~Sampler() = default;
+Sampler::Sampler(Sampler&&) noexcept = default;
+Sampler& Sampler::operator=(Sampler&&) noexcept = default;
+
+std::uint64_t Sampler::total() const { return impl_->total; }
+std::size_t Sampler::storedEntries() const { return impl_->entries; }
+
+std::vector<ShipPlacement> Sampler::unrank(std::uint64_t rank) const {
+    const Impl& im = *impl_;
+    if (rank >= im.total) throw std::out_of_range("rank must lie in [0, total())");
+
+    struct Cand { Key dst; Kind kind; int len; std::uint64_t weight; };
+    Cand cand[24];
+
+    Key state{0, packAux(0, 0)};
+    std::vector<ShipPlacement> out;
+    out.reserve(im.inst.fleet.size());
+
+    for (int col = 0; col < im.W; ++col) {
+        for (int row = 0; row < im.H; ++row) {
+            const CellCtx ctx = makeCtx(im.inst, im.constraints, im.fc, row, col);
+            const std::size_t layer = static_cast<std::size_t>(col * im.H + row);
+
+            int n = 0;
+            transitions(state, ctx, im.fc, im.W, im.H,
+                        [&](const Key& dst, Kind kind, int len) {
+                if (n >= 24) throw std::logic_error("transition fan-out exceeded");
+                const std::uint64_t w = im.b[layer + 1].get(dst);
+                if (w) cand[n++] = {dst, kind, len, w};
+            });
+
+            std::uint64_t acc = 0;
+            int chosen = -1;
+            for (int i = 0; i < n; ++i) {
+                if (rank < acc + cand[i].weight) { chosen = i; break; }
+                acc += cand[i].weight;
+            }
+            if (chosen < 0) throw std::logic_error("rank walk left the lattice");
+            rank -= acc;
+
+            if (cand[chosen].kind == Kind::StartH)
+                out.push_back(ShipPlacement{row, col, cand[chosen].len, true});
+            else if (cand[chosen].kind == Kind::StartV)
+                out.push_back(ShipPlacement{row, col, cand[chosen].len, false});
+
+            state = cand[chosen].dst;
+        }
+    }
+    return out;
 }
 
 }  // namespace mayflower
