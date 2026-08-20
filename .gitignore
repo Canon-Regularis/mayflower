@@ -1,0 +1,9 @@
+build/
+cache/
+out/
+*.exe
+*.o
+*.obj
+*.gcda
+*.gcno
+__pycache__/
