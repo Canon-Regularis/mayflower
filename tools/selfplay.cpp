@@ -128,6 +128,17 @@ int main(int argc, char** argv) {
     boards.reserve(static_cast<std::size_t>(games));
     for (int i = 0; i < games; ++i) boards.push_back(bank.board(static_cast<std::uint64_t>(i)));
 
+    // Policy seeds come from a stream keyed separately from the board pool, so a
+    // stochastic policy's randomness stays independent of which board it faces.
+    // Sharing one counter would tie the two together and bias the estimate.
+    std::vector<std::uint64_t> policySeeds(static_cast<std::size_t>(games));
+    for (int i = 0; i < games; ++i) {
+        std::uint64_t z = static_cast<std::uint64_t>(i) + 0xD1B54A32D192ED03ull;
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+        policySeeds[static_cast<std::size_t>(i)] = z ^ (z >> 31);
+    }
+
     std::vector<std::unique_ptr<Policy>> policies;
     std::vector<std::string> names;
     policies.push_back(std::make_unique<RandomPolicy>());          names.push_back("random");
@@ -143,7 +154,7 @@ int main(int argc, char** argv) {
         const auto t0 = std::chrono::steady_clock::now();
         for (int i = 0; i < games; ++i)
             shots.push_back(playGame(inst, boards[static_cast<std::size_t>(i)], *policy,
-                                     static_cast<std::uint64_t>(i))
+                                     policySeeds[static_cast<std::size_t>(i)])
                                 .shots);
         const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         results.push_back(summarise(names[results.size()], std::move(shots), dt));

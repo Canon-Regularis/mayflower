@@ -25,7 +25,9 @@ endif()
 
 add_library(mayflower_core
   src/core/profile_dp.cpp
-  src/certify/blocking.cpp)
+  src/certify/blocking.cpp
+  src/certify/transcripts.cpp
+  src/search/exact_solver.cpp)
 target_include_directories(mayflower_core PUBLIC include)
 target_link_libraries(mayflower_core PUBLIC mf_flags)
 
@@ -43,6 +45,9 @@ target_link_libraries(selfplay PRIVATE mayflower_core)
 
 add_executable(bounds tools/bounds.cpp)
 target_link_libraries(bounds PRIVATE mayflower_core)
+
+add_executable(optimal tools/optimal.cpp)
+target_link_libraries(optimal PRIVATE mayflower_core)
 
 enable_testing()
 
@@ -72,6 +77,10 @@ add_executable(test_bounds tests/test_bounds.cpp)
 target_include_directories(test_bounds PRIVATE tests)
 target_link_libraries(test_bounds PRIVATE mayflower_core)
 
+add_executable(test_exact tests/test_exact.cpp)
+target_include_directories(test_exact PRIVATE tests)
+target_link_libraries(test_exact PRIVATE mayflower_core)
+
 add_test(NAME counting COMMAND test_counting)
 set_tests_properties(counting PROPERTIES LABELS "fast" TIMEOUT 300)
 
@@ -92,6 +101,9 @@ set_tests_properties(bounds PROPERTIES LABELS "pr" TIMEOUT 1800)
 
 add_test(NAME bounds_tool COMMAND bounds)
 set_tests_properties(bounds_tool PROPERTIES LABELS "pr" TIMEOUT 1800)
+
+add_test(NAME exact COMMAND test_exact)
+set_tests_properties(exact PROPERTIES LABELS "pr" TIMEOUT 900)
 
 add_test(NAME omega0 COMMAND omega0)
 set_tests_properties(omega0 PROPERTIES LABELS "pr" TIMEOUT 900)

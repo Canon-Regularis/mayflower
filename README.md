@@ -32,6 +32,9 @@ policy tier.
 | `tools/selfplay` | Paired self-play over a seeded pool, with correlations and confidence intervals |
 | `tools/bounds` | The lower-bound ladder, each rung labelled by how firmly it is established |
 | `src/certify/blocking.cpp` | Exact blocking numbers by a row-sweep DP |
+| `src/certify/transcripts.cpp` | Announcement-string counting and the water-filling bound |
+| `src/search/exact_solver.cpp` | Exact optimal play on small instances |
+| `tools/optimal` | Optimal play and the measured optimality gap of each heuristic |
 | `outcomeDistribution` | Exact one-ply {MISS, HIT, SUNK(L)} split and information gain per cell |
 | `include/mayflower/policy.hpp` | Random, parity hunt/target, density (cheap tier), and exact-posterior policies |
 | `tests/oracle/` | Independent brute-force enumerator and ordered simulator |
@@ -117,13 +120,30 @@ sampling noise at that sample size.
 ## Bounds
 
 ```text
-E1  coverage    17.00 shots   exact: all 17 ship cells must be shot
-E2  entropy     13.08 shots   exact: 33.8088 bits over an outcome alphabet of 6
+E1  coverage        17.0000 shots   exact: all 17 ship cells must be shot
+E2  entropy         13.0800 shots   exact: 33.8088 bits over an outcome alphabet of 6
+E4  water-filling   24.0876 shots   exact, by transcript counting
 ```
 
 E2 falls below E1, so counting ship cells is the stronger constraint and the
 entropy bound is vacuous. Identifying the board is cheap; hitting all of it is
 what costs.
+
+The water-filling rung is the binding one. Against a deterministic policy the map
+from configuration to transcript is injective, since the transcript replays the
+policy and so reveals which cells were shot and which of those were hits. A game
+ending on shot `t` has 17 hits with the last at `t`, so its transcript is fixed by
+choosing the positions of the other 16 among the first `t-1` and by one of `K`
+announcement strings. Hockey-stick then gives
+
+```text
+P(T <= t) <= K * C(t,17) / N        E[T] >= sum_t max(0, 1 - K*C(t,17)/N)
+```
+
+`K = 28,560`, computed by determinising the automaton over per-ship hit counts
+(several hit-to-ship assignments collapse to one announcement string, so counting
+interleavings would over-count) and validated against brute force on eight
+fleets. The sum saturates at depth 25 and evaluates to 24.0876.
 
 Blocking numbers, the fewest shots guaranteeing contact with a lone length-L
 ship, computed exactly by a row-sweep DP and checked against brute force on
@@ -149,7 +169,35 @@ establish that no 19-cell set does, so the adversarial worst-case bound of
 claimed. The water-filling and max-coverage rungs are not implemented and are
 therefore not quoted either.
 
-Unresolved interval: `[17, 44.369]`, a gap of 27.4 shots.
+Unresolved interval: `[24.088, 44.369]`, a gap of 20.3 shots. Water-filling
+closes 25.9% of the distance from the coverage bound to the best measured policy.
+
+## Exact optimal play on small instances
+
+Where the whole configuration space is enumerable, the optimum and each policy's
+expectation are both exact, so the optimality gap is measured and not estimated.
+
+```text
+instance       cfgs   optimal   density     gap    parity     gap
+3x3 {2}          12    4.5000    4.5000   0.000    5.0000   0.500
+4x3 {2}          17    5.1176    5.1176   0.000    5.6471   0.529
+4x4 {2}          24    6.0833    6.0833   0.000    6.6250   0.542
+4x4 {3}          16    5.6250    5.7500   0.125    6.7500   1.125
+5x4 {3}          22    6.2273    6.2273   0.000    8.1364   1.909
+4x4 {2,2}       224    8.6696    8.7232   0.054    9.4196   0.750
+4x4 {3,2}       264    8.7538    8.8902   0.136    9.7955   1.042
+```
+
+The density heuristic is exactly optimal on four of the seven instances and
+within 0.14 shots on the rest. Parity hunt/target gives up between 0.5 and 1.9
+shots. The optimal first shot is an off-corner cell in every case.
+
+The solver's own check is that the optimum can never exceed what a concrete
+policy achieves. That invariant caught a real measurement bug: seeding a
+stochastic policy from the board's identity gives each board its own policy
+randomisation, which measures a family of policies each paired with its own board
+and duly scored below the single-policy optimum. Policy seeds are now drawn from
+a stream independent of the board pool.
 
 ## Self-play baseline
 
