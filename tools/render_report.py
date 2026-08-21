@@ -176,6 +176,35 @@ td.num { font-family: "IBM Plex Mono", ui-monospace, monospace;
 }
 footer { margin-top: 72px; padding-top: 22px; border-top: 1px solid var(--grid);
          color: var(--muted-ink); font-size: 13.5px; }
+.livewrap { background: var(--surface); border: 1px solid var(--grid); border-radius: 6px;
+            padding: 22px 24px 20px; margin-top: 30px; }
+.livegrid { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.liveboard {
+  display: grid; grid-template-columns: repeat(10, 34px); grid-auto-rows: 34px; gap: 2px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px;
+}
+.lc { display: flex; align-items: center; justify-content: center; border-radius: 3px;
+      color: var(--cell-ink); background: var(--ramp-0); font-variant-numeric: tabular-nums; }
+.lc.miss { background: var(--grid); color: var(--muted-ink); }
+.lc.hit  { background: var(--series-2); color: #fff; font-size: 13px; }
+.lc.sunk { background: var(--series-2); color: #fff; font-size: 15px; opacity: .72; }
+.lc.ghost { outline: 2px dashed var(--series-3); outline-offset: -3px; }
+.lc.last { box-shadow: 0 0 0 2px var(--ink); }
+.livestats { min-width: 260px; flex: 1 1 260px; }
+.livestats > div { display: flex; justify-content: space-between; gap: 14px;
+                   padding: 7px 0; border-bottom: 1px solid var(--grid); }
+.lk { color: var(--muted-ink); font-size: 13px; }
+.lv { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13.5px;
+      font-variant-numeric: tabular-nums; }
+.lv.exact { color: var(--series-1); font-weight: 500; }
+.lv.sampled { color: var(--ink-2); }
+.livebtns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.livebtns button {
+  font: inherit; font-size: 13.5px; padding: 7px 14px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--axis); background: var(--page); color: var(--ink);
+}
+.livebtns button:hover:not(:disabled) { border-color: var(--ink); }
+.livebtns button:disabled { opacity: .45; cursor: default; }
 #tip {
   position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
   background: var(--ink); color: var(--page); padding: 5px 9px; border-radius: 4px;
@@ -209,6 +238,29 @@ document.addEventListener('pointerout', e => {
 """
 
 
+def load_engine():
+    """web/engine.js is an ES module; inline it as a plain script that publishes
+    the same names on one global, so the page needs no module loader."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    src = io.open(os.path.join(here, "..", "web", "engine.js"), encoding="utf-8").read()
+    src = src.replace("export const ", "const ").replace("export function ", "function ")
+    return ("(function(){\n" + src +
+            "\nwindow.MayflowerEngine = { makeInstance, count, marginals, constrain,"
+            " MISS, HIT, SUNK, FREE, EMPTY, OCCUPIED };\n})();")
+
+
+def load_live():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return io.open(os.path.join(here, "..", "web", "live.js"), encoding="utf-8").read()
+
+
+def load_pool():
+    import base64
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "..", "web", "pool.bin"), "rb") as fh:
+        return base64.b64encode(fh.read()).decode("ascii")
+
+
 def build(data, out_path):
     m = data["meta"]
     prior = data["prior"]
@@ -223,6 +275,10 @@ def build(data, out_path):
     prior_p = [c / prior["total"] for c in prior["counts"]]
     dens, par = pol["density"], pol["parity hunt/target"]
     best = policies[-1]
+
+    ENGINE_JS = load_engine()
+    LIVE_JS = load_live()
+    POOL_B64 = load_pool()
 
     o = io.StringIO()
     w = o.write
@@ -249,6 +305,30 @@ def build(data, out_path):
         w('<div class="keyfig"><span class="v">' + esc(v) + '</span>'
           '<span class="k">' + esc(k) + "</span></div>")
     w("</div></header>\n")
+
+    # 0, the anchor -----------------------------------------------------
+    w('<section><div class="col"><div class="act">Play it</div>')
+    w("<h2>The engine, hunting a board it cannot see</h2>")
+    w('<p class="lede">A hidden fleet, drawn uniformly from all {:,} legal arrangements. '
+      "The engine sees only what it has shot. Each cell shows the current probability that "
+      "a ship covers it, and the engine fires at the highest one.</p>".format(omega))
+    w("<p>Two regimes run underneath, because the costs are opposite. Early on the "
+      "posterior spans billions of boards and an exact sweep would take half a minute in a "
+      "browser, while a uniform sample of 200,000 still holds most of its survivors and is "
+      "accurate. Late on the sample is exhausted and the exact sweep has become cheap. The "
+      "readout says which one is answering.</p></div>")
+    w('<div class="livewrap" id="live" data-pool="' + POOL_B64 + '">')
+    w('<div class="livegrid"><div class="liveboard"></div>')
+    w('<div><div class="livestats"></div><div class="livebtns">'
+      '<button data-act="step">Fire</button>'
+      '<button data-act="play">Play</button>'
+      '<button data-act="new">New fleet</button>'
+      '<button data-act="reveal">Reveal fleet</button>'
+      "</div></div></div></div>")
+    w('<div class="col"><figcaption>Filled cells are shots: a dot is a miss, a disc a hit, '
+      "a cross a sunk ship. Unshot cells carry the posterior as a percentage, on the same "
+      "blue ramp used everywhere else on this page.</figcaption></div>")
+    w("</section>\n")
 
     # 1 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">One / the space</div>')
@@ -402,6 +482,8 @@ def build(data, out_path):
       "Battleships &middot; " + esc(m["instance"]) + " &middot; {:,} games per policy on "
       "one seeded uniform board pool.</div></footer>".format(m["games"]))
     w("</div>\n<script>" + SCRIPT + "</script>\n")
+    w("<script>" + ENGINE_JS + "</script>\n")
+    w("<script>" + LIVE_JS + "</script>\n")
 
     with io.open(out_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(o.getvalue())

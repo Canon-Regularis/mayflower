@@ -51,6 +51,9 @@ target_link_libraries(bounds PRIVATE mayflower_core)
 add_executable(optimal tools/optimal.cpp)
 target_link_libraries(optimal PRIVATE mayflower_core)
 
+add_executable(export_pool tools/export_pool.cpp)
+target_link_libraries(export_pool PRIVATE mayflower_core)
+
 add_executable(report_data tools/report_data.cpp)
 target_link_libraries(report_data PRIVATE mayflower_core)
 

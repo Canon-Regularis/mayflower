@@ -41,6 +41,9 @@ platform, and M7 and M8 have a working report pipeline.
 | `bench/dp_bench` | The ladder under the measurement protocol |
 | `tools/report_data` | Runs the analyses and writes the figure-data contract as JSON |
 | `tools/render_report.py` | Renders that JSON as a self-contained HTML report |
+| `tools/export_pool` | Uniform board sample for the browser engine, five bytes per board |
+| `web/engine.js` | The DP ported to JavaScript, exact and verified against the C++ |
+| `web/live.js` | The live widget: sampled posterior early, exact sweep late |
 | `outcomeDistribution` | Exact one-ply {MISS, HIT, SUNK(L)} split and information gain per cell |
 | `include/mayflower/policy.hpp` | Random, parity hunt/target, density (cheap tier), and exact-posterior policies |
 | `tests/oracle/` | Independent brute-force enumerator and ordered simulator |
@@ -347,7 +350,31 @@ and the sequential ramp is re-stepped for the dark surface instead of inverted.
 
 Nine figures across six sections: the exact prior heatmap, board-size scaling,
 the lattice layer profile, the bound ladder, the objective comparison, two
-shot-order maps, survival curves, and posterior collapse.
+shot-order maps, survival curves, and posterior collapse. The page opens with a
+live engine.
+
+### The live engine
+
+`web/engine.js` is the same broken-profile DP in JavaScript. It reproduces the
+C++ exactly: 15,046,987,768 for the prior, occupancy summing to 17.000000, and
+the same corner and centre marginals to six places.
+
+It is also far too slow to drive the opening on its own. Measured through a real
+game: 30 s at shot 4, 9 s at shot 8, 4 s at shot 10, then under 1 s from shot 14.
+The cost tracks the size of the surviving space.
+
+So the widget runs two regimes with opposite cost curves. While the posterior
+spans billions of boards it reads a uniform sample of 200,000 configurations,
+drawn by the verified unranker and shipped as five bytes per board; filtering the
+whole pool against the ordered history costs a few tens of milliseconds. Once
+fewer than 400 survive, the sample is spent and the exact sweep takes over, which
+is precisely when it has become cheap. The crossover is self-tuning, because the
+survivor count is a proxy for the size of the space, and the readout says which
+regime is answering.
+
+Verified headlessly over ten games: they finish in 29 to 65 shots, mean 45.0
+against the C++ density policy's 44.37, the handoff lands at shot 6 to 12, and
+the true board survives in the posterior in every game at every turn.
 
 ## Validation
 
