@@ -30,11 +30,27 @@ struct GameResult {
     int misses = 0;
 };
 
+// Play `policy` against `truth`, writing the ordered record into `history`.
+inline GameResult playGameTraced(const Instance& inst,
+                                 const std::vector<ShipPlacement>& truth,
+                                 Policy& policy,
+                                 std::uint64_t seed,
+                                 History& history);
+
 // Play `policy` against `truth` until every ship cell has been shot.
 inline GameResult playGame(const Instance& inst,
                            const std::vector<ShipPlacement>& truth,
                            Policy& policy,
                            std::uint64_t seed = 0) {
+    History discard(inst);
+    return playGameTraced(inst, truth, policy, seed, discard);
+}
+
+inline GameResult playGameTraced(const Instance& inst,
+                                 const std::vector<ShipPlacement>& truth,
+                                 Policy& policy,
+                                 std::uint64_t seed,
+                                 History& history) {
     const int W = inst.width;
     const std::size_t cells = static_cast<std::size_t>(inst.cellCount());
 
@@ -52,7 +68,6 @@ inline GameResult playGame(const Instance& inst,
     }
 
     policy.reset(inst, seed);
-    History history(inst);
     GameResult result;
     int hitsNeeded = inst.shipCells();
 

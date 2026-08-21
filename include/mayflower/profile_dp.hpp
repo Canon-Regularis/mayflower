@@ -45,6 +45,7 @@ struct CountResult {
     std::size_t   peakStates = 0;  // largest live layer
     std::uint64_t stateVisits = 0; // states processed across all cells
     std::uint64_t edges = 0;       // transitions relaxed
+    std::vector<std::uint32_t> layerSizes;   // live states entering each cell layer
 };
 
 // Per-cell filter plus the per-placement gate.

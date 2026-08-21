@@ -17,8 +17,9 @@ coverage is what binds.
 
 ## Status
 
-Milestones M0 to M2 are complete, and M3 has its harness, board bank and cheap
-policy tier.
+Milestones M0 to M4 are complete apart from the max-coverage bound. M5 has exact
+optimal play on small instances, M6 has its first ladder rung and measurement
+platform, and M7 and M8 have a working report pipeline.
 
 | component | |
 | --- | --- |
@@ -38,14 +39,16 @@ policy tier.
 | `src/core/profile_dp_fast.cpp` | Ladder rung V1: packed key, epoch tagging, batched prefetch |
 | `src/platform/` | Core-topology detection and thread pinning for benchmarking |
 | `bench/dp_bench` | The ladder under the measurement protocol |
+| `tools/report_data` | Runs the analyses and writes the figure-data contract as JSON |
+| `tools/render_report.py` | Renders that JSON as a self-contained HTML report |
 | `outcomeDistribution` | Exact one-ply {MISS, HIT, SUNK(L)} split and information gain per cell |
 | `include/mayflower/policy.hpp` | Random, parity hunt/target, density (cheap tier), and exact-posterior policies |
 | `tests/oracle/` | Independent brute-force enumerator and ordered simulator |
 | `python/oracle.py` | Order-aware reference model |
 
-Still to come: the bound ladder, lookahead and the endgame solver, the
-optimisation ladder, and the report pipeline. The no-touching ruleset is not
-implemented.
+Still to come: expectimax with pruning and the order-aware transposition table,
+the parallel and cache-blocked ladder rungs, the live playable engine in the
+report, and the max-coverage bound. The no-touching ruleset is not implemented.
 
 ## Build
 
@@ -60,8 +63,13 @@ ctest --test-dir build -L pr       # adds the full 10x10 runs, ~2.5 min
 
 ./build/omega0                     # the hypothesis-space size
 ./build/marginals                  # the exact prior heatmap
-./build/sample                     # uniform board generation
+./build/bounds                     # the lower-bound ladder
+./build/optimal                    # optimal play and the price of each objective
+./build/dp_bench                   # the optimisation ladder, pinned and ABBA
 python python/oracle.py --order-dependence
+
+./build/report_data 20000 > out/figures.json
+python tools/render_report.py out/figures.json out/report.html
 ```
 
 ## Results
@@ -313,6 +321,33 @@ between rungs reproduce; absolute ns/edge figures do not. An earlier revision of
 this file quoted 7.4 M edges/s and 135.7 ns/edge from an unpinned run; that
 number is withdrawn, and no absolute figure replaces it until the ladder is
 measured on a quiet machine.
+
+## Report
+
+```sh
+./build/report_data 20000 > out/figures.json
+python tools/render_report.py out/figures.json out/report.html
+```
+
+The engine writes data; the renderer reads it. Nothing downstream recomputes an
+engine number, so a figure cannot disagree with the engine that produced it. The
+JSON carries its own check: the occupancy counts sum to `17 * |Omega|` exactly.
+
+Volume is tiered. Anything measured over many games ships as an aggregate: a
+shot-count histogram and a per-cell mean shot turn, 200 numbers per policy for
+any number of games. Full per-shot traces exist only for the three showcase games
+that need one, because a 100-cell posterior per turn per game across tens of
+thousands of games is not storable.
+
+The page is one file of about 105 KB. Every figure is complete inline SVG emitted
+at build time, so the report is correct with JavaScript disabled; JavaScript only
+adds hover readouts. The only external request is the webfont. Colours come from
+a palette validated for colour-vision deficiency in both light and dark themes,
+and the sequential ramp is re-stepped for the dark surface instead of inverted.
+
+Nine figures across six sections: the exact prior heatmap, board-size scaling,
+the lattice layer profile, the bound ladder, the objective comparison, two
+shot-order maps, survival curves, and posterior collapse.
 
 ## Validation
 

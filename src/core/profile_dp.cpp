@@ -308,6 +308,7 @@ CountResult countConfigurations(const Instance& inst, const Constraints& constra
             const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
             result.peakStates = std::max(result.peakStates, cur.size());
             result.stateVisits += cur.size();
+            result.layerSizes.push_back(static_cast<std::uint32_t>(cur.size()));
 
             next.clear();
             std::uint64_t edges = 0;
