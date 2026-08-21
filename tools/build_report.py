@@ -303,6 +303,116 @@ def layer_profile(sizes, peak):
     return "".join(out)
 
 
+def orbit_map(counts, total, width, height, cell=46):
+    """The D4 orbits of the board, coloured by orbit and carrying their exact
+    integer counts. Reflections and the diagonal generate 15 classes on a 10x10,
+    so a per-cell quantity needs 15 evaluations and not 100."""
+    pad_l, pad_t = 34, 26
+    w = pad_l + width * cell + 12
+    h = pad_t + height * cell + 40
+
+    # Orbit representative for a cell, under the dihedral group.
+    def rep(r, c):
+        a, b = min(r, height - 1 - r), min(c, width - 1 - c)
+        return (min(a, b), max(a, b))
+
+    reps = sorted({rep(r, c) for r in range(height) for c in range(width)})
+    index = {k: i for i, k in enumerate(reps)}
+
+    out = [svg_open(w, h, "The 15 dihedral orbits of the board")]
+    for c in range(width):
+        out.append(text(pad_l + c * cell + cell / 2, pad_t - 9, chr(ord("A") + c), "tick"))
+    for r in range(height):
+        out.append(text(pad_l - 10, pad_t + r * cell + cell / 2 + 4, str(r + 1), "tick", "end"))
+
+    for r in range(height):
+        for c in range(width):
+            k = rep(r, c)
+            i = index[k]
+            b = int(i / (len(reps) - 1) * BUCKETS)
+            x, y = pad_l + c * cell, pad_t + r * cell
+            n = counts[k[0] * width + k[1]]
+            out.append(
+                f'<rect class="cellmark" x="{x + 1}" y="{y + 1}" width="{cell - 2}" '
+                f'height="{cell - 2}" rx="3" fill="var(--ramp-{b})" '
+                f'data-tip="orbit {i + 1} of {len(reps)}: {n:,} configurations, '
+                f'{n / total:.6f}"/>')
+            out.append(text(x + cell / 2, y + cell / 2 + 4, str(i + 1),
+                            "cellval hi" if b >= 7 else "cellval"))
+    out.append(text(pad_l, pad_t + height * cell + 22,
+                    f"{len(reps)} orbits, so a per-cell quantity costs {len(reps)} "
+                    f"evaluations and not {width * height}", "tick", "start"))
+    out.append("</svg>")
+    return "".join(out)
+
+
+def blocking_boards(witnesses, width, height, cell=26):
+    """Each witness set drawn on its own board: shoot these cells and no
+    placement of that length can survive untouched."""
+    per = pad_l = 34
+    bw = width * cell + 16
+    w = len(witnesses) * bw
+    h = 34 + height * cell + 30
+
+    out = [svg_open(w, h, "Blocking sets: the fewest shots that meet every placement")]
+    for i, wit in enumerate(witnesses):
+        ox = i * bw + 8
+        marked = set(wit["cells"])
+        out.append(text(ox + width * cell / 2, 16,
+                        f'length {wit["length"]}: beta = {wit["beta"]}', "rowlbl"))
+        for r in range(height):
+            for c in range(width):
+                x, y = ox + c * cell, 28 + r * cell
+                on = (r * width + c) in marked
+                out.append(
+                    f'<rect class="cellmark" x="{x + 1}" y="{y + 1}" width="{cell - 2}" '
+                    f'height="{cell - 2}" rx="2" '
+                    f'fill="{"var(--series-1)" if on else "var(--ramp-0)"}"/>')
+        note = ("optimal" if wit["greedy"] == wit["beta"]
+                else f'greedy needs {wit["greedy"]}')
+        out.append(text(ox + width * cell / 2, 28 + height * cell + 18, note, "tick"))
+    out.append("</svg>")
+    return "".join(out)
+
+
+def order_dependence(payload, cell=40):
+    """The same shots in two orders, with the posterior each one implies."""
+    width, height = payload["width"], payload["height"]
+    orders = payload["orders"]
+    bw = width * cell + 30
+    w = len(orders) * bw
+    h = 34 + height * cell + 34
+
+    out = [svg_open(w, h, "The same shots in two orders give different posteriors")]
+    for i, o in enumerate(orders):
+        ox = i * bw + 12
+        turn = {c: t + 1 for t, c in enumerate(o["cells"])}
+        kind = {c: k for c, k in zip(o["cells"], o["kinds"])}
+        out.append(text(ox + width * cell / 2, 16,
+                        f'order {chr(65 + i)}   {o["omega"]} boards survive', "rowlbl"))
+        for r in range(height):
+            for c in range(width):
+                idx = r * width + c
+                x, y = ox + c * cell, 28 + r * cell
+                k = kind.get(idx)
+                fill = "var(--ramp-0)"
+                if k == 0: fill = "var(--grid)"
+                elif k == 1: fill = "var(--series-2)"
+                elif k == 2: fill = "var(--series-3)"
+                out.append(
+                    f'<rect class="cellmark" x="{x + 1}" y="{y + 1}" width="{cell - 2}" '
+                    f'height="{cell - 2}" rx="3" fill="{fill}"/>')
+                if idx in turn:
+                    out.append(text(x + cell / 2, y + cell / 2 + 4, str(turn[idx]),
+                                    "cellval hi" if k else "cellval"))
+    # A compact legend, since the full sentence does not fit the plate.
+    out.append(legend(12, h - 10, [("miss", "--grid"), ("hit", "--series-2"),
+                                   ("sank it", "--series-3")], 92))
+    out.append(text(w - 12, h - 9, "number is the shot order", "tick", "end"))
+    out.append("</svg>")
+    return "".join(out)
+
+
 def scaling(rows):
     w, h = 380, 250
     pad_l, pad_r, pad_t, pad_b = 54, 18, 20, 44

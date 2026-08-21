@@ -13,8 +13,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from build_report import (RAMP, board_heatmap, bound_ladder, collapse, esc,
-                          layer_profile, objective_bars, scaling, survival)
+from build_report import (RAMP, blocking_boards, board_heatmap, bound_ladder, collapse,
+                          esc, layer_profile, objective_bars, orbit_map, order_dependence,
+                          scaling, survival)
 
 DARK_TOKENS = """
     color-scheme: dark;
@@ -458,6 +459,38 @@ def build(data, out_path):
       "histogram because it needs no bin choice and makes crossings visible; a crossing "
       "would mean neither policy dominates.</figcaption></figure></section>\n".format(
           m["games"]))
+
+    # objects -----------------------------------------------------------
+    w('<section><div class="col"><div class="act">Interlude / the objects</div>')
+    w("<h2>Drawing the things themselves</h2>")
+    w('<p class="lede">Three structures the engine relies on, drawn instead of '
+      "described.</p></div>")
+
+    w('<figure><div class="plate">')
+    w(orbit_map(prior["counts"], prior["total"], prior["width"], prior["height"]))
+    w("</div><figcaption><b>The 15 dihedral orbits.</b> Reflections and the diagonal fold "
+      "the 100 cells into 15 classes, so any quantity that respects the board's symmetry "
+      "needs 15 evaluations and not 100. Hovering gives each orbit's exact configuration "
+      "count. The prior heatmap earlier in this page is this pattern, "
+      "shaded.</figcaption></figure>")
+
+    w('<figure><div class="plate">')
+    w(blocking_boards(data["blockingWitness"], prior["width"], prior["height"]))
+    w("</div><figcaption><b>Blocking sets.</b> Shoot the marked cells and no placement of "
+      "that length survives untouched, which is what makes beta(L) the number of shots "
+      "guaranteeing first contact with a lone ship of that length. For lengths 2 and 5 a "
+      "greedy cover happens to reach the optimum; for 3 and 4 it does "
+      "not.</figcaption></figure>")
+
+    w('<figure><div class="plate">')
+    w(order_dependence(data["orderDependence"]))
+    w("</div><figcaption><b>Why the record is a sequence.</b> The same seven cells with the "
+      "same seven outcomes, fired in two orders. Announcing the sink on one cell rather "
+      "than the other leaves a different set of boards standing, "
+      f'{data["orderDependence"]["orders"][0]["omega"]} against '
+      f'{data["orderDependence"]["orders"][1]["omega"]}. A cache keyed on the set of shots '
+      "would merge these two positions and return the wrong posterior for one of "
+      "them.</figcaption></figure></section>\n")
 
     # 6 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">Six / the collapse</div>')

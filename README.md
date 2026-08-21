@@ -348,10 +348,18 @@ adds hover readouts. The only external request is the webfont. Colours come from
 a palette validated for colour-vision deficiency in both light and dark themes,
 and the sequential ramp is re-stepped for the dark surface instead of inverted.
 
-Nine figures across six sections: the exact prior heatmap, board-size scaling,
-the lattice layer profile, the bound ladder, the objective comparison, two
-shot-order maps, survival curves, and posterior collapse. The page opens with a
-live engine.
+Twelve figures: the exact prior heatmap, board-size scaling, the lattice layer
+profile, the bound ladder, the objective comparison, two shot-order maps,
+survival curves, posterior collapse, and three that draw the structures the
+engine runs on. The page opens with a live engine.
+
+Those last three exist because a report full of statistics about games never
+shows the objects the engine actually manipulates. They are the 15 dihedral
+orbits, which fold a per-cell computation from 100 evaluations to 15; the
+blocking sets, drawn as the covering that makes beta(L) a measured number and
+not an assertion; and the order-dependence counterexample, two boards carrying the same
+seven shots with the same seven outcomes in different orders, leaving 41 and 53
+configurations standing.
 
 ### The live engine
 

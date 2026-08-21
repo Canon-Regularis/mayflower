@@ -216,6 +216,59 @@ int main(int argc, char** argv) {
     }
     out += "\n  ],\n";
 
+    // ---- blocking certificates -------------------------------------------
+    // A witness set that meets every placement of a lone length-L ship, so the
+    // figure can show the covering instead of asserting the number.
+    out += "  \"blockingWitness\": [";
+    bool firstW = true;
+    for (int L : {2, 3, 4, 5}) {
+        const auto witness = blockingWitness(inst.width, inst.height, L);
+        const auto b = blockingNumber(inst.width, inst.height, L);
+        std::vector<std::uint64_t> cellsOut(witness.begin(), witness.end());
+        if (!firstW) out += ", ";
+        out += "\n    {\"length\": " + std::to_string(L) +
+               ", \"beta\": " + std::to_string(b.blocking) +
+               ", \"greedy\": " + std::to_string(witness.size()) +
+               ", \"cells\": " + jsonArray(cellsOut) + "}";
+        firstW = false;
+    }
+    out += "\n  ],\n";
+    std::fprintf(stderr, "blocking witnesses done\n");
+
+    // ---- the order-dependence counterexample ------------------------------
+    // Two histories over the same shots in a different order, each with the
+    // posterior the engine actually computes for it.
+    {
+        const Instance small(5, 5, {3, 2, 2});
+        struct Shot { int r, c; Outcome o; int len; };
+        const std::vector<std::vector<Shot>> orders = {
+            {{1,1,Outcome::Hit,0},{2,1,Outcome::Hit,0},{3,3,Outcome::Miss,0},
+             {1,2,Outcome::Hit,0},{2,0,Outcome::Sunk,2},{0,0,Outcome::Miss,0},
+             {4,1,Outcome::Miss,0}},
+            {{1,2,Outcome::Hit,0},{1,1,Outcome::Hit,0},{4,1,Outcome::Miss,0},
+             {3,3,Outcome::Miss,0},{2,0,Outcome::Hit,0},{0,0,Outcome::Miss,0},
+             {2,1,Outcome::Sunk,2}},
+        };
+        out += "  \"orderDependence\": {\"width\": 5, \"height\": 5, \"orders\": [";
+        for (std::size_t oi = 0; oi < orders.size(); ++oi) {
+            History h(small);
+            std::vector<std::uint64_t> cellsOut, kinds;
+            for (const Shot& sh : orders[oi]) {
+                h.add(sh.r, sh.c, sh.o, sh.len);
+                cellsOut.push_back(static_cast<std::uint64_t>(sh.r * 5 + sh.c));
+                kinds.push_back(sh.o == Outcome::Miss ? 0u : (sh.o == Outcome::Hit ? 1u : 2u));
+            }
+            const std::uint64_t n = countConfigurations(small, constraintsFrom(small, h)).count;
+            if (oi) out += ", ";
+            out += "\n    {\"omega\": " + std::to_string(n) +
+                   ", \"cells\": " + jsonArray(cellsOut) +
+                   ", \"kinds\": " + jsonArray(kinds) + "}";
+        }
+        out += "\n  ]},\n";
+        std::fprintf(stderr, "order-dependence done\n");
+    }
+
+
     // ---- showcase game: exact posterior collapse --------------------------
     // Full trace for one game only. This is the tier that cannot scale.
     out += "  \"collapse\": [";
