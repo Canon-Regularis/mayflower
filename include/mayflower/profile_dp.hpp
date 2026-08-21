@@ -29,6 +29,7 @@
 // 10 misses cut it to 12.7% of the prior, 30 misses to 0.4%.
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -88,6 +89,67 @@ std::vector<std::uint64_t> occupancyMap(const Instance& inst,
                                         std::uint64_t& total);
 
 std::vector<std::uint64_t> occupancyMap(const Instance& inst, std::uint64_t& total);
+
+// ---------------------------------------------------------------------------
+// Placement flows.
+//
+// Every configuration containing a given ship placement is exactly the set of
+// lattice paths through that placement's START edge, so weighting the edge by
+// F[source] * B[destination] counts them. One forward-backward sweep therefore
+// yields, for every one of the 600 placements on the standard board, how many
+// configurations contain it.
+//
+// Cell occupancy, per-length marginals and the one-ply outcome distribution all
+// fall out of these numbers.
+// ---------------------------------------------------------------------------
+
+struct LatticeFlows {
+    std::uint64_t total = 0;
+    std::vector<std::uint64_t> occupancy;   // per cell, row-major
+    std::vector<std::uint64_t> placement;   // per placement slot
+};
+
+// Slot layout: cell * (2 * nLengths) + (horizontal ? 0 : nLengths) + lengthIndex,
+// where lengthIndex indexes Instance::distinctLengths() and the cell is the
+// ship's origin.
+std::size_t placementSlots(const Instance& inst);
+std::size_t placementIndex(const Instance& inst, int row, int col, int lengthIndex,
+                           bool horizontal);
+
+LatticeFlows analyse(const Instance& inst, const Constraints& constraints);
+
+// ---------------------------------------------------------------------------
+// One-ply outcome distribution.
+//
+// Shooting an unshot cell yields MISS, a plain HIT, or HIT plus SUNK(L). The
+// ship covering the cell sinks exactly when every other cell of it has already
+// been shot, which is a property of the placement, so the split follows from the
+// placement flows.
+//
+// Because the outcome is determined by the hidden board, I(B; Y_c) is just the
+// entropy of this distribution. That makes exact one-step information gain a
+// by-product of the same sweep.
+// ---------------------------------------------------------------------------
+
+struct OutcomeDistribution {
+    std::uint64_t miss = 0;
+    std::uint64_t hit = 0;                    // occupied, ship survives
+    std::array<std::uint64_t, 9> sunk{};      // indexed by ship length
+    bool shootable = false;                   // false for already-shot cells
+
+    [[nodiscard]] std::uint64_t total() const {
+        std::uint64_t t = miss + hit;
+        for (std::uint64_t v : sunk) t += v;
+        return t;
+    }
+    // I(B; Y_c) in bits.
+    [[nodiscard]] double informationBits() const;
+    [[nodiscard]] double hitProbability() const;
+};
+
+std::vector<OutcomeDistribution> outcomeDistribution(const Instance& inst,
+                                                     const History& history,
+                                                     std::uint64_t& total);
 
 // ---------------------------------------------------------------------------
 // Exact uniform sampling by unranking.

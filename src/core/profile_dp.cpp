@@ -1,6 +1,7 @@
 #include "mayflower/profile_dp.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
@@ -365,19 +366,33 @@ std::uint64_t occupancyCount(const Instance& inst, int row, int col) {
 // instead of the whole lattice.
 // ---------------------------------------------------------------------------
 
-std::vector<std::uint64_t> occupancyMap(const Instance& inst,
-                                        const Constraints& constraints,
-                                        std::uint64_t& total) {
+std::size_t placementSlots(const Instance& inst) {
+    return static_cast<std::size_t>(inst.cellCount()) * 2 * inst.distinctLengths().size();
+}
+
+std::size_t placementIndex(const Instance& inst, int row, int col, int lengthIndex,
+                           bool horizontal) {
+    const std::size_t n = inst.distinctLengths().size();
+    return (static_cast<std::size_t>(row * inst.width + col) * 2 + (horizontal ? 0u : 1u)) * n +
+           static_cast<std::size_t>(lengthIndex);
+}
+
+LatticeFlows analyse(const Instance& inst, const Constraints& constraints) {
     inst.validate();
     if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
         throw std::invalid_argument("constraint vector size must equal cellCount()");
 
     const int W = inst.width, H = inst.height;
     const FleetCounter fc(inst);
+    const std::size_t nLengths = fc.lengths.size();
 
     using Layer = std::vector<std::pair<Key, std::uint64_t>>;
 
-    // Forward sweep, snapshotting each column boundary.
+    LatticeFlows out;
+    out.occupancy.assign(static_cast<std::size_t>(inst.cellCount()), 0);
+    out.placement.assign(placementSlots(inst), 0);
+
+    // Forward sweep, snapshotting column boundaries.
     std::vector<Layer> boundary(static_cast<std::size_t>(W) + 1);
     {
         ProfileMap cur(1024), next(1024);
@@ -395,25 +410,23 @@ std::vector<std::uint64_t> occupancyMap(const Instance& inst,
             }
             boundary[static_cast<std::size_t>(col) + 1] = cur.snapshot();
         }
-        total = 0;
         cur.forEach([&](const Key& key, std::uint64_t count) {
-            if (accepting(key, fc)) total += count;
+            if (accepting(key, fc)) out.total += count;
         });
     }
-
-    std::vector<std::uint64_t> occ(static_cast<std::size_t>(inst.cellCount()), 0);
-    if (total == 0) return occ;
+    if (out.total == 0) return out;
 
     // Backward sweep, one column at a time.
     ProfileMap bNext(1024), bCur(1024), replayCur(1024), replayNext(1024);
-    bNext.clear();
     for (const auto& e : boundary[static_cast<std::size_t>(W)])
         if (accepting(e.first, fc)) bNext.add(e.first, 1);
 
     std::vector<Layer> fLayers(static_cast<std::size_t>(H));
+    std::vector<int> lengthSlot(9, -1);
+    for (std::size_t li = 0; li < nLengths; ++li)
+        lengthSlot[static_cast<std::size_t>(fc.lengths[li])] = static_cast<int>(li);
 
     for (int col = W - 1; col >= 0; --col) {
-        // Replay the forward layers inside this column from its left boundary.
         replayCur.load(boundary[static_cast<std::size_t>(col)]);
         for (int row = 0; row < H; ++row) {
             fLayers[static_cast<std::size_t>(row)] = replayCur.snapshot();
@@ -436,18 +449,33 @@ std::vector<std::uint64_t> occupancyMap(const Instance& inst,
             for (const auto& e : F) {
                 std::uint64_t completions = 0;
                 transitions(e.first, ctx, fc, W, H,
-                            [&](const Key& dst, Kind kind, int) {
+                            [&](const Key& dst, Kind kind, int len) {
                     const std::uint64_t b = bNext.get(dst);
                     completions += b;
-                    if (kind == Kind::Empty) emptyFlow += e.second * b;
+                    if (b == 0) return;
+                    if (kind == Kind::Empty) {
+                        emptyFlow += e.second * b;
+                    } else if (kind == Kind::StartH || kind == Kind::StartV) {
+                        const int li = lengthSlot[static_cast<std::size_t>(len)];
+                        out.placement[placementIndex(inst, row, col, li,
+                                                     kind == Kind::StartH)] += e.second * b;
+                    }
                 });
                 if (completions) bCur.add(e.first, completions);
             }
-            occ[cell] = total - emptyFlow;
+            out.occupancy[cell] = out.total - emptyFlow;
             std::swap(bCur, bNext);
         }
     }
-    return occ;
+    return out;
+}
+
+std::vector<std::uint64_t> occupancyMap(const Instance& inst,
+                                        const Constraints& constraints,
+                                        std::uint64_t& total) {
+    LatticeFlows f = analyse(inst, constraints);
+    total = f.total;
+    return f.occupancy;
 }
 
 std::vector<std::uint64_t> occupancyMap(const Instance& inst, std::uint64_t& total) {
@@ -456,6 +484,82 @@ std::vector<std::uint64_t> occupancyMap(const Instance& inst, std::uint64_t& tot
     return occupancyMap(inst, c, total);
 }
 
+double OutcomeDistribution::hitProbability() const {
+    const std::uint64_t t = total();
+    if (t == 0) return 0.0;
+    return static_cast<double>(t - miss) / static_cast<double>(t);
+}
+
+double OutcomeDistribution::informationBits() const {
+    const std::uint64_t t = total();
+    if (t == 0) return 0.0;
+    double h = 0.0;
+    const auto term = [&](std::uint64_t n) {
+        if (n == 0 || n == t) return;
+        const double q = static_cast<double>(n) / static_cast<double>(t);
+        h -= q * std::log2(q);
+    };
+    term(miss);
+    term(hit);
+    for (std::uint64_t v : sunk) term(v);
+    return h;
+}
+
+std::vector<OutcomeDistribution> outcomeDistribution(const Instance& inst,
+                                                     const History& history,
+                                                     std::uint64_t& total) {
+    const Constraints constraints = constraintsFrom(inst, history);
+    const LatticeFlows flows = analyse(inst, constraints);
+    total = flows.total;
+
+    const int W = inst.width, H = inst.height;
+    const std::vector<int> lengths = inst.distinctLengths();
+    std::vector<OutcomeDistribution> out(static_cast<std::size_t>(inst.cellCount()));
+    if (flows.total == 0) return out;
+
+    for (int row = 0; row < H; ++row) {
+        for (int col = 0; col < W; ++col) {
+            const int cell = row * W + col;
+            OutcomeDistribution& d = out[static_cast<std::size_t>(cell)];
+            if (history.shot(cell)) continue;
+            d.shootable = true;
+            d.miss = flows.total - flows.occupancy[static_cast<std::size_t>(cell)];
+
+            for (std::size_t li = 0; li < lengths.size(); ++li) {
+                const int L = lengths[li];
+                for (int k = 0; k < L; ++k) {   // horizontal placements covering the cell
+                    const int c0 = col - k;
+                    if (c0 < 0 || c0 + L > W) continue;
+                    const std::uint64_t f =
+                        flows.placement[placementIndex(inst, row, c0, static_cast<int>(li), true)];
+                    if (f == 0) continue;
+                    bool sinks = true;
+                    for (int t = 0; t < L && sinks; ++t) {
+                        const int other = row * W + c0 + t;
+                        if (other != cell && !history.shot(other)) sinks = false;
+                    }
+                    if (sinks) d.sunk[static_cast<std::size_t>(L)] += f;
+                    else       d.hit += f;
+                }
+                for (int k = 0; k < L; ++k) {   // vertical placements covering the cell
+                    const int r0 = row - k;
+                    if (r0 < 0 || r0 + L > H) continue;
+                    const std::uint64_t f =
+                        flows.placement[placementIndex(inst, r0, col, static_cast<int>(li), false)];
+                    if (f == 0) continue;
+                    bool sinks = true;
+                    for (int t = 0; t < L && sinks; ++t) {
+                        const int other = (r0 + t) * W + col;
+                        if (other != cell && !history.shot(other)) sinks = false;
+                    }
+                    if (sinks) d.sunk[static_cast<std::size_t>(L)] += f;
+                    else       d.hit += f;
+                }
+            }
+        }
+    }
+    return out;
+}
 
 // ---------------------------------------------------------------------------
 // Sampler
