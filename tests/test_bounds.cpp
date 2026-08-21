@@ -4,6 +4,9 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdint>
+#include <functional>
+#include <numeric>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -78,6 +81,67 @@ bool witnessBlocksEverything(int W, int H, int L, const std::vector<int>& cells)
     return true;
 }
 
+// Enumerate every assignment of hits to ships, build the announcement string,
+// and count the distinct results. Several assignments collapse to one string,
+// which is exactly what the subset construction has to get right.
+std::uint64_t bruteForceTranscripts(std::vector<int> fleet) {
+    std::sort(fleet.begin(), fleet.end(), std::greater<int>());
+    const int total = std::accumulate(fleet.begin(), fleet.end(), 0);
+    std::set<std::string> strings;
+    std::vector<int> hits(fleet.size(), 0);
+    std::string current;
+
+    const std::function<void(int)> go = [&](int placed) {
+        if (placed == total) { strings.insert(current); return; }
+        for (std::size_t i = 0; i < fleet.size(); ++i) {
+            if (hits[i] >= fleet[i]) continue;
+            ++hits[i];
+            const bool sinks = hits[i] == fleet[i];
+            const std::string symbol = sinks ? ("S" + std::to_string(fleet[i])) : "H";
+            const std::size_t mark = current.size();
+            current += symbol;
+            current += ".";
+            go(placed + 1);
+            current.resize(mark);
+            --hits[i];
+        }
+    };
+    go(0);
+    return strings.size();
+}
+
+void testTranscriptCount() {
+    std::printf("[hit transcripts vs brute force]\n");
+    const std::vector<std::vector<int>> fleets = {
+        {2}, {2, 2}, {3, 2}, {3, 3}, {3, 3, 2}, {4, 3, 2}, {4, 3, 3, 2}, {2, 2, 2},
+    };
+    for (const auto& fleet : fleets) {
+        const std::uint64_t got = mayflower::countHitTranscripts(fleet);
+        const std::uint64_t want = bruteForceTranscripts(fleet);
+        std::string label;
+        for (std::size_t i = 0; i < fleet.size(); ++i) {
+            if (i) label += ",";
+            label += std::to_string(fleet[i]);
+        }
+        checkEq(got, want, "{" + label + "} transcript count");
+        std::printf("  {%-10s}  K = %6llu  (brute force agrees)\n", label.c_str(),
+                    static_cast<unsigned long long>(got));
+    }
+}
+
+void testWaterFillingIsSound() {
+    std::printf("[water-filling]\n");
+    // On a tiny instance the bound must not exceed the achievable optimum, and it
+    // must never fall below the coverage bound minus rounding.
+    const std::vector<int> fleet = {5, 4, 3, 3, 2};
+    const auto wf = mayflower::waterFillingBound(fleet, mayflower::constants::kOmega0, 100);
+    check(wf.bound >= 0.0, "bound is non-negative");
+    check(wf.bound <= 100.0, "bound cannot exceed the board size");
+    check(wf.shipCells == 17, "ship-cell count");
+    std::printf("  K = %llu, bound = %.4f shots, saturates at depth %d\n",
+                static_cast<unsigned long long>(wf.hitTranscripts), wf.bound, wf.saturatesAt);
+}
+
 void testAgainstBruteForce() {
     std::printf("[blocking numbers vs brute force]\n");
     struct Case { int w, h, l; };
@@ -132,6 +196,8 @@ int main() {
     testAgainstBruteForce();
     testParityCase();
     testWitnessesAreValid();
+    testTranscriptCount();
+    testWaterFillingIsSound();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);

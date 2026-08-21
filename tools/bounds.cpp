@@ -38,6 +38,14 @@ int main() {
     std::printf("                                     E2 < E1, so counting ship cells is the\n");
     std::printf("                                     stronger constraint and E2 is vacuous.\n\n");
 
+    const auto wf = waterFillingBound(inst.fleet, k::kOmega0, inst.cellCount());
+    std::printf("E4  water-filling      %6.4f shots   exact, given the transcript-counting argument\n",
+                wf.bound);
+    std::printf("                                     K = %llu distinct announcement strings,\n",
+                static_cast<unsigned long long>(wf.hitTranscripts));
+    std::printf("                                     the count saturates at depth %d.\n\n",
+                wf.saturatesAt);
+
     std::printf("Blocking numbers beta(L), the fewest shots guaranteeing contact with a lone\n");
     std::printf("length-L ship. Exact, and the DP is checked against brute force on small boards.\n\n");
     std::vector<int> betas;
@@ -84,18 +92,22 @@ int main() {
     std::printf("  and checking it directly means enumerating C(100,19) sets. The bound is\n");
     std::printf("  therefore not claimed.\n\n");
 
-    std::printf("Rungs still to derive: the water-filling bound needs the count of feasible hit\n");
-    std::printf("transcripts, and the max-coverage relaxation needs an exact solver. Neither is\n");
-    std::printf("implemented, so neither is quoted.\n\n");
+    std::printf("Rung still to derive: the max-coverage relaxation needs an exact solver, so the\n");
+    std::printf("estimate near 35 shots that would tighten the interval further is not quoted.\n\n");
 
     std::printf("Measured for comparison (20,000 games, seeded uniform pool):\n");
     std::printf("  random               95.354  [ 95.288,  95.421]\n");
     std::printf("  parity hunt/target   51.535  [ 51.414,  51.656]\n");
     std::printf("  density              44.369  [ 44.246,  44.491]\n\n");
-    std::printf("Unresolved interval: [%d, 44.369], a gap of %.3f shots.\n", k::kCoverageBound,
-                44.369 - k::kCoverageBound);
+    std::printf("Unresolved interval: [%.3f, 44.369], a gap of %.3f shots.\n", wf.bound,
+                44.369 - wf.bound);
+    std::printf("The water-filling rung raises the floor from %d to %.3f, closing %.1f%% of the\n",
+                k::kCoverageBound, wf.bound,
+                100.0 * (wf.bound - k::kCoverageBound) / (44.369 - k::kCoverageBound));
+    std::printf("distance to the best measured policy.\n");
 
-    const bool ok = blocked == 0 && betas[0] == 50 && betas[3] == 20;
+    const bool ok = blocked == 0 && betas[0] == 50 && betas[3] == 20 &&
+                    wf.hitTranscripts == 28560 && wf.bound > 24.0 && wf.bound < 24.1;
     std::printf("\n%s\n", ok ? "OK" : "*** CHECK FAILED ***");
     return ok ? 0 : 1;
 }

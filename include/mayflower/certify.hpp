@@ -34,4 +34,21 @@ BlockingResult blockingNumber(int width, int height, int length);
 // A witness: a set of `blocking` cells meeting every length-L placement.
 std::vector<int> blockingWitness(int width, int height, int length);
 
+// Distinct announcement strings the hits of a full fleet can produce, where each
+// of the ship-cell hits reads either as a plain hit or as one that sinks a ship
+// of a given length.
+std::uint64_t countHitTranscripts(const std::vector<int>& fleet);
+
+// Water-filling lower bound on expected shots. See the derivation in
+// src/certify/transcripts.cpp.
+struct WaterFillingResult {
+    double bound = 0;
+    std::uint64_t hitTranscripts = 0;
+    int shipCells = 0;
+    int saturatesAt = 0;    // depth beyond which the bound contributes nothing
+};
+
+WaterFillingResult waterFillingBound(const std::vector<int>& fleet, std::uint64_t hypotheses,
+                                     int cells);
+
 }  // namespace mayflower
