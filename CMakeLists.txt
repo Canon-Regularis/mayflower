@@ -37,6 +37,9 @@ target_link_libraries(marginals PRIVATE mayflower_core)
 add_executable(sample tools/sample.cpp)
 target_link_libraries(sample PRIVATE mayflower_core)
 
+add_executable(selfplay tools/selfplay.cpp)
+target_link_libraries(selfplay PRIVATE mayflower_core)
+
 enable_testing()
 
 # tests/oracle is header-only and must never link against mayflower_core's
@@ -53,6 +56,14 @@ add_executable(test_sampler tests/test_sampler.cpp)
 target_include_directories(test_sampler PRIVATE tests)
 target_link_libraries(test_sampler PRIVATE mayflower_core)
 
+add_executable(test_outcomes tests/test_outcomes.cpp)
+target_include_directories(test_outcomes PRIVATE tests)
+target_link_libraries(test_outcomes PRIVATE mayflower_core)
+
+add_executable(test_harness tests/test_harness.cpp)
+target_include_directories(test_harness PRIVATE tests)
+target_link_libraries(test_harness PRIVATE mayflower_core)
+
 add_test(NAME counting COMMAND test_counting)
 set_tests_properties(counting PROPERTIES LABELS "fast" TIMEOUT 300)
 
@@ -61,6 +72,12 @@ set_tests_properties(observations PROPERTIES LABELS "fast" TIMEOUT 300)
 
 add_test(NAME sampler COMMAND test_sampler)
 set_tests_properties(sampler PROPERTIES LABELS "fast" TIMEOUT 600)
+
+add_test(NAME outcomes COMMAND test_outcomes)
+set_tests_properties(outcomes PROPERTIES LABELS "pr" TIMEOUT 900)
+
+add_test(NAME harness COMMAND test_harness)
+set_tests_properties(harness PROPERTIES LABELS "pr" TIMEOUT 900)
 
 add_test(NAME omega0 COMMAND omega0)
 set_tests_properties(omega0 PROPERTIES LABELS "pr" TIMEOUT 900)

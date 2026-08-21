@@ -47,9 +47,15 @@ public:
         time_[c] = next_++;
         outcome_[c] = outcome;
         sunkLength_[c] = sunkLength;
+        sequence_.push_back(row * width_ + col);
     }
 
     [[nodiscard]] int  size() const { return next_; }
+    // Cells in the order they were shot.
+    [[nodiscard]] const std::vector<int>& sequence() const { return sequence_; }
+    [[nodiscard]] int sunkLength(int cell) const {
+        return sunkLength_[static_cast<std::size_t>(cell)];
+    }
     [[nodiscard]] bool shot(int cell) const { return time_[static_cast<std::size_t>(cell)] >= 0; }
     [[nodiscard]] Outcome outcome(int cell) const { return outcome_[static_cast<std::size_t>(cell)]; }
     [[nodiscard]] int  shotTime(int cell) const { return time_[static_cast<std::size_t>(cell)]; }
@@ -89,6 +95,7 @@ public:
 private:
     int width_;
     int next_ = 0;
+    std::vector<int>      sequence_;
     std::vector<int>      time_;        // -1 when unshot
     std::vector<Outcome>  outcome_;
     std::vector<int>      sunkLength_;

@@ -17,7 +17,8 @@ coverage is what binds.
 
 ## Status
 
-Milestones M0 to M2 are complete.
+Milestones M0 to M2 are complete, and M3 has its harness, board bank and cheap
+policy tier.
 
 | component | |
 | --- | --- |
@@ -28,12 +29,15 @@ Milestones M0 to M2 are complete.
 | `tools/omega0` | Reproduces \|Omega_0\| and the lattice statistics |
 | `tools/marginals` | The exact prior heatmap and the 15 D4 orbit integers |
 | `tools/sample` | Uniform board generation, checked against the exact marginals |
+| `tools/selfplay` | Paired self-play over a seeded pool, with correlations and confidence intervals |
+| `outcomeDistribution` | Exact one-ply {MISS, HIT, SUNK(L)} split and information gain per cell |
+| `include/mayflower/policy.hpp` | Random, parity hunt/target, density (cheap tier), and exact-posterior policies |
 | `tests/oracle/` | Independent brute-force enumerator and ordered simulator |
 | `python/oracle.py` | Order-aware reference model |
 
-Still to come: the policy layer, the bound ladder, lookahead and the endgame
-solver, the optimisation ladder, and the report pipeline. The no-touching
-ruleset is not implemented.
+Still to come: the bound ladder, lookahead and the endgame solver, the
+optimisation ladder, and the report pipeline. The no-touching ruleset is not
+implemented.
 
 ## Build
 
@@ -107,6 +111,45 @@ Board-size scaling of the same fleet, all by the same DP:
 Uniform board generation draws 19,767 boards/s after a 20 s build. Over 200,000
 draws the largest per-cell deviation from the exact marginal is 0.0022, which is
 sampling noise at that sample size.
+
+## Self-play baseline
+
+One seeded pool of uniform boards, 20,000 games, every policy on the same boards.
+
+```text
+policy                   mean      sd     95% CI on mean  median    p95   best  worst
+random                 95.354   4.800  [ 95.288,  95.421]      97    100     57    100
+parity-hunt-target     51.535   8.710  [ 51.414,  51.656]      53     64     21     71
+density                44.369   8.868  [ 44.246,  44.491]      44     61     20     85
+```
+
+The random shooter is the harness self-test: shooting uniformly, the game ends on
+the last of the 17 ship cells, so `E[T] = k(N+1)/(k+1) = 95.3889`. Measured
+95.3544, inside the interval.
+
+That replaces the 44-to-61 spread of unreconciled baselines with one number and a
+stated interval. The gap from the coverage bound to the density policy is 27.4
+shots.
+
+Correlation across the shared pool turns out to be bimodal, which changes how
+sample sizes must be planned:
+
+```text
+                       random  parity-hunt  density(10)  density(50)
+random                  1.000       -0.013       -0.012       -0.011
+parity-hunt-target     -0.013        1.000       -0.012       -0.012
+density(b=10)          -0.012       -0.012        1.000        0.923
+density(b=50)          -0.011       -0.012        0.923        1.000
+```
+
+Within the density family the correlation is 0.923 and the paired interval is
+12.9 times narrower than the unpaired one. Against the stochastic hunt policy the
+correlation is zero, because that policy's variance comes from its own draws
+and not from board difficulty, so pairing buys nothing there. Sample sizes
+have to be derived per comparison from the measured correlation.
+
+A side result: the density policy's hit bonus saturates. Bonus 50 and bonus 200
+produce byte-identical play, correlation exactly 1.000.
 
 ## Validation
 
