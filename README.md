@@ -30,6 +30,8 @@ policy tier.
 | `tools/marginals` | The exact prior heatmap and the 15 D4 orbit integers |
 | `tools/sample` | Uniform board generation, checked against the exact marginals |
 | `tools/selfplay` | Paired self-play over a seeded pool, with correlations and confidence intervals |
+| `tools/bounds` | The lower-bound ladder, each rung labelled by how firmly it is established |
+| `src/certify/blocking.cpp` | Exact blocking numbers by a row-sweep DP |
 | `outcomeDistribution` | Exact one-ply {MISS, HIT, SUNK(L)} split and information gain per cell |
 | `include/mayflower/policy.hpp` | Random, parity hunt/target, density (cheap tier), and exact-posterior policies |
 | `tests/oracle/` | Independent brute-force enumerator and ordered simulator |
@@ -111,6 +113,43 @@ Board-size scaling of the same fleet, all by the same DP:
 Uniform board generation draws 19,767 boards/s after a 20 s build. Over 200,000
 draws the largest per-cell deviation from the exact marginal is 0.0022, which is
 sampling noise at that sample size.
+
+## Bounds
+
+```text
+E1  coverage    17.00 shots   exact: all 17 ship cells must be shot
+E2  entropy     13.08 shots   exact: 33.8088 bits over an outcome alphabet of 6
+```
+
+E2 falls below E1, so counting ship cells is the stronger constraint and the
+entropy bound is vacuous. Identifying the board is cheap; hitting all of it is
+what costs.
+
+Blocking numbers, the fewest shots guaranteeing contact with a lone length-L
+ship, computed exactly by a row-sweep DP and checked against brute force on
+eleven small boards:
+
+```text
+beta(2) = 50    largest 2-free set 50     (the checkerboard)
+beta(3) = 33    largest 3-free set 67
+beta(4) = 24    largest 4-free set 76
+beta(5) = 20    largest 5-free set 80
+```
+
+Greedy set cover reaches beta exactly for L=2 and L=5, and misses for L=3 (34
+against 33) and L=4 (26 against 24).
+
+Two independent components cross-check here: a 20-cell blocking set for the
+5-ship, fed to the counting DP as misses, drives the hypothesis space to exactly
+zero, and restoring any single one of those cells revives it.
+
+That establishes that some 20-cell set meets every configuration. It does not
+establish that no 19-cell set does, so the adversarial worst-case bound of
+`17 + beta(5) - 1 = 36` that would follow from the other direction is not
+claimed. The water-filling and max-coverage rungs are not implemented and are
+therefore not quoted either.
+
+Unresolved interval: `[17, 44.369]`, a gap of 27.4 shots.
 
 ## Self-play baseline
 

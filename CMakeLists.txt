@@ -24,7 +24,8 @@ if(MF_NATIVE AND CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 add_library(mayflower_core
-  src/core/profile_dp.cpp)
+  src/core/profile_dp.cpp
+  src/certify/blocking.cpp)
 target_include_directories(mayflower_core PUBLIC include)
 target_link_libraries(mayflower_core PUBLIC mf_flags)
 
@@ -39,6 +40,9 @@ target_link_libraries(sample PRIVATE mayflower_core)
 
 add_executable(selfplay tools/selfplay.cpp)
 target_link_libraries(selfplay PRIVATE mayflower_core)
+
+add_executable(bounds tools/bounds.cpp)
+target_link_libraries(bounds PRIVATE mayflower_core)
 
 enable_testing()
 
@@ -64,6 +68,10 @@ add_executable(test_harness tests/test_harness.cpp)
 target_include_directories(test_harness PRIVATE tests)
 target_link_libraries(test_harness PRIVATE mayflower_core)
 
+add_executable(test_bounds tests/test_bounds.cpp)
+target_include_directories(test_bounds PRIVATE tests)
+target_link_libraries(test_bounds PRIVATE mayflower_core)
+
 add_test(NAME counting COMMAND test_counting)
 set_tests_properties(counting PROPERTIES LABELS "fast" TIMEOUT 300)
 
@@ -78,6 +86,12 @@ set_tests_properties(outcomes PROPERTIES LABELS "pr" TIMEOUT 900)
 
 add_test(NAME harness COMMAND test_harness)
 set_tests_properties(harness PROPERTIES LABELS "pr" TIMEOUT 900)
+
+add_test(NAME bounds COMMAND test_bounds)
+set_tests_properties(bounds PROPERTIES LABELS "pr" TIMEOUT 1800)
+
+add_test(NAME bounds_tool COMMAND bounds)
+set_tests_properties(bounds_tool PROPERTIES LABELS "pr" TIMEOUT 1800)
 
 add_test(NAME omega0 COMMAND omega0)
 set_tests_properties(omega0 PROPERTIES LABELS "pr" TIMEOUT 900)
