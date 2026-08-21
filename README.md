@@ -34,6 +34,8 @@ platform, and M7 and M8 have a working report pipeline.
 | `tools/bounds` | The lower-bound ladder, each rung labelled by how firmly it is established |
 | `src/certify/blocking.cpp` | Exact blocking numbers by a row-sweep DP |
 | `src/certify/transcripts.cpp` | Announcement-string counting and the water-filling bound |
+| `src/lattice/spectrum.cpp` | The transfer matrix diagonalised: free energy, density, correlation length |
+| `tools/spectrum` | The hard-rod strip as a lattice gas |
 | `src/search/exact_solver.cpp` | Exact optimal play on small instances |
 | `tools/optimal` | Optimal play and the measured optimality gap of each objective |
 | `src/core/profile_dp_fast.cpp` | Ladder rung V1: packed key, epoch tagging, batched prefetch |
@@ -239,6 +241,47 @@ stochastic policy from the board's identity gives each board its own policy
 randomisation, which measures a family of policies each paired with its own board
 and duly scored below the single-policy optimum. Policy seeds are now drawn from
 a stream independent of the board pool.
+
+## The transfer matrix
+
+The counting DP carries a fleet counter, which ties it to one fixed fleet and
+makes the column operator depend on how much of the fleet is spent. Drop the
+counter, give each rod a fugacity, and the operator becomes the same at every
+column. That is a transfer matrix, and Battleships turns out to be the
+fixed-fleet corner of a hard-rod lattice gas.
+
+`lambda_max` comes from power iteration where applying the operator is one column
+sweep of the same DP, so no matrix is ever formed. The subdominant eigenvalue
+falls out of the convergence rate, at a lag of two, because for these strips it
+is negative and the correction alternates sign.
+
+Three checks, none of which the code was given:
+
+```text
+1-row dimer strip counts Fibonacci
+  lambda      1.618033988750
+  golden      1.618033988750
+
+eigenvalue against a finite patch, k=4 H=4
+  lambda      3.7545140595
+  Z(49)/Z(48) 3.7545140612
+
+entropy per site extrapolated to two dimensions, f(H) = f - a/H
+  extrapolated 0.6627990
+  published    0.6627989727      difference 2.4e-10
+```
+
+That last one is the monomer-dimer entropy of the square lattice, reached from
+strip widths 2 to 12 with no input beyond the sweep itself.
+
+The strip results also separate by rod length: for dimers and trimers the
+subdominant eigenvalue is negative, so correlations alternate column to column,
+while for 4-mers and 5-mers it is not. Correlation lengths run from 0.6 columns
+for dimers to about 4 for 5-mers.
+
+For reference, the Battleship instance is 0.2343 nats per site, well below the
+free gas, because fixing the rod count is exactly what turns a thermodynamic
+problem into a counting one.
 
 ## Self-play baseline
 

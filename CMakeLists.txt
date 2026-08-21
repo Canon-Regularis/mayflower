@@ -29,7 +29,8 @@ add_library(mayflower_core
   src/certify/blocking.cpp
   src/certify/transcripts.cpp
   src/search/exact_solver.cpp
-  src/platform/bench_platform_win.cpp)
+  src/platform/bench_platform_win.cpp
+  src/lattice/spectrum.cpp)
 target_include_directories(mayflower_core PUBLIC include)
 target_link_libraries(mayflower_core PUBLIC mf_flags)
 
@@ -50,6 +51,9 @@ target_link_libraries(bounds PRIVATE mayflower_core)
 
 add_executable(optimal tools/optimal.cpp)
 target_link_libraries(optimal PRIVATE mayflower_core)
+
+add_executable(spectrum tools/spectrum.cpp)
+target_link_libraries(spectrum PRIVATE mayflower_core)
 
 add_executable(export_pool tools/export_pool.cpp)
 target_link_libraries(export_pool PRIVATE mayflower_core)
@@ -96,6 +100,10 @@ add_executable(test_ladder tests/test_ladder.cpp)
 target_include_directories(test_ladder PRIVATE tests)
 target_link_libraries(test_ladder PRIVATE mayflower_core)
 
+add_executable(test_spectrum tests/test_spectrum.cpp)
+target_include_directories(test_spectrum PRIVATE tests)
+target_link_libraries(test_spectrum PRIVATE mayflower_core)
+
 add_test(NAME counting COMMAND test_counting)
 set_tests_properties(counting PROPERTIES LABELS "fast" TIMEOUT 300)
 
@@ -122,6 +130,12 @@ set_tests_properties(exact PROPERTIES LABELS "pr" TIMEOUT 900)
 
 add_test(NAME ladder COMMAND test_ladder)
 set_tests_properties(ladder PROPERTIES LABELS "pr" TIMEOUT 900)
+
+add_test(NAME spectrum COMMAND test_spectrum)
+set_tests_properties(spectrum PROPERTIES LABELS "pr" TIMEOUT 900)
+
+add_test(NAME spectrum_tool COMMAND spectrum)
+set_tests_properties(spectrum_tool PROPERTIES LABELS "pr" TIMEOUT 900)
 
 add_test(NAME omega0 COMMAND omega0)
 set_tests_properties(omega0 PROPERTIES LABELS "pr" TIMEOUT 900)
