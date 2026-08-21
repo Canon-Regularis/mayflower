@@ -34,7 +34,10 @@ policy tier.
 | `src/certify/blocking.cpp` | Exact blocking numbers by a row-sweep DP |
 | `src/certify/transcripts.cpp` | Announcement-string counting and the water-filling bound |
 | `src/search/exact_solver.cpp` | Exact optimal play on small instances |
-| `tools/optimal` | Optimal play and the measured optimality gap of each heuristic |
+| `tools/optimal` | Optimal play and the measured optimality gap of each objective |
+| `src/core/profile_dp_fast.cpp` | Ladder rung V1: packed key, epoch tagging, batched prefetch |
+| `src/platform/` | Core-topology detection and thread pinning for benchmarking |
+| `bench/dp_bench` | The ladder under the measurement protocol |
 | `outcomeDistribution` | Exact one-ply {MISS, HIT, SUNK(L)} split and information gain per cell |
 | `include/mayflower/policy.hpp` | Random, parity hunt/target, density (cheap tier), and exact-posterior policies |
 | `tests/oracle/` | Independent brute-force enumerator and ordered simulator |
@@ -192,6 +195,33 @@ The density heuristic is exactly optimal on four of the seven instances and
 within 0.14 shots on the rest. Parity hunt/target gives up between 0.5 and 1.9
 shots. The optimal first shot is an off-corner cell in every case.
 
+### Which objective, measured exactly
+
+The same machinery prices the three shot-selection objectives against the true
+optimum. Totals are integers over the enumerated space, so these gaps are exact
+and contain no sampling error.
+
+```text
+instance      cfgs    optimal   max-P(hit)     gap     max-info      gap
+4x4 {3,2}      264   8.753788     8.909091  0.1553    12.662879   3.9091
+4x4 {2,2}      224   8.669643     8.741071  0.0714    11.401786   2.7321
+4x4 {3}         16   5.625000     5.750000  0.1250    10.500000   4.8750
+4x3 {2}         17   5.117647     5.117647  0.0000     6.588235   1.4706
+3x3 {2}         12   4.500000     4.500000  0.0000     5.500000   1.0000
+5x4 {3}         22   6.227273     6.227273  0.0000    13.090909   6.8636
+```
+
+On 4x4 {3,2} the totals are 2311 shots for optimal play and 2352 for greedy
+max-P(hit), a difference of exactly 41 over 264 configurations.
+
+Two results fall out. Maximising hit probability is exactly optimal on three of
+six instances and never worse than 0.16 shots, so it is a strong heuristic but
+provably not optimal. Maximising one-step information gain is far worse, by whole
+shots: on 5x4 {3} it takes 13.09 against an optimum of 6.23, more than double.
+
+That is the coverage-limited thesis, now measured and no longer just argued. Identifying the
+board is cheap, and shots spent identifying it instead of covering it are wasted.
+
 The solver's own check is that the optimum can never exceed what a concrete
 policy achieves. That invariant caught a real measurement bug: seeding a
 stochastic policy from the board's identity gives each board its own policy
@@ -237,6 +267,52 @@ have to be derived per comparison from the measured correlation.
 
 A side result: the density policy's hit bonus saturates. Bonus 50 and bonus 200
 produce byte-identical play, correlation exactly 1.000.
+
+## Optimisation ladder
+
+V0 is the original DP, frozen as the reference. V1 packs the state into one
+uint64 (30 bits of profile, 3 of vertical run, 5 of fleet index), tags slot
+liveness with an epoch in the spare high bits so one 64-bit compare settles both
+liveness and key equality and clearing a layer is an increment, pre-sizes the
+table, and stages successors so their probes prefetch and overlap.
+
+The last change is the one that matters. A table-size sweep puts the floor at
+about 76 ns/edge at 16 MB, rising at 8 MB (probe chains at load factor 0.72) and
+at 64 MB (address translation), which is one DRAM round trip per edge. The DP is
+memory-latency bound, so the lever is memory-level parallelism, with a faster
+hash being beside the point.
+
+```text
+speedup     1.94x  (ratio of minima)
+noise floor 1.39x  (A/A control)
+counts and edge totals identical between rungs
+```
+
+Measured four times: 1.99, 1.85, 1.88, 1.94. `tests/test_ladder.cpp` holds the
+rungs to bit-identical output across 197 checks, including 180 fuzzed ordered
+histories and the pinned order-dependence cases.
+
+### Measurement protocol
+
+Topology detection reports the machine as 4 logical processors in efficiency
+class 1 (2 P-cores with SMT) and 8 in class 0 (E-cores), which matches the part
+independently.
+
+A run pins to one logical processor of a stated class, warms up, interleaves the
+rungs ABBA, and runs an A/A control that measures the noise floor by comparing a
+rung against itself. The headline is the ratio of minima: the computation is
+deterministic, so every deviation above the fastest run is interference, and the
+fastest run is the closest estimate of true cost. Medians and the full spread
+ship alongside. A speedup smaller than the measured noise floor is refused, never
+reported, and the harness has already exercised that refusal.
+
+**Absolute throughput on this machine is not currently trustworthy.** The same
+workload has been observed between 2.45 s and 204 s, and pinning did not remove
+the spread, so this machine appears to carry persistent background load. Ratios
+between rungs reproduce; absolute ns/edge figures do not. An earlier revision of
+this file quoted 7.4 M edges/s and 135.7 ns/edge from an unpinned run; that
+number is withdrawn, and no absolute figure replaces it until the ladder is
+measured on a quiet machine.
 
 ## Validation
 

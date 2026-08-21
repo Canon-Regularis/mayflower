@@ -73,6 +73,18 @@ CountResult countConfigurations(const Instance& inst,
 
 CountResult countConfigurations(const Instance& inst);
 
+// Optimisation ladder. V0 is countConfigurations above, kept frozen as the
+// reference. V1 packs the state into one uint64, tags liveness with an epoch in
+// the spare high bits, and pre-sizes the table. Both must agree exactly;
+// tests/test_ladder.cpp enforces it.
+//
+// The packed key needs 3*height + 3 + fleetBits bits and reserves 16 for the
+// epoch, so tall boards fall outside it. Check first.
+bool fastPathSupports(const Instance& inst);
+CountResult countConfigurationsFast(const Instance& inst, const Constraints& constraints,
+                                    std::size_t capacityHint = 0);
+CountResult countConfigurationsFast(const Instance& inst);
+
 // Exact occupancy marginal for one cell, as a constrained count.
 //
 // Cost is O(cells) full counts for a whole heatmap, or 15 under D4 symmetry.

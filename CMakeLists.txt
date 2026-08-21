@@ -25,9 +25,11 @@ endif()
 
 add_library(mayflower_core
   src/core/profile_dp.cpp
+  src/core/profile_dp_fast.cpp
   src/certify/blocking.cpp
   src/certify/transcripts.cpp
-  src/search/exact_solver.cpp)
+  src/search/exact_solver.cpp
+  src/platform/bench_platform_win.cpp)
 target_include_directories(mayflower_core PUBLIC include)
 target_link_libraries(mayflower_core PUBLIC mf_flags)
 
@@ -48,6 +50,9 @@ target_link_libraries(bounds PRIVATE mayflower_core)
 
 add_executable(optimal tools/optimal.cpp)
 target_link_libraries(optimal PRIVATE mayflower_core)
+
+add_executable(dp_bench bench/dp_bench.cpp)
+target_link_libraries(dp_bench PRIVATE mayflower_core)
 
 enable_testing()
 
@@ -81,6 +86,10 @@ add_executable(test_exact tests/test_exact.cpp)
 target_include_directories(test_exact PRIVATE tests)
 target_link_libraries(test_exact PRIVATE mayflower_core)
 
+add_executable(test_ladder tests/test_ladder.cpp)
+target_include_directories(test_ladder PRIVATE tests)
+target_link_libraries(test_ladder PRIVATE mayflower_core)
+
 add_test(NAME counting COMMAND test_counting)
 set_tests_properties(counting PROPERTIES LABELS "fast" TIMEOUT 300)
 
@@ -104,6 +113,9 @@ set_tests_properties(bounds_tool PROPERTIES LABELS "pr" TIMEOUT 1800)
 
 add_test(NAME exact COMMAND test_exact)
 set_tests_properties(exact PROPERTIES LABELS "pr" TIMEOUT 900)
+
+add_test(NAME ladder COMMAND test_ladder)
+set_tests_properties(ladder PROPERTIES LABELS "pr" TIMEOUT 900)
 
 add_test(NAME omega0 COMMAND omega0)
 set_tests_properties(omega0 PROPERTIES LABELS "pr" TIMEOUT 900)
