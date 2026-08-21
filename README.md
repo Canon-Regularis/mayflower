@@ -36,6 +36,7 @@ platform, and M7 and M8 have a working report pipeline.
 | `src/certify/transcripts.cpp` | Announcement-string counting and the water-filling bound |
 | `src/lattice/spectrum.cpp` | The transfer matrix diagonalised: free energy, density, correlation length |
 | `tools/spectrum` | The hard-rod strip as a lattice gas |
+| `python/bond_dimension.py` | How small the boundary state could be |
 | `src/search/exact_solver.cpp` | Exact optimal play on small instances |
 | `tools/optimal` | Optimal play and the measured optimality gap of each objective |
 | `src/core/profile_dp_fast.cpp` | Ladder rung V1: packed key, epoch tagging, batched prefetch |
@@ -282,6 +283,45 @@ for dimers to about 4 for 5-mers.
 For reference, the Battleship instance is 0.2343 nats per site, well below the
 free gas, because fixing the rod count is exactly what turns a thermodynamic
 problem into a counting one.
+
+## Is the boundary state minimal?
+
+The sweep is a matrix-product contraction, so the number of distinct boundary
+states is its bond dimension. Cutting the board between two columns and building
+the compatibility matrix `M[l][r]` over left and right parts gives three numbers
+that are easy to confuse:
+
+- `rank(M)`, the Schmidt rank, a floor for any linear representation. Reaching it
+  may need negative or fractional weights, which a counting sweep cannot use.
+- distinct rows of `M`, the Myhill-Nerode count. Two left parts with identical
+  rows admit the same completions, so a counting sweep may merge them and add
+  their counts. This is the true floor for a state-based sweep.
+- what the engine carries: the residual extension per row plus the fleet counter.
+
+```text
+instance         cut   rank(M)   nerode   engine   ratio
+5x5 {3,2,2}        1        38       60      113    1.88
+                   2        43       76      156    2.05
+                   3        36       67      156    2.33
+5x5 {4,3,2}        2        71      178      451    2.53
+                   3        48      101      258    2.55
+4x4 {3,2}          2        13       15       42    2.80
+```
+
+The engine's state runs 1.86 to 2.80 times larger than the Nerode minimum across
+every cut and instance tested, with no sign of the ratio growing. So the answer is
+no: the representation is sufficient and not minimal, and there is roughly a
+factor of two of algorithmic headroom that no amount of cache tuning would reach.
+
+What stops the engine claiming it is that its state is a sufficient statistic
+computable from the cells already swept, while a Nerode class is defined by the
+completions that follow. Turning the second into something computable locally is
+open.
+
+A hand-checkable case anchors the method: one length-4 ship on a 4x4 board, cut
+after the first column. Every left part that already holds the ship behaves the
+same way afterwards, so two classes suffice, and the script reports rank 2,
+nerode 2, engine 6.
 
 ## Self-play baseline
 

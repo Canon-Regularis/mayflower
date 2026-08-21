@@ -137,6 +137,14 @@ set_tests_properties(spectrum PROPERTIES LABELS "pr" TIMEOUT 900)
 add_test(NAME spectrum_tool COMMAND spectrum)
 set_tests_properties(spectrum_tool PROPERTIES LABELS "pr" TIMEOUT 900)
 
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME bond_dimension
+           COMMAND ${Python3_EXECUTABLE} bond_dimension.py --quick
+           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
+  set_tests_properties(bond_dimension PROPERTIES LABELS "fast" TIMEOUT 300)
+endif()
+
 add_test(NAME omega0 COMMAND omega0)
 set_tests_properties(omega0 PROPERTIES LABELS "pr" TIMEOUT 900)
 
