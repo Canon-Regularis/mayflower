@@ -8,6 +8,7 @@
 
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
+#include "mayflower/notouch.hpp"
 #include "mayflower/profile_dp.hpp"
 
 namespace {
@@ -71,6 +72,37 @@ int main() {
                     static_cast<unsigned long long>(k::kMaxAccumulator),
                     std::log2(static_cast<double>(k::kMaxAccumulator)),
                     64 - static_cast<int>(std::ceil(std::log2(static_cast<double>(k::kMaxAccumulator)))));
+        std::printf("\n");
+    }
+
+    // The printed-puzzle ruleset on the same board and fleet. Distinct ships may
+    // not share an edge or a corner, which needs the previous column's occupancy
+    // in the boundary state. Both counts come from the same sweep skeleton.
+    {
+        const auto t0 = std::chrono::steady_clock::now();
+        const mayflower::CountResult nt = mayflower::countNoTouch(std10);
+        const double seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        const bool ok = nt.count == k::kOmegaNoTouch;
+
+        std::printf("Ships may not touch (the printed puzzle rule):\n");
+        std::printf("  Expected  %llu\n", static_cast<unsigned long long>(k::kOmegaNoTouch));
+        std::printf("  Computed  %llu\n", static_cast<unsigned long long>(nt.count));
+        std::printf("  VERDICT   %s\n", ok ? "MATCH" : "*** MISMATCH ***");
+        std::printf("  %.3f s, peak %zu states, %llu edges, %d-bit key\n", seconds,
+                    nt.peakStates, static_cast<unsigned long long>(nt.edges),
+                    mayflower::noTouchKeyBits(std10));
+        std::printf("  H                                  %.4f bits\n",
+                    std::log2(static_cast<double>(nt.count)));
+        std::printf("  share of the touching count        %.4f\n",
+                    static_cast<double>(nt.count) / static_cast<double>(r.count));
+        std::printf("  Forbidding contact removes %.2f%% of the space and %.1f%% of the\n",
+                    100.0 * (1.0 - static_cast<double>(nt.count) / static_cast<double>(r.count)),
+                    100.0 * (1.0 - static_cast<double>(nt.edges) /
+                                       static_cast<double>(r.edges)));
+        std::printf("  lattice. The boundary state gained H+1 bits and the sweep still got\n");
+        std::printf("  cheaper, because the adjacency rule kills more profiles than the extra\n");
+        std::printf("  bits create.\n");
         std::printf("\n");
     }
 
