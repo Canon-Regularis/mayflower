@@ -17,7 +17,8 @@ coverage is what binds.
 
 ## Status
 
-Milestones M0 to M4 are complete apart from the max-coverage bound. M5 has exact
+Milestones M0 to M4 are complete apart from the max-coverage bound, both rulesets
+included. M5 has exact
 optimal play on small instances, M6 has its first ladder rung and measurement
 platform, M7 and M8 have a working report pipeline, and M9 is complete: the
 transfer-matrix spectrum, the bond-dimension question, the adaptive adversary,
@@ -27,6 +28,7 @@ the Bimaru and salvo breakdowns.
 | component | |
 | --- | --- |
 | `src/core/profile_dp.cpp` | The DP, parameterised over board size and fleet |
+| `src/core/notouch.cpp` | The same sweep under the rule that ships may not touch |
 | `include/mayflower/observations.hpp` | Ordered observation record and the placement predicate it induces |
 | `occupancyMap` | Every cell marginal from one forward and one backward sweep |
 | `Sampler` | Exact uniform sampling by unranking; the board generator |
@@ -59,9 +61,8 @@ the Bimaru and salvo breakdowns.
 
 Still to come: expectimax with pruning and the order-aware transposition table,
 the parallel and cache-blocked ladder rungs, the belief scrubber in the report,
-and the max-coverage bound. The no-touching ruleset is not implemented, and
-neither is a weighted sweep, which is what the noisy and opponent-prior
-posteriors would need to reach 10x10.
+and the max-coverage bound. There is no weighted sweep, which is what the noisy
+and opponent-prior posteriors would need to reach 10x10.
 
 ## Build
 
@@ -190,8 +191,9 @@ zero, and restoring any single one of those cells revives it.
 That establishes that some 20-cell set meets every configuration. It does not
 establish that no 19-cell set does, so the adversarial worst-case bound of
 `17 + beta(5) - 1 = 36` that would follow from the other direction is not
-claimed. The water-filling and max-coverage rungs are not implemented and are
-therefore not quoted either.
+claimed. On instances small enough to solve outright, `tools/m9 adversary`
+computes the worst case exactly instead of bounding it. The max-coverage rung
+is not implemented and is therefore not quoted.
 
 Unresolved interval: `[24.088, 44.369]`, a gap of 20.3 shots. Water-filling
 closes 25.9% of the distance from the coverage bound to the best measured policy.
@@ -664,14 +666,67 @@ exact `uint64` counts throughout and a noisy posterior needs floating-point
 weights on the transitions, so it is a second pass rather than a flag. Everything
 above is exact by enumeration and stops where enumeration stops.
 
+## The printed-puzzle ruleset
+
+Ships that may not touch, not even at a corner, is a different counting problem
+rather than a filter on this one.
+
+The profile the standard sweep carries cannot express it. Sweeping column-major,
+the decided 8-neighbours of cell `(r,c)` are
+
+```text
+(r-1, c-1)   (r, c-1)   (r+1, c-1)   (r-1, c)
+```
+
+and the residual extensions determine none of them: a horizontal ship ending at
+column `c-1` leaves `ext[r] == 0` while `(r,c-1)` is occupied. So the boundary
+state carries the previous column's occupancy.
+
+It costs `H+1` bits rather than `2H`. Previous and current column share one
+`H`-bit word, because the slot `prev[r]` vacates is exactly the slot `cur[r]`
+wants; only `prev[r-1]` needs saving, in a single carry bit reset at each column
+start. The standard instance packs into 49 bits.
+
+Every 8-adjacent pair has one member decided strictly before the other, so
+checking a cell against its decided neighbours as it is placed catches every
+touching pair, and ship halos need no representation at all. The transitions
+differ only in which neighbour belongs to the same ship:
+
+```text
+horizontal continuation   check (r-1,c-1), (r+1,c-1), (r-1,c)   [(r,c-1) is ours]
+vertical continuation     check (r-1,c-1), (r,c-1), (r+1,c-1)   [(r-1,c) is ours]
+either start              check all four
+empty                     check nothing
+```
+
+| quantity | ships may touch | ships may not touch |
+| --- | --- | --- |
+| configurations | 15,046,987,768 | 1,925,751,392 |
+| entropy | 33.8088 bits | 30.8428 bits |
+| lattice edges | 28,743,172 | 18,322,562 |
+| peak states | 376,735 | 342,892 |
+| wall time | 7.78 s | 2.03 s |
+
+Forbidding contact removes 87.20% of the space and 36.3% of the lattice. The
+boundary state gained `H+1` bits and the sweep still got faster, because the
+adjacency rule kills more profiles than the extra bits create.
+
+The twelve-case small-board ladder agrees across four implementations sharing no
+code: this sweep, its brute-force oracle, an independently written row-major
+transfer matrix that decides a whole row at a time, and that author's own
+enumerator. The 10x10 constant itself is past enumeration and rests on the two
+DPs, which were written from the rules alone and agree exactly.
+`tests/test_notouch` also checks 240 random constraint patterns against
+enumeration, so the constrained counts are covered and not only the prior.
+
 ## Known limitations
 
 - The `Sampler` holds backward counts for every layer, about 397 MB on the
   standard instance. Batch generation, walking many ranks through one replayed
   column at a time, would remove that; it is not needed until board banks get
   large.
-- The no-touching ruleset is not implemented, so `tools/omega0` reports only the
-  touching count.
+- The no-touching sweep packs its state into one uint64, so it stops at about
+  13 rows. `noTouchSupports()` reports whether an instance fits.
 - There is no weighted sweep, so the noisy-channel and opponent-prior posteriors
   are exact only where enumeration reaches, currently 9,024 boards.
 - The belief MDP caps near 300 configurations, which is what stops the adaptive
