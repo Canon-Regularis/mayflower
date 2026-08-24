@@ -19,7 +19,10 @@ coverage is what binds.
 
 Milestones M0 to M4 are complete apart from the max-coverage bound. M5 has exact
 optimal play on small instances, M6 has its first ladder rung and measurement
-platform, and M7 and M8 have a working report pipeline.
+platform, M7 and M8 have a working report pipeline, and M9 is complete: the
+transfer-matrix spectrum, the bond-dimension question, the adaptive adversary,
+constraint density, the adaptivity gap, complexity and related work, noise, and
+the Bimaru and salvo breakdowns.
 
 | component | |
 | --- | --- |
@@ -37,6 +40,8 @@ platform, and M7 and M8 have a working report pipeline.
 | `src/lattice/spectrum.cpp` | The transfer matrix diagonalised: free energy, density, correlation length |
 | `tools/spectrum` | The hard-rod strip as a lattice gas |
 | `python/bond_dimension.py` | How small the boundary state could be |
+| `docs/COMPLEXITY.md` | Which step makes this hard, with the references checked |
+| `tools/m9` | Adversary, constraint density, adaptivity, Bimaru, salvo, noise |
 | `src/search/exact_solver.cpp` | Exact optimal play on small instances |
 | `tools/optimal` | Optimal play and the measured optimality gap of each objective |
 | `src/core/profile_dp_fast.cpp` | Ladder rung V1: packed key, epoch tagging, batched prefetch |
@@ -53,8 +58,10 @@ platform, and M7 and M8 have a working report pipeline.
 | `python/oracle.py` | Order-aware reference model |
 
 Still to come: expectimax with pruning and the order-aware transposition table,
-the parallel and cache-blocked ladder rungs, the live playable engine in the
-report, and the max-coverage bound. The no-touching ruleset is not implemented.
+the parallel and cache-blocked ladder rungs, the belief scrubber in the report,
+and the max-coverage bound. The no-touching ruleset is not implemented, and
+neither is a weighted sweep, which is what the noisy and opponent-prior
+posteriors would need to reach 10x10.
 
 ## Build
 
@@ -498,6 +505,165 @@ the ship, so the rest of it was already hit. A predicate requiring only
 case, and two orderings of one shot multiset give 41 and 53. Memo keys must be
 order-aware. See [docs/ORDER_DEPENDENCE.md](docs/ORDER_DEPENDENCE.md).
 
+## What feedback is worth, and where the engine stops
+
+`tools/m9` holds the results that reuse the engine rather than extend it. Run a
+section by name (`adversary`, `density`, `adaptivity`, `bimaru`, `salvo`,
+`noisy`) or all of them with no argument. Full output in
+[docs/M9_RESULTS.txt](docs/M9_RESULTS.txt).
+
+### A hider who never commits
+
+Expected shots assume the board was fixed before play. Against a hider who
+answers each shot to hurt most while staying consistent, the chance node becomes
+a maximum and the answer is a worst case with no distributional assumption in it.
+
+```text
+instance      boards  E[T] committed  W* adaptive     gap  beta(L)
+3x3 {2}           12          4.5000           7     2.50        4
+4x3 {2}           17          5.1176           8     2.88        6
+4x4 {2}           24          6.0833          10     3.92        8
+4x4 {3}           16          5.6250           8     2.38        5
+5x4 {3}           22          6.2273           9     2.77        6
+4x4 {2,2}        224          8.6696          12     3.33        -
+4x4 {3,2}        264          8.7538          12     3.25        -
+```
+
+`W*` is an integer, as a worst case over a finite tree must be. For a lone ship
+it sits 2 or 3 above `beta(L)`, the shots that guarantee first contact, and the
+margin is not a fixed offset because the adversary also picks the orientation.
+
+### The DP has no hard region
+
+Feed both the sweep and a backtracking search records that no board produced,
+then vary how constrained they are. The search shows the easy-hard-easy profile
+of random satisfiability; the sweep does not.
+
+```text
+8x8 {5,4,3,3,2}, 34 cells shot, 40 records per point
+  hits  feasible  DP mean us  search nodes
+     0     37.5%        4695             3
+     4     25.0%        4525           339
+     8      5.0%        2057           548
+    12      0.0%        1848           188
+    20      0.0%        1105             0
+```
+
+Search cost peaks in the middle at roughly 180 times either end. DP cost falls
+monotonically, because a counting sweep never backtracks: it pays for the whole
+lattice up front and the record only shrinks it. The worst record costs less
+than the empty one, which is the argument for exact inference in one measurement.
+
+All 6,720 records were decided by both engines and the answers agreed on every
+one, which cross-checks the DP against an independent implementation on records
+no board generated.
+
+### What feedback buys
+
+A non-adaptive player fixes the cell order in advance. The clearing time then
+depends on each prefix as a set, so
+
+```text
+E[T] = n - (1/N) sum_t c(S_t)
+```
+
+and the best of the `n!` orders is the best chain through the subset lattice, a
+`2^n` DP. Both optima are exact.
+
+```text
+instance      boards  adaptive  fixed order  greedy order     gap   ratio
+3x3 {2}           12    4.5000       5.9167        6.0000  1.4167  1.3148
+4x4 {3}           16    5.6250      10.8750       11.0000  5.2500  1.9333
+5x4 {3}           22    6.2273      13.0455       13.3636  6.8182  2.0949
+4x4 {2,2}        224    8.6696      12.4866       12.5312  3.8170  1.4403
+4x4 {3,2}        264    8.7538      13.1098       13.3182  4.3561  1.4976
+5x4 {3,2}        510         -      15.8902       16.1765       -       -
+5x4 {4,3,2}     2520         -      18.1437       18.5147       -       -
+```
+
+Feedback is worth most against a lone ship, 2.09x on 5x4 {3}. Fleets score
+lower, 1.44 and 1.50, because what feedback buys is the right to skip cells and a
+fleet covering more of the board leaves fewer worth skipping. On 5x4 the
+fixed-order cost runs 13.05, 15.89 and 18.14 of 20 cells as the fleet grows.
+
+Greedy stays within 3.2% of the optimal order everywhere here. The 4-approximation
+people quote belongs to min-sum set cover, where a set is paid for at its first
+covered element; this objective waits for the last one, which is the `K(S) = |S|`
+case and carries no such guarantee. See [docs/COMPLEXITY.md](docs/COMPLEXITY.md).
+
+### Where the approach stops
+
+Three ways, all measured rather than asserted.
+
+**Row sums.** Bimaru gives the occupied count of every row and column. Sweeping
+column-major, a column sum lives and dies inside its column and multiplies the
+state by `H+1`. A row sum accumulates across the whole sweep, so all `H` counters
+ride along:
+
+```text
+instance        boards   cut  row vectors  column sums
+4x4 {3,2}          264     3           82            5
+5x5 {4,3,2}       9024     4          882            6
+6x6 {4,3,2}      53624     4         2338            7
+6x6 {4,3,3,2}   633432     5         8675            7
+```
+
+For 10x10 the half-board cut admits at most 5,044,260 row vectors. Times a peak
+of 376,735 profile states that is 1.9e12, and the sweep is finished. The two
+halves of Bimaru's input split cleanly, and transposing only swaps which half is
+free.
+
+**Salvo.** Fire `k` cells, hear how many hit, not which. A turn answering `h` of
+`k` splits the record `C(k,h)` ways and the belief becomes a union of constraint
+sets, each needing its own sweep.
+
+```text
+5x5 {4,3,2}, 9024 boards, 60 games per row
+    k    turns     split  peak union  sweeps/game  vs classic
+    1     23.6       0.0           1         23.6         1.0
+    2     11.5       5.8          19         59.8         2.6
+    3      7.9       5.8          63        190.7         8.1
+    4      5.9       4.9         124        479.8        20.3
+    5      4.8       4.5         260       1363.1        56.2
+```
+
+`k=2` costs 2.6x and survives. Real salvo opens at one shot per surviving ship,
+so it starts at `k=5` and 56x. The union stays far under the product of the
+fan-outs because most assignments contradict the fleet within a turn or two, and
+nothing in the profile state merges branches: two of them disagree about cells
+the sweep has already passed.
+
+**Noise.** Flip every answer with probability `eps`. A board's likelihood after
+`t` shots is `(1-eps)^(t-m) eps^m` in its mismatch count, so
+
+```text
+P(B | O)  proportional to  exp(-beta m),   beta = ln((1-eps)/eps)
+```
+
+The posterior is Boltzmann in the mismatch count and noise is a temperature, with
+the truthful game as the zero-temperature limit. Verified against the likelihood
+product to 1.7e-15.
+
+```text
+5x5 {4,3,2}, H0 = 13.1396 bits
+    eps     beta  capacity  shots used   bound  ratio
+ 0.0005     7.60    0.9938        36.4    13.2   2.76
+ 0.0500     2.94    0.7136        67.4    18.4   3.66
+ 0.1000     2.20    0.5310        98.4    24.7   3.98
+ 0.3000     0.85    0.1187       472.2   110.7   4.27
+```
+
+Each shot is one use of a channel of capacity `1 - H(eps)`, so `H0 / (1 - H(eps))`
+is a floor. Measured cost sits 2.8 to 4.3 times above it, and the ratio flattens
+once noise dominates: the capacity term captures the noise scaling correctly, and
+the leftover constant is the price of shooting at a uniform random cell instead
+of an informative one.
+
+Scaling any of this to 10x10 needs a weighted sweep. The counting path carries
+exact `uint64` counts throughout and a noisy posterior needs floating-point
+weights on the transitions, so it is a second pass rather than a flag. Everything
+above is exact by enumeration and stops where enumeration stops.
+
 ## Known limitations
 
 - The `Sampler` holds backward counts for every layer, about 397 MB on the
@@ -506,6 +672,10 @@ order-aware. See [docs/ORDER_DEPENDENCE.md](docs/ORDER_DEPENDENCE.md).
   large.
 - The no-touching ruleset is not implemented, so `tools/omega0` reports only the
   touching count.
+- There is no weighted sweep, so the noisy-channel and opponent-prior posteriors
+  are exact only where enumeration reaches, currently 9,024 boards.
+- The belief MDP caps near 300 configurations, which is what stops the adaptive
+  column of the adaptivity table well before the subset lattice runs out.
 
 ## Layout
 
@@ -516,7 +686,7 @@ src/core/            the DP, marginals, sampler
 tools/               omega0, marginals, sample
 tests/oracle/        independent brute-force enumerator and ordered simulator
 python/              order-aware reference model
-docs/                correctness hazards
+docs/                correctness hazards, complexity notes, M9 results
 ```
 
 ## Licence

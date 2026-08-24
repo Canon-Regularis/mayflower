@@ -1,0 +1,236 @@
+Mayflower, mathematical extensions
+==================================
+
+1. The adaptive adversary
+-------------------------
+
+A committed hider fixes the board first, so the searcher faces an average.
+An adaptive hider answers each shot to hurt most while staying consistent
+with everything already said, so the searcher faces a worst case that no
+distributional assumption can soften.
+
+instance       boards E[T] committed W* adaptive      gap  beta(L)
+3x3 {2}            12         4.5000           7     2.50        4
+4x3 {2}            17         5.1176           8     2.88        6
+4x4 {2}            24         6.0833          10     3.92        8
+4x4 {3}            16         5.6250           8     2.38        5
+5x4 {3}            22         6.2273           9     2.77        6
+4x4 {2,2}         224         8.6696          12     3.33        -
+4x4 {3,2}         264         8.7538          12     3.25        -
+
+For a lone ship the worst case sits above beta(L), the shots that guarantee
+first contact, by the cost of finishing the ship once found. The margin is
+not a fixed offset: the adversary also chooses which way the ship runs.
+
+2. Constraint density
+---------------------
+
+Records here are synthetic: cells are chosen at random and a fraction of
+them declared hits, with no board behind the choice. Sweeping that fraction
+carries the record from easily satisfiable to plainly impossible, and the
+cost of deciding which peaks in between.
+
+  6x6 {4,3,2}, 18 cells shot, 400 records per point
+    hits   feasible median |Omega|  DP mean us    DP states search nodes     capped
+       0      75.5%             21          60          908            2          0
+       1      74.5%             18          52          911            9          0
+       2      72.2%             13          45          908           26          0
+       3      60.2%              6          41          867           48          0
+       4      42.0%              6          33          769           66          0
+       5      25.0%              4          30          965           77          0
+       6       8.5%              3          28          821           61          0
+       7       2.5%              2          25          808           36          0
+       8       0.0%              0          22          700           17          0
+       9       0.5%              1          29          700           12          0
+      10       0.0%              0          21          808            0          0
+      11       0.0%              0          18          687            0          0
+      12       0.0%              0          21          680            0          0
+  DP cost peaks at 0 hits, search cost peaks at 5 hits
+
+  7x7 {5,4,3,2}, 24 cells shot, 120 records per point
+    hits   feasible median |Omega|  DP mean us    DP states search nodes     capped
+       0      39.2%             13        1102        10596            2          0
+       2      46.7%             24         581         9368           21          0
+       4      40.8%              6         426         9883          130          0
+       6      22.5%              9         411         7939          174          0
+       8      10.8%              5         445        11724          140          0
+      10       1.7%              3         358        11062          103          0
+      12       0.0%              0         532         8198           32          0
+      14       0.0%              0         732         8235           15          0
+      16       0.0%              0         281         5353            0          0
+  DP cost peaks at 0 hits, search cost peaks at 6 hits
+
+  8x8 {5,4,3,3,2}, 34 cells shot, 40 records per point
+    hits   feasible median |Omega|  DP mean us    DP states search nodes     capped
+       0      37.5%             15        4061        48915            3          0
+       2      32.5%             12        5977        22125           28          0
+       4      25.0%             36        1637        36193          339          0
+       6      17.5%             21        2244        51960          440          0
+       8       5.0%              4        1805        32536          548          0
+      10       5.0%              1        1582        37994          531          0
+      12       0.0%              0        1455        26820          188          0
+      14       0.0%              0        1530        21158          103          0
+      16       0.0%              0        1538        34018           19          0
+      18       0.0%              0        1445        23569            0          0
+      20       0.0%              0        1227        15077            0          0
+  DP cost peaks at 2 hits, search cost peaks at 8 hits
+
+  Below the threshold nearly every record is satisfiable and the sweep
+  carries a wide state set to the end. Above it nearly none are, and the
+  sweep dies early. The expensive records sit at the edge, which is the
+  easy-hard-easy shape random satisfiability shows.
+
+3. The adaptivity gap
+---------------------
+
+What does feedback buy? A non-adaptive player fixes the order of the cells
+before play and never looks at an answer. An adaptive player sees each
+outcome before choosing again. Both are solved exactly here, so the ratio
+is a measurement rather than a bound.
+
+instance      boards    adaptive fixed order greedy order      gap   ratio
+3x3 {2}           12      4.5000      5.9167      6.0000   1.4167  1.3148
+4x3 {2}           17      5.1176      7.4706      7.7059   2.3529  1.4598
+4x4 {2}           24      6.0833      9.5833      9.7500   3.5000  1.5753
+4x4 {3}           16      5.6250     10.8750     11.0000   5.2500  1.9333
+4x4 {4}            8      6.0000     11.7500     11.8750   5.7500  1.9583
+5x4 {3}           22      6.2273     13.0455     13.3636   6.8182  2.0949
+4x4 {2,2}        224      8.6696     12.4866     12.5312   3.8170  1.4403
+4x4 {3,2}        264      8.7538     13.1098     13.3182   4.3561  1.4976
+5x4 {3,2}        510           -     15.8902     16.1765        -       -
+5x4 {4,3,2}     2520           -     18.1437     18.5147        -       -
+
+The fixed order column is the exact optimum over all n! orders, reached
+through the subset lattice: an order's clearing time depends on its prefixes
+as sets, so the best order is the best chain, and 2^n beats n!.
+
+Feedback is worth most against a lone ship. One 3-ship on 5x4 costs 6.23
+shots with feedback and 13.05 without, a ratio of 2.09, the largest here.
+Fleets score lower: 4x4 {2,2} gives 1.44 and 4x4 {3,2} gives 1.50. What
+feedback buys is the right to skip cells, and a fleet covering more of the
+board leaves fewer worth skipping.
+
+The fixed-order column shows the same thing from the other side. On 5x4 it
+runs 13.05, 15.89 and 18.14 of 20 cells as the fleet grows, so a player
+with no feedback ends up shooting nearly the whole board. That column stops
+at 20 cells because the lattice is 2^n; the adaptive column stops at 264
+boards, which is the belief MDP and a much harder wall.
+
+The greedy order, taking the cell that covers the most configurations still
+uncovered, lands within 3.2% of the optimum on every instance here. The
+familiar 4-approximation covers min-sum set cover, where a set is paid for
+at its first covered element. This objective waits for the last one, which
+is the K(S)=|S| case of generalized min-sum set cover and carries no such
+guarantee, so 3.2% is an observation about these instances. See
+docs/COMPLEXITY.md.
+
+4. What row and column sums cost
+--------------------------------
+
+Bimaru is this board with the occupied count of every row and column given.
+The sweep runs column-major, so a column sum is settled inside its column:
+one counter of 0..H, checked and cleared at the boundary, multiplying the
+state by H+1. A row sum accumulates the whole way across, so every row
+counter has to be carried at once, and the multiplier is the number of
+distinct partial row-count vectors a cut can see.
+
+instance        boards    cut    row vectors    column sums
+4x4 {3,2}          264      3             82              5
+5x5 {4,3,2}       9024      4            882              6
+6x6 {4,3,2}      53624      4           2338              7
+6x6 {4,3,3,2}   633432      5           8675              7
+
+  10x10 {5,4,3,3,2} at the half-board cut, upper bound 5044260 row vectors.
+  The peak profile state is 376,735, so the product is 1.9e12 and the sweep
+  is finished.
+
+  So the two halves of Bimaru's input split cleanly. Column sums are nearly
+  free in this sweep direction and row sums are not, and transposing the
+  sweep only swaps which half is which. Sevenster's NP-completeness proof
+  for the puzzle sits on the other side of that split, so the plan's
+  estimate of one day and a hundred lines held only for the free half.
+
+5. Salvo, and where the approach stops
+--------------------------------------
+
+Firing k cells and hearing only how many hit leaves the record ambiguous
+whenever the answer is neither 0 nor k. The posterior becomes a union of
+constraint sets, each needing its own sweep. Dead branches drop out, so the
+growth rate is worth measuring rather than bounding.
+
+Shots are random here, so what follows is a property of the rules and not
+of a policy. Classic play is the k=1 row, where the answer names the cell.
+
+  4x4 {3,2}, 264 boards, 60 games per row
+    k    turns     split  peak union  sweeps/game vs classic   capped
+    1     13.7       0.0           1         13.7        1.0        0
+    2      7.3       3.8           9         28.2        1.9        0
+    3      4.9       3.5          17         47.6        3.2        0
+    4      3.8       3.2          41        103.6        6.8        0
+    5      2.9       2.7          45        165.8       11.4        0
+
+  5x5 {4,3,2}, 9024 boards, 60 games per row
+    k    turns     split  peak union  sweeps/game vs classic   capped
+    1     23.6       0.0           1         23.6        1.0        0
+    2     11.5       5.8          19         59.8        2.6        0
+    3      7.9       5.8          63        190.7        8.1        0
+    4      5.9       4.9         124        479.8       20.3        0
+    5      4.8       4.5         260       1363.1       56.2        0
+
+  k=1 is one sweep per shot by definition. k=2 costs a few times that and
+  survives. Past that the per-turn fan-out is C(k,h), which peaks at the
+  middle of the row, and it multiplies across turns.
+
+  The union stays well under the product of the fan-outs because most
+  assignments contradict the fleet within a turn or two, which is the only
+  reason k=2 is affordable. Nothing in the profile state merges branches:
+  two of them disagree about cells the sweep has already passed, so the
+  boundary carries no record of the disagreement.
+
+  Real salvo fires one shot per surviving ship, so it opens at k=5 and
+  shortens as ships sink. The k=5 row prices the opening.
+
+6. Noisy Battleship
+-------------------
+
+Every answer is flipped with probability eps. The likelihood of a board
+after t shots is (1-eps)^(t-m) eps^m in its mismatch count m, so the
+posterior is exp(-beta m) with beta = ln((1-eps)/eps). Noise is a
+temperature and the truthful game is the zero-temperature limit.
+
+Shots pick a uniform cell with replacement, so each one is a single use of
+a binary symmetric channel and the capacity bound applies directly.
+
+  4x4 {3,2}, 264 boards, H0 = 8.0444 bits, 400 trials per row
+      eps     beta   capacity  shots used      bound    ratio
+   0.0005     7.60     0.9938        20.0        8.1     2.47
+   0.0100     4.60     0.9192        27.0        8.8     3.09
+   0.0500     2.94     0.7136        40.3       11.3     3.57
+   0.1000     2.20     0.5310        57.2       15.1     3.77
+   0.2000     1.39     0.2781       111.3       28.9     3.85
+   0.3000     0.85     0.1187       255.7       67.8     3.77
+
+  5x5 {4,3,2}, 9024 boards, H0 = 13.1396 bits, 60 trials per row
+      eps     beta   capacity  shots used      bound    ratio
+   0.0005     7.60     0.9938        36.4       13.2     2.76
+   0.0100     4.60     0.9192        57.7       14.3     4.04
+   0.0500     2.94     0.7136        67.4       18.4     3.66
+   0.1000     2.20     0.5310        98.4       24.7     3.98
+   0.2000     1.39     0.2781       202.8       47.3     4.29
+   0.3000     0.85     0.1187       472.2      110.7     4.27
+
+  Boltzmann identity, 4x4 {3,2} after 25 noisy shots at eps=0.13:
+  largest posterior difference between the likelihood product and
+  exp(-beta m)/Z is 1.665e-15.
+
+  Shots used sits above the capacity bound at every noise level, which is
+  expected: a uniform random cell is not a capacity-achieving input. The
+  ratio is the interesting column, since it separates what the channel
+  costs from what the shot choice costs.
+
+  Scaling this to 10x10 needs a weighted sweep, which the engine does not
+  have. The counting path carries uint64 exact counts throughout, and a
+  noisy posterior needs floating-point weights on the transitions, so it
+  is a second pass rather than a flag. Everything above is exact by
+  enumeration and stops where enumeration stops.
+
