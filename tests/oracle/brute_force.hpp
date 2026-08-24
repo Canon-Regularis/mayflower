@@ -88,6 +88,122 @@ inline std::uint64_t recurse(const std::vector<Group>& groups, std::size_t gi, i
 
 }  // namespace detail
 
+// ---------------------------------------------------------------------------
+// No-touching variant: distinct ships may not share an edge or a corner.
+//
+// Enumeration again, with one extra test. Dilating a placement by its
+// 8-neighbourhood turns "touches or overlaps anything already placed" into a
+// single mask intersection, and since adjacency is symmetric, testing the new
+// ship's dilation against the placed cells is enough.
+
+inline Mask dilate(Mask m, int W, int H) {
+    Mask out = 0;
+    for (int r = 0; r < H; ++r)
+        for (int c = 0; c < W; ++c) {
+            if (((m >> (r * W + c)) & Mask{1}) == 0) continue;
+            for (int dr = -1; dr <= 1; ++dr)
+                for (int dc = -1; dc <= 1; ++dc) {
+                    const int nr = r + dr, nc = c + dc;
+                    if (nr >= 0 && nr < H && nc >= 0 && nc < W)
+                        out |= Mask{1} << (nr * W + nc);
+                }
+        }
+    return out;
+}
+
+namespace detail {
+
+struct HaloGroup {
+    std::vector<Mask> options;
+    std::vector<Mask> dilated;
+    int multiplicity = 0;
+};
+
+inline std::vector<HaloGroup> buildHaloGroups(int W, int H, std::vector<int> fleet) {
+    std::sort(fleet.begin(), fleet.end());
+    std::vector<HaloGroup> groups;
+    for (std::size_t i = 0; i < fleet.size();) {
+        std::size_t j = i;
+        while (j < fleet.size() && fleet[j] == fleet[i]) ++j;
+        HaloGroup g;
+        g.options = placements(W, H, fleet[i]);
+        g.multiplicity = static_cast<int>(j - i);
+        g.dilated.reserve(g.options.size());
+        for (Mask m : g.options) g.dilated.push_back(dilate(m, W, H));
+        groups.push_back(std::move(g));
+        i = j;
+    }
+    return groups;
+}
+
+inline std::uint64_t recurseNoTouch(const std::vector<HaloGroup>& groups, std::size_t gi,
+                                    int need, std::size_t from, Mask occupied) {
+    if (gi == groups.size()) return 1;
+    if (need == 0) {
+        const std::size_t next = gi + 1;
+        return recurseNoTouch(groups, next,
+                              next < groups.size() ? groups[next].multiplicity : 0,
+                              0, occupied);
+    }
+    const HaloGroup& g = groups[gi];
+    std::uint64_t total = 0;
+    for (std::size_t i = from; i + static_cast<std::size_t>(need) <= g.options.size(); ++i) {
+        if ((g.dilated[i] & occupied) != 0) continue;
+        total += recurseNoTouch(groups, gi, need - 1, i + 1, occupied | g.options[i]);
+    }
+    return total;
+}
+
+}  // namespace detail
+
+inline std::uint64_t bruteForceCountNoTouch(int W, int H, std::vector<int> fleet) {
+    const std::vector<detail::HaloGroup> groups =
+        detail::buildHaloGroups(W, H, std::move(fleet));
+    if (groups.empty()) return 1;
+    return detail::recurseNoTouch(groups, 0, groups[0].multiplicity, 0, Mask{0});
+}
+
+// The same count restricted to boards agreeing with a per-cell pattern.
+// `constraint[cell]` is 0 for free, 1 for must-be-empty, 2 for must-be-occupied.
+inline std::uint64_t bruteForceCountNoTouchConstrained(
+    int W, int H, std::vector<int> fleet, const std::vector<int>& constraint) {
+    const std::vector<detail::HaloGroup> groups = detail::buildHaloGroups(W, H, fleet);
+    Mask banned = 0, required = 0;
+    for (int i = 0; i < W * H; ++i) {
+        if (constraint[static_cast<std::size_t>(i)] == 1) banned |= Mask{1} << i;
+        if (constraint[static_cast<std::size_t>(i)] == 2) required |= Mask{1} << i;
+    }
+    // Enumerate every legal board and filter. Slow, and that is the point.
+    std::uint64_t total = 0;
+    struct Walker {
+        const std::vector<detail::HaloGroup>& groups;
+        Mask banned, required;
+        std::uint64_t& total;
+        void go(std::size_t gi, int need, std::size_t from, Mask occupied) {
+            if (gi == groups.size()) {
+                if ((occupied & banned) == 0 && (required & ~occupied) == 0) ++total;
+                return;
+            }
+            if (need == 0) {
+                const std::size_t next = gi + 1;
+                go(next, next < groups.size() ? groups[next].multiplicity : 0, 0, occupied);
+                return;
+            }
+            const detail::HaloGroup& g = groups[gi];
+            for (std::size_t i = from; i + static_cast<std::size_t>(need) <= g.options.size();
+                 ++i) {
+                if ((g.dilated[i] & occupied) != 0) continue;
+                if ((g.options[i] & banned) != 0) continue;
+                go(gi, need - 1, i + 1, occupied | g.options[i]);
+            }
+        }
+    };
+    if (groups.empty()) return 1;
+    Walker w{groups, banned, required, total};
+    w.go(0, groups[0].multiplicity, 0, Mask{0});
+    return total;
+}
+
 inline std::uint64_t bruteForceCount(int W, int H, std::vector<int> fleet) {
     const std::vector<detail::Group> groups = detail::buildGroups(W, H, std::move(fleet));
     if (groups.empty()) return 1;
