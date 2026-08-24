@@ -746,4 +746,4 @@ docs/                correctness hazards, complexity notes, M9 results
 
 ## Licence
 
-Apache-2.0.
+[Apache-2.0.](LICENSE.md)
