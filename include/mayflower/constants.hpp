@@ -39,6 +39,12 @@ inline constexpr std::uint64_t kOmega0 = 15'046'987'768ull;
 // The same count with the 3-ships labelled. Published figures usually quote this.
 inline constexpr std::uint64_t kOmega0Labelled = 2 * kOmega0;   // 30,093,975,536
 
+// The same board and fleet under the printed-puzzle rule, where distinct ships
+// may not share an edge or a corner. Reproduced by src/core/notouch.cpp and by
+// literal enumeration on the small-board ladder.
+inline constexpr std::uint64_t kOmegaNoTouch = 1'925'751'392ull;
+static_assert(kOmegaNoTouch < kOmega0, "forbidding contact cannot add configurations");
+
 inline constexpr double kPriorEntropyBits = 33.8088;            // log2(kOmega0)
 
 // Sum over cells of P(cell occupied) under the uniform prior, exactly 17.
