@@ -52,6 +52,12 @@ target_link_libraries(bounds PRIVATE mayflower_core)
 add_executable(optimal tools/optimal.cpp)
 target_link_libraries(optimal PRIVATE mayflower_core)
 
+add_executable(m9 tools/m9.cpp)
+target_link_libraries(m9 PRIVATE mayflower_core)
+
+add_test(NAME m9 COMMAND m9 selftest)
+set_tests_properties(m9 PROPERTIES LABELS "fast")
+
 add_executable(spectrum tools/spectrum.cpp)
 target_link_libraries(spectrum PRIVATE mayflower_core)
 
