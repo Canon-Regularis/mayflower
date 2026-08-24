@@ -18,6 +18,18 @@
 
 namespace mayflower {
 
+// Who the hider is.
+//
+// Committed: the board was fixed before play and is uniform over the surviving
+// set, so a chance node averages. The answer is expected shots.
+//
+// Adaptive: the hider never commits and answers each shot to hurt most, subject
+// to staying consistent with everything already said. A chance node becomes a
+// maximum and the answer is the worst case, the Renyi-Ulam version of the game.
+// Since the adversary is free to keep any surviving board alive, this is exactly
+// the guarantee a searcher can make with no distributional assumption at all.
+enum class Adversary { Committed, Adaptive };
+
 struct ExactSolution {
     double expectedShots = 0;
     int optimalFirstShot = -1;
@@ -26,7 +38,8 @@ struct ExactSolution {
     double seconds = 0;
 };
 
-ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit = 60000);
+ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit = 60000,
+                           Adversary adversary = Adversary::Committed);
 
 // Expected shots for a policy, averaged over every configuration. Exact, with no
 // sampling, because the whole space is enumerated.

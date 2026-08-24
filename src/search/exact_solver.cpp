@@ -95,9 +95,12 @@ struct StateHash {
 
 struct Solver {
     const World& w;
+    Adversary adversary;
     std::unordered_map<StateKey, double, StateHash> memo;
 
-    explicit Solver(const World& world) : w(world) { memo.reserve(1 << 16); }
+    Solver(const World& world, Adversary adv) : w(world), adversary(adv) {
+        memo.reserve(1 << 16);
+    }
 
     // Every remaining ship cell must still be shot, so the mean count of unshot
     // ship cells is a floor on the expected remaining shots.
@@ -142,19 +145,36 @@ struct Solver {
             // Cheap floor first: if even the optimistic value cannot beat the
             // incumbent, skip the cell without recursing.
             double optimistic = 1.0;
-            for (const auto& branch : branches)
-                optimistic += (static_cast<double>(branch.second.size()) / n) *
-                              floorOf(nextShot, branch.second);
+            if (adversary == Adversary::Committed) {
+                for (const auto& branch : branches)
+                    optimistic += (static_cast<double>(branch.second.size()) / n) *
+                                  floorOf(nextShot, branch.second);
+            } else {
+                double worst = 0;
+                for (const auto& branch : branches)
+                    worst = std::max(worst, floorOf(nextShot, branch.second));
+                optimistic += worst;
+            }
             if (optimistic >= best) continue;
 
-            double expected = 1.0;
-            for (const auto& branch : branches) {
-                expected += (static_cast<double>(branch.second.size()) / n) *
-                            value(nextShot, branch.second, nullptr);
-                if (expected >= best) break;
+            double score = 1.0;
+            if (adversary == Adversary::Committed) {
+                for (const auto& branch : branches) {
+                    score += (static_cast<double>(branch.second.size()) / n) *
+                             value(nextShot, branch.second, nullptr);
+                    if (score >= best) break;
+                }
+            } else {
+                // The hider answers to hurt most, so the chance node maximises.
+                double worst = 0;
+                for (const auto& branch : branches) {
+                    worst = std::max(worst, value(nextShot, branch.second, nullptr));
+                    if (1.0 + worst >= best) break;
+                }
+                score = 1.0 + worst;
             }
-            if (expected < best) {
-                best = expected;
+            if (score < best) {
+                best = score;
                 bestAt = cell;
             }
         }
@@ -167,14 +187,15 @@ struct Solver {
 
 }  // namespace
 
-ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit) {
+ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit,
+                           Adversary adversary) {
     const auto t0 = std::chrono::steady_clock::now();
     const World w = buildWorld(inst, configurationLimit);
 
     std::vector<ConfigId> all(w.occupancy.size());
     for (std::size_t i = 0; i < all.size(); ++i) all[i] = static_cast<ConfigId>(i);
 
-    Solver solver(w);
+    Solver solver(w, adversary);
     ExactSolution out;
     out.configurations = w.occupancy.size();
     out.expectedShots = solver.value(0, all, &out.optimalFirstShot);
