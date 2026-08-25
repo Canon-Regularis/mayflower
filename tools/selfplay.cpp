@@ -16,6 +16,7 @@
 
 #include "mayflower/constants.hpp"
 #include "mayflower/game.hpp"
+#include "mayflower/folds.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/policy.hpp"
 
@@ -126,7 +127,31 @@ int main(int argc, char** argv) {
     // Boards are drawn once and reused, so every policy sees the same pool.
     std::vector<std::vector<ShipPlacement>> boards;
     boards.reserve(static_cast<std::size_t>(games));
-    for (int i = 0; i < games; ++i) boards.push_back(bank.board(static_cast<std::uint64_t>(i)));
+    // Fold discipline. Board ids are drawn in order and kept only if they fall
+    // in the requested fold, so a run never sees data it is not entitled to.
+    // The default is TRAIN, because an unqualified run is exploratory.
+    //
+    // TEST is refused here rather than guarded, since the guard belongs with
+    // the analysis: python/stats.py checks experiments/audit.log for an unseal
+    // and this tool has no business deciding that on its own.
+    const std::string foldArg = argc > 3 ? argv[3] : "train";
+    const Fold fold = foldFromName(foldArg);
+    if (fold == Fold::Test) {
+        std::printf("TEST is sealed. Record an unseal in experiments/audit.log and run the\n"
+                    "analysis through python/stats.py, which checks it. Refusing.\n");
+        return 2;
+    }
+    std::printf("fold         %s\n\n", foldName(fold));
+
+    std::uint64_t id = 0;
+    int skipped = 0;
+    while (static_cast<int>(boards.size()) < games) {
+        if (inFold(id, fold)) boards.push_back(bank.board(id));
+        else ++skipped;
+        ++id;
+    }
+    std::printf("drew %d boards from the %s fold, skipping %d outside it\n\n",
+                games, foldName(fold), skipped);
 
     // Policy seeds come from a stream keyed separately from the board pool, so a
     // stochastic policy's randomness stays independent of which board it faces.
