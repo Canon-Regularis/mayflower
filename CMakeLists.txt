@@ -122,6 +122,15 @@ add_executable(test_exact tests/test_exact.cpp)
 target_include_directories(test_exact PRIVATE tests)
 target_link_libraries(test_exact PRIVATE mayflower_core)
 
+add_executable(test_folds tests/test_folds.cpp)
+target_link_libraries(test_folds PRIVATE mayflower_core)
+add_test(NAME folds COMMAND test_folds)
+set_tests_properties(folds PROPERTIES LABELS "fast")
+
+add_test(NAME stats COMMAND ${CMAKE_COMMAND} -E env python
+         ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick)
+set_tests_properties(stats PROPERTIES LABELS "fast")
+
 add_executable(test_weighted tests/test_weighted.cpp)
 target_include_directories(test_weighted PRIVATE tests)
 target_link_libraries(test_weighted PRIVATE mayflower_core)
