@@ -57,6 +57,12 @@ target_link_libraries(bounds PRIVATE mayflower_core)
 add_executable(optimal tools/optimal.cpp)
 target_link_libraries(optimal PRIVATE mayflower_core)
 
+add_executable(opponent tools/opponent.cpp)
+target_link_libraries(opponent PRIVATE mayflower_core)
+
+add_test(NAME opponent COMMAND opponent selftest)
+set_tests_properties(opponent PROPERTIES LABELS "fast")
+
 add_executable(maxcover tools/maxcover.cpp)
 target_link_libraries(maxcover PRIVATE mayflower_core)
 
