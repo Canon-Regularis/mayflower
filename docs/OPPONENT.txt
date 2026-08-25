@@ -1,0 +1,119 @@
+Mayflower, the unlearnability audit
+===================================
+
+The engine can carry an opponent prior. Whether that helps against a real
+opponent depends on learning the prior from games already played, and this
+is what that costs. Evaluation is exact: every board is enumerated and
+weighted by how often the opponent produces it, so the only sampling is in
+the learning.
+
+1. One parameter, and how fast it converges
+------------------------------------------
+
+4x4 {3,2}, 264 boards, 64 placement slots
+
+  theta 1.0   mean border 0.2210 (uniform 0.3535)
+    assuming uniform        9.0521 shots
+    handed the true prior   8.7615 shots   oracle gain -0.2906
+     games N   fitted theta          shots  of oracle
+           5          2.070         8.8689        63%
+          10          1.432         8.8598        66%
+          25          1.015         8.8045        85%
+          50          0.981         8.8141        82%
+         100          0.904         8.8082        84%
+         250          1.031         8.7866        91%
+        1000          1.057         8.7681        98%
+
+  theta 3.0   mean border 0.0708 (uniform 0.3535)
+    assuming uniform        9.2246 shots
+    handed the true prior   8.3728 shots   oracle gain -0.8518
+     games N   fitted theta          shots  of oracle
+           5          4.748         8.4205        94%
+          10          4.318         8.3746       100%
+          25          3.445         8.3708       100%
+          50          2.971         8.3733       100%
+         100          3.101         8.3725       100%
+         250          3.015         8.3725       100%
+        1000          3.011         8.3725       100%
+
+5x5 {4,3,2}, 9024 boards, 150 placement slots
+
+  theta 3.0   mean border 0.1790 (uniform 0.5625)
+    assuming uniform       14.8952 shots
+    handed the true prior  13.7547 shots   oracle gain -1.1405
+     games N   fitted theta          shots  of oracle
+           5          2.931        13.7758        98%
+          10          3.470        13.7580       100%
+          25          2.775        13.7635        99%
+          50          3.189        13.7565       100%
+         100          3.306        13.7570       100%
+         250          2.986        13.7568       100%
+        1000          3.062        13.7549       100%
+
+3. What it costs to believe a bias that is not there
+---------------------------------------------------
+
+  4x4 {3,2}: rows are the opponent, columns what the engine believes
+        actual         0.0         1.0         2.0         3.0      regret
+           0.0      8.9091      9.0189      9.1705      9.1705      0.0000
+           1.0      9.0521      8.7615      8.8070      8.8070      0.2906
+           2.0      9.1574      8.5705      8.5416      8.5416      0.6158
+           3.0      9.2246      8.4480      8.3728      8.3728      0.8518
+
+      believes     worst case regret vs flat
+           0.0         9.2246        +0.0000
+           1.0         9.0189        -0.2057
+           2.0         9.1705        -0.0541
+           3.0         9.1705        -0.0541
+
+  5x5 {4,3,2}: rows are the opponent, columns what the engine believes
+        actual         0.0         1.0         2.0         3.0      regret
+           0.0     14.4873     14.7560     14.9346     14.9982      0.0000
+           1.0     14.6604     14.4280     14.4852     14.5114      0.2323
+           2.0     14.7958     14.1524     14.0950     14.0889      0.7069
+           3.0     14.8952     13.9377     13.7857     13.7547      1.1405
+
+      believes     worst case regret vs flat
+           0.0        14.8952        +0.0000
+           1.0        14.7560        -0.1392
+           2.0        14.9346        +0.0395
+           3.0        14.9982        +0.1031
+
+2. The same prior, learned without assuming its shape
+----------------------------------------------------
+
+  Fitting placement frequencies instead, theta 2.0, 64 slots to estimate
+     games N          shots  of oracle   slots seen
+          25         8.8420        51%          27
+         100         8.7081        73%          37
+         400         8.5812        94%          40
+        1600         8.5440       100%          40
+        6400         8.5273       102%          40
+
+    A reading above 100% is not an error. The oracle here is the policy
+    that believes the TRUE prior, which is not the optimal policy: the shot
+    rule is greedy, so a belief slightly off the truth can score marginally
+    better. The column measures progress toward a reference, not toward a
+    ceiling.
+
+    Of 64 slots the opponent ever uses only about the number in the last
+    column. The rest are unidentifiable from any number of games, which is
+    harmless: a placement the opponent never makes cannot be exploited.
+
+  Fitting placement frequencies instead, theta 2.0, 150 slots to estimate
+     games N          shots  of oracle   slots seen
+          25        14.5348        37%          47
+         100        14.3426        65%          83
+         400        14.1925        86%          89
+        1600        14.1565        91%          90
+        6400        14.1448        93%          90
+
+    A reading above 100% is not an error. The oracle here is the policy
+    that believes the TRUE prior, which is not the optimal policy: the shot
+    rule is greedy, so a belief slightly off the truth can score marginally
+    better. The column measures progress toward a reference, not toward a
+    ceiling.
+
+    Of 150 slots the opponent ever uses only about the number in the last
+    column. The rest are unidentifiable from any number of games, which is
+    harmless: a placement the opponent never makes cannot be exploited.

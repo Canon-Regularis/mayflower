@@ -32,6 +32,7 @@ the Bimaru and salvo breakdowns.
 | `src/core/weighted.cpp` | The sweep as a partition function: opponent priors and noisy answers |
 | `tools/weighted` | Evidence, posterior heatmaps and a log-linear opponent model |
 | `tools/maxcover` | Why the max-coverage rung is not a rung |
+| `tools/opponent` | What an opponent model is worth, and what it costs to get wrong |
 | `include/mayflower/observations.hpp` | Ordered observation record and the placement predicate it induces |
 | `occupancyMap` | Every cell marginal from one forward and one backward sweep |
 | `Sampler` | Exact uniform sampling by unranking; the board generator |
@@ -64,8 +65,8 @@ the Bimaru and salvo breakdowns.
 | `tests/oracle/` | Independent brute-force enumerator and ordered simulator |
 | `python/oracle.py` | Order-aware reference model |
 
-Still to come: the unlearnability audit that M10 needs, and the full experiment
-registry of M11. The max-coverage rung was investigated and withdrawn.
+Still to come: the full experiment registry of M11. The max-coverage rung was
+investigated and withdrawn.
 
 ## Build
 
@@ -1031,6 +1032,103 @@ It is checked rather than assumed: the corner cell reads 7.8% at turn 0, which
 is the exact prior marginal of 0.0800 surviving the round trip through byte
 quantisation, and the final frame reads a single surviving configuration at 0.00
 bits.
+
+## Is the opponent worth modelling?
+
+The weighted sweep can carry an opponent prior, so a player who hugs the edges is
+exploitable in principle. Whether that helps in practice depends on learning the
+prior from games already played, and `tools/opponent` prices it.
+
+Everything is exact. Every board is enumerated, so a prior is a vector of exact
+weights and a policy's expected shots is a weighted sum over all boards rather
+than a sample mean. The only sampling is in the learning, which is the thing
+under audit. The opponent is `exp(-theta * border)` per ship, so `theta = 0` is
+uniform and larger values push ships toward the edges.
+
+### It is worth about a shot
+
+On 5x5 `{4,3,2}`, against a strong edge-hugger at `theta = 3`, a policy assuming
+a uniform prior takes 14.8952 shots and one handed the true prior takes 13.7547.
+That 1.14 shots is the most any amount of learning could be worth.
+
+### And it is learnable, which was the surprise
+
+The milestone was written as an *unlearnability* audit. It is not one. Fitting
+the single parameter by matching the mean border score converges almost at once:
+
+```text
+games N   fitted theta      shots   of oracle
+      5          2.931    13.7758        98%
+     10          3.470    13.7580       100%
+     25          2.775    13.7635        99%
+    100          3.306    13.7570       100%
+```
+
+Ten games is a single evening. The gain is real and it arrives immediately.
+
+### What is expensive is not assuming the shape
+
+Estimate the placement frequencies instead, with no parametric form, and the same
+gain costs forty to a hundred times more games:
+
+```text
+games N          shots   of oracle   slots seen
+     25        14.5348         37%           47
+    100        14.3426         65%           83
+    400        14.1925         86%           89
+   1600        14.1565         91%           90
+   6400        14.1448         93%           90
+```
+
+Note the last column. Of 150 placement slots the opponent ever uses only about
+90, even in 6400 games. The rest are unidentifiable, which is harmless: an
+opponent who never plays a placement cannot be exploited there.
+
+The 4x4 board reaches 102% at 6400 games, which is not an error. The oracle is
+the policy that believes the true prior, and that is not the optimal policy: the
+shot rule is greedy, so a belief slightly off the truth can score marginally
+better. The column measures progress toward a reference, not toward a ceiling.
+
+### The bet has a losing side
+
+Rows are the opponent, columns what the engine believes, on 5x5 `{4,3,2}`:
+
+```text
+    actual         0.0         1.0         2.0         3.0
+       0.0     14.4873     14.7560     14.9346     14.9982
+       1.0     14.6604     14.4280     14.4852     14.5114
+       2.0     14.7958     14.1524     14.0950     14.0889
+       3.0     14.8952     13.9377     13.7857     13.7547
+```
+
+Believing `theta = 3` against an opponent who is actually uniform costs 0.51
+shots. Opponent modelling is a bet, and reading down the first column against the
+diagonal is what the bet pays and costs.
+
+The interesting row is the worst case over opponents:
+
+```text
+believes     worst case   against always-uniform
+     0.0        14.8952                  +0.0000
+     1.0        14.7560                  -0.1392
+     2.0        14.9346                  +0.0395
+     3.0        14.9982                  +0.1031
+```
+
+A permanent mild assumption dominates. Believing `theta = 1` has a better worst
+case than assuming uniform, by 0.14 shots here and 0.21 on 4x4 `{3,2}`, without
+knowing anything about who is playing. Assuming a slight edge preference is not a
+read on the opponent, it is a better default.
+
+### What this settles
+
+Opponent modelling is worth roughly a shot against a player with a real bias, it
+is learnable in ten games if the shape is known and several hundred if it is not,
+and it costs half a shot when the bias is not there. Against the 20.3-shot gap
+between the certified bound and the best measured policy, that is a small effect,
+which is the honest reason it stays out of the headline engine.
+
+Full output in [docs/OPPONENT.txt](docs/OPPONENT.txt).
 
 ## Known limitations
 
