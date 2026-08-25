@@ -1,0 +1,85 @@
+Mayflower, the max-coverage rung
+================================
+
+1. Every quantity at once, where all of them are computable
+----------------------------------------------------------
+
+maxcov(t) exactly, by scanning the subset lattice, alongside both optima and
+both readings of the ladder. A valid lower bound has to sit at or below the
+adaptive optimum. Watch which columns do.
+
+instance      boards     K  E4 water  adaptive  non-adapt     maxcov   K*maxcov
+4x3 {2}           17     1    4.9412    5.1176     7.4706     7.4706     7.4706
+4x4 {2}           24     1    5.6667    6.0833     9.5833     9.5833     9.5833
+4x4 {3}           16     1    5.0625    5.6250    10.8750    10.7500    10.7500
+5x4 {3}           22     1    5.4091    6.2273    13.0455    12.8636    12.8636
+4x4 {2,2}        224     2    7.8750    8.6696    12.4866    12.4777     9.9732
+4x4 {3,2}        264     5    7.4697    8.7538    13.1098    13.1023     8.7841
+
+  E4 sits at or below the adaptive optimum everywhere, as a bound must.
+  The K*maxcov column exceeds it on 6 of 6 instances, so it is not a
+  bound on anything. Dropping K does not rescue it either.
+
+  What the maxcov column does obey is the non-adaptive optimum, which it
+  sits at or below on every row. That is the correct reading: fixing one
+  shot-set of size t is precisely the non-adaptive assumption, and an
+  adaptive searcher has a tree of them. On 4x3 {2} and 4x4 {2} the two agree
+  exactly, because there a single chain attains the maximum at every t.
+
+  So the rung was measuring the wrong problem. The gap between the maxcov
+  and adaptive columns is the adaptivity gap, which tools/m9 measures at up
+  to 2.09x, and that is the factor by which the sketched bound overshoots.
+
+2. What is left on the standard board
+-------------------------------------
+
+Two things survive section 1. The first is a measurement of how loose the
+C(t,17) factor really is, which says where E4's slack lives even though
+maxcov cannot replace it. The second is that maxcov turned out to be a
+non-adaptive quantity, and the non-adaptive optimum is worth a number here.
+
+  How far C(t,17) sits above an achievable c(S):
+      t          C(t,17)  best c(S) found          ratio
+     17                1               20           0.05
+     20             1140             1816         0.6278
+     25        1.082e+06        3.454e+04          31.31
+     30        1.198e+08        3.819e+05          313.6
+     40        8.873e+10        6.875e+06      1.291e+04
+     50        9.847e+12        6.397e+07      1.539e+05
+     60        3.872e+14          3.2e+08       1.21e+06
+     70        7.878e+15        1.112e+09      7.084e+06
+     80        1.015e+17        3.067e+09      3.309e+07
+     90        9.344e+17        7.209e+09      1.296e+08
+
+  The two cross over near t = 22. Below it C(t,17) is the smaller factor,
+  since maxcov counts configurations and several ship decompositions share
+  one cell set: at t = 17 a full row plus seven of the next holds the fleet
+  20 ways against C(17,17) = 1. Above it C(t,17) runs away: by t = 90 the
+  ratio is 1.3e+08, and that is where E4's slack lives and why it saturates
+  early.
+
+  None of that is reachable. Closing the gap would need a bound on maxcov
+  from above, and section 1 shows that even a perfect one would be bounding
+  the non-adaptive problem.
+
+  The non-adaptive optimum, from explicit orders (each an upper bound):
+  order                        E[T]    vs adaptive
+  row-major                 88.7342               
+  column-major              88.7342               
+  alternating rows          90.2512               
+  diagonal lattice          95.7404               
+
+  Best fixed order found: row-major at 88.7342 shots, so the non-adaptive optimum is
+  at most that. The density policy measures 44.369 on the same board, so an
+  adaptive player beats every fixed order tried here by 44.3652 shots.
+
+  Both of those are achievable numbers rather than optima, so the pair does
+  not bound the adaptivity gap from below: that would need a lower bound on
+  the non-adaptive optimum, and the only route to one is a bound on maxcov
+  from above, which is the same wall section 1 hit. What the pair does show
+  is that the gap is not small, matching the 2.09x tools/m9 measures where
+  both optima are computable.
+
+  Verdict on the rung: cut. E5 as sketched is not a lower bound on the
+  adaptive optimum, and the ladder keeps E4 at 24.088 as its binding rung.
+

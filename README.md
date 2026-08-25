@@ -31,6 +31,7 @@ the Bimaru and salvo breakdowns.
 | `src/core/notouch.cpp` | The same sweep under the rule that ships may not touch |
 | `src/core/weighted.cpp` | The sweep as a partition function: opponent priors and noisy answers |
 | `tools/weighted` | Evidence, posterior heatmaps and a log-linear opponent model |
+| `tools/maxcover` | Why the max-coverage rung is not a rung |
 | `include/mayflower/observations.hpp` | Ordered observation record and the placement predicate it induces |
 | `occupancyMap` | Every cell marginal from one forward and one backward sweep |
 | `Sampler` | Exact uniform sampling by unranking; the board generator |
@@ -63,7 +64,8 @@ the Bimaru and salvo breakdowns.
 
 Still to come: expectimax with pruning and the order-aware transposition table,
 the parallel and cache-blocked ladder rungs, the belief scrubber in the report,
-and the max-coverage bound, plus the unlearnability audit that M10 needs.
+plus the unlearnability audit that M10 needs. The max-coverage rung was
+investigated and withdrawn.
 
 ## Build
 
@@ -823,6 +825,96 @@ still carry billions. The honest bound is the number of partial placements, abou
 8.0e10 against 2^53, and it is instance-dependent, so `weightedCount` reports the
 measured `maxLayerSum` and the tests assert on that rather than on the argument.
 The standard instance measures 1.583e10, or 2^33.88.
+
+## The rung that was not one
+
+The bound ladder stops at water filling, 24.088. The plan carried a further rung,
+a max-coverage relaxation estimated near 35, which would have closed most of the
+remaining interval. It is withdrawn, and `tools/maxcover` is the reason.
+
+Water filling bounds the boards a searcher can have finished by time `t`:
+
+```text
+#finished(t)  <=  K * C(t, 17)
+```
+
+with `K = 28,560` the feasible hit-transcripts. The argument is an injection.
+Under a deterministic policy a finished board is determined by its transcript, and
+a transcript is a hit-transcript (`K` ways) interleaved with misses (`C(t,17)`
+ways). The proposed improvement replaced the second factor with
+
+```text
+maxcov(t) = max over |S| = t of |{ B in Omega : B subset of S }|
+```
+
+on the grounds that almost no 17-subset of the shot cells is a legal fleet.
+
+### It fails twice
+
+**It is not even smaller.** `C(t,17)` counts cell subsets; `maxcov` counts
+configurations, and several ship decompositions can occupy one cell set. Seventeen
+cells shaped as a full row of ten plus seven of the next hold the fleet **20**
+different ways against `C(17,17) = 1`. The two cross over near `t = 22`, and only
+above that does `C(t,17)` run away.
+
+**It is not substitutable at any `t`.** The factors count different objects.
+`K * C(t,17)` works because a finished board is determined by its transcript.
+Recovering a bound from `maxcov` instead needs the number of distinct shot-sets a
+policy can reach by time `t`, which is the number of length-`t` transcripts and
+vastly exceeds `K`.
+
+### Measured, not just argued
+
+On every instance where the optimum is computable, the sketched rung exceeds it:
+
+```text
+instance      boards     K  E4 water  adaptive  non-adapt     maxcov   K*maxcov
+4x3 {2}           17     1    4.9412    5.1176     7.4706     7.4706     7.4706
+4x4 {2}           24     1    5.6667    6.0833     9.5833     9.5833     9.5833
+4x4 {3}           16     1    5.0625    5.6250    10.8750    10.7500    10.7500
+5x4 {3}           22     1    5.4091    6.2273    13.0455    12.8636    12.8636
+4x4 {2,2}        224     2    7.8750    8.6696    12.4866    12.4777     9.9732
+4x4 {3,2}        264     5    7.4697    8.7538    13.1098    13.1023     8.7841
+```
+
+E4 sits at or below the adaptive optimum on every row, as a bound must. The last
+column clears it on every row, so it bounds nothing.
+
+What `maxcov` does obey is the **non-adaptive** optimum, on every row, exactly on
+the two single-ship cases and within 0.07% elsewhere. That is the correct reading:
+one shot-set of size `t` is precisely the non-adaptive assumption, and an adaptive
+searcher has a tree of them. The rung was measuring the wrong problem, and it
+overshoots by the adaptivity gap, which `tools/m9` measures at up to 2.09x.
+
+`tools/maxcover selftest` pins this as a negative regression, so the rung cannot
+be reintroduced quietly.
+
+### What survives
+
+Two things. First, a measurement of where E4's slack lives: at `t = 90` the
+`C(t,17)` factor sits about 1.3e8 above an achievable `c(S)`. That gap is real but
+unreachable, since closing it needs a bound on `maxcov` from above and even a
+perfect one bounds the non-adaptive problem.
+
+Second, since `maxcov` turned out to be a non-adaptive quantity, the non-adaptive
+optimum is worth a number here:
+
+```text
+order                        E[T]
+row-major                 88.7342
+column-major              88.7342
+alternating rows          90.2512
+diagonal lattice          95.7404
+```
+
+Row-major and column-major agree to every digit, which they must: the board is
+square and transposing is a bijection on configurations. Compactness is what
+matters, and the spread-out diagonal lattice is worst, because a compact prefix is
+what contains whole fleets.
+
+So the non-adaptive optimum is at most 88.7342, against a density policy that
+measures 44.369. Both are achievable numbers rather than optima, so the pair does
+not bound the adaptivity gap from below, but it does show the gap is not small.
 
 ## Known limitations
 
