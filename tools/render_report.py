@@ -186,6 +186,27 @@ footer { margin-top: 72px; padding-top: 22px; border-top: 1px solid var(--grid);
 }
 .lc { display: flex; align-items: center; justify-content: center; border-radius: 3px;
       color: var(--cell-ink); background: var(--ramp-0); font-variant-numeric: tabular-nums; }
+.scrubboard { margin-bottom: 14px; }
+.scrubctl { display: flex; align-items: center; gap: 12px; margin: 6px 0 10px; }
+.scrubrange { flex: 1 1 auto; accent-color: var(--series-2); }
+.scrubbtn {
+  font: 500 13px/1 var(--sans); padding: 7px 12px; border-radius: 6px;
+  border: 1px solid var(--grid); background: var(--panel); color: var(--ink);
+  cursor: pointer;
+}
+.scrubbtn:hover { border-color: var(--ink); }
+.scrubbtn:disabled { opacity: .5; cursor: default; }
+#scrub:focus-visible { outline: 2px solid var(--series-2); outline-offset: 4px; }
+.scrubread {
+  display: flex; flex-wrap: wrap; gap: 18px;
+  font: 400 13px/1.5 var(--mono); color: var(--muted-ink);
+  font-variant-numeric: tabular-nums;
+}
+.scrubread b { color: var(--ink); font-weight: 500; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
 .lc.miss { background: var(--grid); color: var(--muted-ink); }
 .lc.hit  { background: var(--series-2); color: #fff; font-size: 13px; }
 .lc.sunk { background: var(--series-2); color: #fff; font-size: 15px; opacity: .72; }
@@ -250,6 +271,11 @@ def load_engine():
             " MISS, HIT, SUNK, FREE, EMPTY, OCCUPIED };\n})();")
 
 
+def load_scrubber():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return io.open(os.path.join(here, "..", "web", "scrubber.js"), encoding="utf-8").read()
+
+
 def load_live():
     here = os.path.dirname(os.path.abspath(__file__))
     return io.open(os.path.join(here, "..", "web", "live.js"), encoding="utf-8").read()
@@ -277,6 +303,7 @@ def build(data, out_path):
     dens, par = pol["density"], pol["parity hunt/target"]
     best = policies[-1]
 
+    SCRUB_JS = load_scrubber()
     ENGINE_JS = load_engine()
     LIVE_JS = load_live()
     POOL_B64 = load_pool()
@@ -506,6 +533,31 @@ def build(data, out_path):
     w("</div><figcaption><b>Posterior collapse.</b> Surviving configurations after each "
       "shot, log scale, for three games under the density policy. Every value is an exact "
       "count from a full sweep.</figcaption></figure>")
+    # The scrubber: the same collapse, one turn at a time, on the board itself.
+    scrub = next((g for g in col if "frames" in g), None)
+    if scrub is not None:
+        payload = {
+            "width": prior["width"], "height": prior["height"],
+            "omega": scrub["omega"], "cells": scrub["cells"],
+            "outcomes": scrub["outcomes"], "truth": scrub["truth"],
+            "frames": scrub["frames"],
+        }
+        w('<div class="col"><h3>The same game, one turn at a time</h3>')
+        w("<p>The curve above says how much collapsed. This says <em>where</em>. Every "
+          "frame is the exact posterior after that shot, so the board shown is what the "
+          "engine actually believed, not a reconstruction. Drag, or use the arrow keys.</p>")
+        w("<p>Watch the two things the curve cannot show: probability mass sliding away "
+          "from a miss into the cells that remain, and a sinking announcement flattening "
+          "a whole region at once because the ship it accounted for is now placed.</p>")
+        w("</div>")
+        w('<figure><div class="plate"><div id="scrub" data-frames=\'' +
+          json.dumps(payload, separators=(",", ":")).replace("'", "&#39;") + '\'></div>')
+        w("</div><figcaption><b>Belief scrubber.</b> Exact cell marginals after every "
+          "shot of one game, quantised to a byte per cell. Colour limits are fixed across "
+          "the whole game so the frames are comparable; a per-frame rescale would hide "
+          "the collapse this figure exists to show. Shot cells carry the glyph, not the "
+          "colour.</figcaption></figure>")
+
     w('<div class="col"><div class="note">Everything here is generated from '
       "<code>out/figures.json</code>, which the engine writes directly. No number was "
       "transcribed by hand, and none was recomputed by the renderer.</div></div>")
@@ -517,6 +569,7 @@ def build(data, out_path):
     w("</div>\n<script>" + SCRIPT + "</script>\n")
     w("<script>" + ENGINE_JS + "</script>\n")
     w("<script>" + LIVE_JS + "</script>\n")
+    w("<script>" + SCRUB_JS + "</script>\n")
 
     with io.open(out_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(o.getvalue())

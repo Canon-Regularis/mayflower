@@ -282,17 +282,52 @@ int main(int argc, char** argv) {
         History replay(inst);
         std::vector<std::uint64_t> sizes{k::kOmega0};
         std::vector<int> outcomes;
+
+        // Belief frames, the tier that cannot scale: every cell marginal after
+        // every shot, quantised to a byte. One game only. A frame is 100 bytes
+        // and a game is about 45 of them, so the whole trace costs a few
+        // kilobytes and the scrubber needs no engine to replay it.
+        std::vector<int> frames;
+        const bool withFrames = (g == 0);
+        const auto pushFrame = [&](const Constraints& c) {
+            std::uint64_t total = 0;
+            const std::vector<std::uint64_t> occ = occupancyMap(inst, c, total);
+            for (std::uint64_t v : occ) {
+                const double p = total ? static_cast<double>(v) / static_cast<double>(total) : 0.0;
+                frames.push_back(static_cast<int>(p * 255.0 + 0.5));
+            }
+        };
+        if (withFrames) pushFrame(constraintsFrom(inst, replay));
+
         for (int cell : trace.sequence()) {
             const Outcome o = trace.outcome(cell);
             replay.add(cell / inst.width, cell % inst.width, o, trace.sunkLength(cell));
-            sizes.push_back(countConfigurations(inst, constraintsFrom(inst, replay)).count);
+            const Constraints c = constraintsFrom(inst, replay);
+            sizes.push_back(countConfigurations(inst, c).count);
             outcomes.push_back(o == Outcome::Miss ? 0 : (o == Outcome::Hit ? 1 : 2));
+            if (withFrames) pushFrame(c);
         }
         if (!firstGame) out += ", ";
         out += "\n    {\"game\": " + std::to_string(g) + ", \"shots\": " +
                std::to_string(result.shots) + ", \"omega\": " + jsonArray(sizes) +
                ", \"outcomes\": " + jsonArray(outcomes) +
-               ", \"cells\": " + jsonArray(trace.sequence()) + "}";
+               ", \"cells\": " + jsonArray(trace.sequence());
+        if (withFrames) {
+            out += ", \"truth\": " + jsonArray([&] {
+                       std::vector<int> t(static_cast<std::size_t>(inst.cellCount()), 0);
+                       for (const ShipPlacement& sp :
+                            boards[static_cast<std::size_t>(g)])
+                           for (int k = 0; k < sp.length; ++k) {
+                               const int cell = sp.horizontal
+                                                    ? sp.row * inst.width + sp.col + k
+                                                    : (sp.row + k) * inst.width + sp.col;
+                               t[static_cast<std::size_t>(cell)] = 1;
+                           }
+                       return t;
+                   }());
+            out += ", \"frames\": " + jsonArray(frames);
+        }
+        out += "}";
         firstGame = false;
         std::fprintf(stderr, "collapse game %d done (%d shots)\n", g, result.shots);
     }
