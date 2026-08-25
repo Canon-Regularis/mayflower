@@ -29,6 +29,8 @@ the Bimaru and salvo breakdowns.
 | --- | --- |
 | `src/core/profile_dp.cpp` | The DP, parameterised over board size and fleet |
 | `src/core/notouch.cpp` | The same sweep under the rule that ships may not touch |
+| `src/core/weighted.cpp` | The sweep as a partition function: opponent priors and noisy answers |
+| `tools/weighted` | Evidence, posterior heatmaps and a log-linear opponent model |
 | `include/mayflower/observations.hpp` | Ordered observation record and the placement predicate it induces |
 | `occupancyMap` | Every cell marginal from one forward and one backward sweep |
 | `Sampler` | Exact uniform sampling by unranking; the board generator |
@@ -61,8 +63,7 @@ the Bimaru and salvo breakdowns.
 
 Still to come: expectimax with pruning and the order-aware transposition table,
 the parallel and cache-blocked ladder rungs, the belief scrubber in the report,
-and the max-coverage bound. There is no weighted sweep, which is what the noisy
-and opponent-prior posteriors would need to reach 10x10.
+and the max-coverage bound, plus the unlearnability audit that M10 needs.
 
 ## Build
 
@@ -719,6 +720,110 @@ DPs, which were written from the rules alone and agree exactly.
 `tests/test_notouch` also checks 240 random constraint patterns against
 enumeration, so the constrained counts are covered and not only the prior.
 
+## Soft evidence and a non-uniform prior
+
+Weighting the sweep turns the count into a partition function. Two mechanisms
+compose multiplicatively and are independent of each other:
+
+- **per placement**, applied when a ship starts. An opponent model lives here: a
+  log-linear prior over placements is just a set of these weights.
+- **per cell**, applied to every cell by whether it ends up occupied or empty. An
+  observation channel lives here, so a noisy answer contributes its likelihood
+  under each hypothesis and one sweep returns the exact normaliser.
+
+Integer exactness is gone, so the path carries its own validation regime.
+
+### Three bridges
+
+Setting every weight to 1 must return the count bit for bit, and does:
+15,046,987,768 exactly, in 4.0 s, with no rescaling. The log-linear prior at
+`theta = 0` gives the same number, and a sharper check besides: its marginals are
+0.0800 at the corner, 0.2136 at the centre and 0.1667 at the edge midpoint, which
+is the exact prior table the *integer* path derives. Two routes, same numbers.
+
+The third bridge is at the other end. At `eps = 0.5` every weight is exactly 0.5,
+so every board has likelihood `2^-t` whatever it looks like and the evidence must
+be `|Omega| * 2^-t`:
+
+```text
+   eps   shots   log evidence   vs prior
+  0.02      20      12.050395    -16.42b
+  0.05      20       9.901802    -19.52b
+  0.10      20       9.899525    -19.53b
+  0.20      20      10.302840    -18.94b
+  0.35      20      10.800053    -18.23b
+  0.50      20       9.571500    -20.00b     <- must be exactly -20
+  0.50      40      -4.291444    -40.00b     <- must be exactly -40
+```
+
+It reads exactly -20.00 and -40.00, which prices the rest of the column at full
+10x10 scale without reference to any small board.
+
+Bits against the prior is `log2` of the average likelihood over all
+15,046,987,768 boards. It falls with the shot count. In `eps` it is not monotone:
+it bottoms out near 0.1 and climbs back, because a channel that noisy stops
+punishing disagreement.
+
+### What noise does to the posterior
+
+Thirty shots at a fixed hidden board, then the exact marginals. At `eps = 0.05`
+the fleet is legible; the 2-ship at the bottom left is invisible only because no
+shot landed near it.
+
+```text
+         0      1      2      3      4      5      6      7      8      9
+ r0   0.379  0.889  0.866  0.904  0.392  0.018  0.041  0.055  0.045  0.332
+ r5   0.251  0.568  0.937  0.942  0.573  0.261  0.024  0.027  0.028  0.278
+```
+
+At `eps = 0.20` it does something more interesting than blur. Column 6 reads
+0.769, 0.795, 0.733 at rows 4 to 6, while the ship actually sits at rows 6 to 8.
+The posterior has not lost the ship, it has moved it, which is what a coherent
+model does with corrupted evidence rather than simply widening.
+
+Both heatmaps sum to exactly 17.000000, which is the same invariant the integer
+path satisfies and a real check on the weighted marginals. 13 of the top 17 cells
+are ships at `eps = 0.05`, and 11 at `eps = 0.20`. Full output in
+[docs/WEIGHTED_MARGINALS.txt](docs/WEIGHTED_MARGINALS.txt).
+
+### An opponent who hugs the edge
+
+```text
+     edge   vertical          log Z     corner     centre     m(0,4)     m(4,0)
+      0.0        0.0      23.434444     0.0800     0.2136     0.1667     0.1667
+      1.0        0.0      22.136198     0.0968     0.1531     0.1998     0.1998
+      2.0        0.0      21.092172     0.1126     0.1075     0.2301     0.2301
+      0.0        1.0      26.599001     0.0780     0.2175     0.1232     0.2021
+      2.0        1.0      24.229125     0.1111     0.1080     0.1789     0.2747
+```
+
+By `edge = 2` the ordering has inverted: the corner reads 0.1126 against the
+centre's 0.1075, where the uniform prior had the centre ahead 2.67 to 1.
+
+The last two columns are a symmetry test rather than a pair of numbers. Cells
+(0,4) and (4,0) are reflections of one another, so they must agree whenever the
+prior treats the orientations alike, and must part once it does not. They do
+both, to every digit printed.
+
+### Numerics
+
+Weighted results agree with an independently written enumerator to within a few
+ULP across six cases covering each mechanism alone and both together; the
+tolerance is 1e-12 relative, and only the unit-weight cases are bit-exact.
+
+Three numerical audits were run against the first version and all three found
+real defects, since fixed. Rescaling divides by a power of two, so it edits
+exponents and leaves mantissas untouched and costs no precision. The result is
+rebuilt with `ldexp` rather than by multiplying by `exp(logScale)`, which
+overflowed once the scale passed 709 even where the product was representable.
+And the exactness argument was wrong as first written: intermediate layers are
+**not** bounded by the final count, since a layer counts partial placements and a
+hard-constrained board can answer in the hundreds of thousands while its layers
+still carry billions. The honest bound is the number of partial placements, about
+8.0e10 against 2^53, and it is instance-dependent, so `weightedCount` reports the
+measured `maxLayerSum` and the tests assert on that rather than on the argument.
+The standard instance measures 1.583e10, or 2^33.88.
+
 ## Known limitations
 
 - The `Sampler` holds backward counts for every layer, about 397 MB on the
@@ -727,8 +832,10 @@ enumeration, so the constrained counts are covered and not only the prior.
   large.
 - The no-touching sweep packs its state into one uint64, so it stops at about
   13 rows. `noTouchSupports()` reports whether an instance fits.
-- There is no weighted sweep, so the noisy-channel and opponent-prior posteriors
-  are exact only where enumeration reaches, currently 9,024 boards.
+- Weighted marginals cost one sweep per cell, about 280 s on the standard
+  instance, because there is no weighted forward-backward. The unweighted path
+  gets all 100 in two passes and the same trick applies, since the empty
+  transition stays state-preserving once it carries a weight.
 - The belief MDP caps near 300 configurations, which is what stops the adaptive
   column of the adaptivity table well before the subset lattice runs out.
 
