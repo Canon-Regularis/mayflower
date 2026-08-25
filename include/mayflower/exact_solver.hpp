@@ -52,15 +52,19 @@ struct ExactSolution {
 //         valid lower bound throughout and cuts earlier. Cells still in index
 //         order.
 // Star1   Bounds, plus move ordering: cells in descending hit probability and
-//         branches in descending floor. Measured and NOT made the default: it
-//         wins 1.3x on 5x4 {3} and loses more than 2x on 4x4 {2}, so it trades
-//         rather than improves. Bounds beats the reference on every instance
-//         measured and is what solveOptimal uses.
+//         branches in descending floor. This is the default, and the reason is
+//         where it wins rather than how often. On the cheap single-ship
+//         instances Bounds alone is up to 2x better. On the fleet instances,
+//         which are the only ones whose cost is felt, ordering is worth more
+//         than an order of magnitude: the m9 self-test runs in about five
+//         minutes under Star1 and took just under three hours under Bounds.
+//         A tie-break that only matters when the search is expensive should be
+//         chosen on the expensive case.
 enum class Pruning { None, Bounds, Star1 };
 
 ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit = 60000,
                            Adversary adversary = Adversary::Committed,
-                           Pruning pruning = Pruning::Bounds);
+                           Pruning pruning = Pruning::Star1);
 
 // Expected shots for a policy, averaged over every configuration. Exact, with no
 // sampling, because the whole space is enumerated.
