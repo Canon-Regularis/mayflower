@@ -50,6 +50,7 @@ the Bimaru and salvo breakdowns.
 | `src/search/exact_solver.cpp` | Exact optimal play on small instances |
 | `tools/optimal` | Optimal play and the measured optimality gap of each objective |
 | `src/core/profile_dp_fast.cpp` | Ladder rung V1: packed key, epoch tagging, batched prefetch |
+| `src/core/profile_dp_blocked.cpp` | Ladder rungs V2 and V3: radix-partitioned merge, then threads |
 | `src/platform/` | Core-topology detection and thread pinning for benchmarking |
 | `bench/dp_bench` | The ladder under the measurement protocol |
 | `tools/report_data` | Runs the analyses and writes the figure-data contract as JSON |
@@ -57,15 +58,14 @@ the Bimaru and salvo breakdowns.
 | `tools/export_pool` | Uniform board sample for the browser engine, five bytes per board |
 | `web/engine.js` | The DP ported to JavaScript, exact and verified against the C++ |
 | `web/live.js` | The live widget: sampled posterior early, exact sweep late |
+| `web/scrubber.js` | The belief scrubber: one recorded game, replayed frame by frame |
 | `outcomeDistribution` | Exact one-ply {MISS, HIT, SUNK(L)} split and information gain per cell |
 | `include/mayflower/policy.hpp` | Random, parity hunt/target, density (cheap tier), and exact-posterior policies |
 | `tests/oracle/` | Independent brute-force enumerator and ordered simulator |
 | `python/oracle.py` | Order-aware reference model |
 
-Still to come: expectimax with pruning and the order-aware transposition table,
-the parallel and cache-blocked ladder rungs, the belief scrubber in the report,
-plus the unlearnability audit that M10 needs. The max-coverage rung was
-investigated and withdrawn.
+Still to come: the unlearnability audit that M10 needs, and the full experiment
+registry of M11. The max-coverage rung was investigated and withdrawn.
 
 ## Build
 
@@ -916,6 +916,122 @@ So the non-adaptive optimum is at most 88.7342, against a density policy that
 measures 44.369. Both are achievable numbers rather than optima, so the pair does
 not bound the adaptivity gap from below, but it does show the gap is not small.
 
+## Two more rungs, and one that did not earn its place
+
+### The search
+
+The belief MDP's memo key is a shot mask plus the surviving support, which is
+already the sufficient statistic: two histories that leave the same
+configurations alive are the same problem whatever order they arrived in. So the
+transposition table was never the thing to fix. Pruning was.
+
+Three levels, each adding one mechanism, so the change is attributable:
+
+- **None** rejects a cell whose optimistic value already reaches the incumbent,
+  then sums branches and stops when the partial sum does. The reference.
+- **Bounds** is star1's chance-node bound. A branch not yet evaluated is charged
+  at its admissible floor rather than at zero, so the running value is a valid
+  lower bound throughout and cuts earlier.
+- **Star1** adds move ordering: cells in descending hit probability, branches in
+  descending floor.
+
+```text
+instance      boards       E[T]    none s  bounds s   star1 s  agree
+3x3 {2}           12   4.500000     0.004     0.006     0.009    yes
+4x3 {2}           17   5.117647     0.082     0.079     0.087    yes
+4x4 {2}           24   6.083333    36.605     3.600     7.636    yes
+4x4 {3}           16   5.625000     3.186     2.772     2.807    yes
+5x4 {3}           22   6.227273         -   154.763   120.622    yes
+```
+
+The bound is the win: 10.2x on 4x4 {2}, and never worse than the reference
+anywhere measured. The move ordering is not. It gives half that back on
+4x4 {2} and is worth 1.3x on 5x4 {3}, so it trades rather than improves, and the
+default stops at Bounds. It stays in the code because the measurement is the
+point.
+
+Every level returns the same expected shots to the last digit, which they must:
+the bound charged to an unevaluated branch is admissible, so a cell is abandoned
+only when it provably cannot beat the incumbent.
+
+### The sweep
+
+V1 attacks memory latency with a cheaper probe and a batched prefetch. V2
+attacks the same bottleneck from the other side, by making the access pattern
+local instead of hiding its cost. Each cell becomes two passes:
+
+- **scatter** walks the live states, computes each destination key, and appends
+  `(key, count)` to one of 64 buckets chosen by a radix of the hashed key. Writes
+  are sequential per bucket, so this pass streams.
+- **merge** takes one bucket at a time and aggregates it with a table sized for
+  that bucket alone, small enough to sit in L2.
+
+V3 is V2 with the merge pass spread over threads.
+
+```text
+V0  baseline map, 12-byte key struct           1.00x
+V1  packed key, epoch tagging, prefetch        1.67x
+V2  radix-partitioned scatter and merge        1.69x     (1.01x against V1)
+noise floor, A/A control                       1.02x
+```
+
+Two different attacks on the same bottleneck arrive at the same place, which is
+the useful part: the win was never the probe or the partition specifically, it
+was the memory system either way.
+
+```text
+  threads     min (s)        vs 1
+        1       5.457       1.00x
+        2       4.223       1.29x
+        4       3.145       1.74x
+        6       2.988       1.83x
+        8       2.982       1.83x
+       10       3.311       1.65x
+```
+
+Sublinear, and it turns over at ten. This machine has two performance cores and
+eight efficiency cores, so threads past the first few land on slower cores and
+the curve bends for that reason as much as for any scaling limit. The parallel
+section is measured unpinned, because pinning to one core is exactly wrong for
+it, and it is therefore not comparable with the table above.
+
+**Both rungs are bit-identical to V0**, across 965 checks covering the
+small-board ladder, the pinned order-dependence cases, 180 fuzzed ordered
+histories, and thread counts of 1, 2, 4 and 7. That is a property of the
+decomposition rather than a tolerance: counts are integers, integer addition is
+associative, and the buckets partition the destination keys so no two merges ever
+touch one counter.
+
+### The belief scrubber
+
+The collapse curve says how much of the space disappeared at each shot. The
+scrubber says *where*. It replays one recorded game a turn at a time, showing the
+exact posterior on the board itself.
+
+Frames are precomputed by `report_data` and quantised to a byte per cell, so the
+browser recounts nothing: scrubbing is a lookup and stays smooth under the
+keyboard. One game is 44 frames of 100 bytes, about 18 KB in the page, which is
+the T4 telemetry tier and the one that cannot scale.
+
+Colour limits are fixed across the whole game. A per-frame rescale would keep
+every frame looking equally informative and hide the collapse the figure exists
+to show. Shot cells carry the glyph rather than the colour, so the posterior and
+the record never compete for the same channel.
+
+Two things become visible that the curve cannot carry: probability mass sliding
+off a miss into the cells that remain, and a sinking announcement flattening a
+whole region at once, because the ship that accounted for it is now placed.
+
+The widget has a range input, play and pause, arrow-key and Home/End control, a
+reveal toggle for the hidden fleet, `role="grid"` with a per-cell `aria-label`,
+and a visually hidden table mirror carrying the same numbers. Autoplay disables
+itself under `prefers-reduced-motion`.
+
+It is checked rather than assumed: the corner cell reads 7.8% at turn 0, which
+is the exact prior marginal of 0.0800 surviving the round trip through byte
+quantisation, and the final frame reads a single surviving configuration at 0.00
+bits.
+
 ## Known limitations
 
 - The `Sampler` holds backward counts for every layer, about 397 MB on the
@@ -924,6 +1040,9 @@ not bound the adaptivity gap from below, but it does show the gap is not small.
   large.
 - The no-touching sweep packs its state into one uint64, so it stops at about
   13 rows. `noTouchSupports()` reports whether an instance fits.
+- The report page is about 1.5 MB, over the 0.7 to 1.0 MB budget. Nearly all of
+  it is the base64 board pool the live widget needs; the scrubber adds about
+  18 KB.
 - Weighted marginals cost one sweep per cell, about 280 s on the standard
   instance, because there is no weighted forward-backward. The unweighted path
   gets all 100 in two passes and the same trick applies, since the empty
