@@ -1,0 +1,12 @@
+# Append-only audit log.
+#
+# Every line carries the SHA-256 of everything before it, so an edit or a
+# deletion anywhere invalidates every line after it. python/stats.py verifies
+# the chain on every run and refuses to append to a broken one.
+#
+# Format: timestamp | event | experiment | detail | chain hash
+#
+# Reading the TEST fold requires an "unseal" entry for that experiment, recorded
+# before the number is read rather than after.
+2026-08-25T15:50:14Z | create | registry | folds 60/20/20, preregistration and registry written | c6eb271023fb5eb76f380b739885b7bcdf518c218ed8d90b8601bbc88c55b9ba
+2026-08-25T15:50:14Z | register | headline-policy-comparison | design fixed before any TEST read | e705159d66d7f31bb13fb2fc280ade421fd1d07a41c30f6a03872321ac40d8c4

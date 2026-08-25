@@ -1,0 +1,79 @@
+# The experiment registry.
+#
+# One entry per experiment that produced a number quoted anywhere. An entry is
+# written before the run, not after, so the analysis is fixed while the answer
+# is unknown. `fold` says which data the experiment is entitled to read, and
+# anything reading TEST needs a matching unseal in audit.log.
+#
+# status: registered | running | complete | superseded
+# fold:   train | val | test
+
+version: 1
+
+experiments:
+  - id: baseline-reconciliation
+    status: complete
+    fold: train
+    question: >
+      Four independent estimates of the classic policy spanned 44 to 61 shots.
+      One board generator, one tie-break rule, one seed pool, re-measured.
+    metric: mean shots to clear
+    design: 20000 games per policy on one seeded uniform pool, common random numbers
+    result:
+      random: "95.354 [95.288, 95.421]"
+      parity-hunt-target: "51.535 [51.414, 51.656]"
+      density: "44.369 [44.246, 44.491]"
+    notes: >
+      Also the source of sigma = 8.87 and the bimodal correlation, 0.923 within
+      the density family and 0.00 against the hunt policy.
+
+  - id: objective-comparison
+    status: complete
+    fold: train
+    question: Does information-greedy play underperform hit-greedy play?
+    metric: expected shots against the exact optimum
+    design: exact solution on small instances, every objective priced against it
+    result: >
+      max-hit-probability within 0.16 shots of optimal and exactly optimal on 3
+      of 6 instances; max-information-gain loses up to 6.86 shots.
+    notes: exploratory on TRAIN; the TEST version is pre-registered and unrun.
+
+  - id: bound-ladder
+    status: complete
+    fold: none
+    question: How tight is the certified lower bound on the optimum?
+    metric: shots
+    design: exact combinatorics, no sampling
+    result: "coverage 17, water filling 24.088, best measured policy 44.369"
+    notes: >
+      No fold applies: these are exact counts rather than estimates. The
+      max-coverage rung was investigated and withdrawn; see docs/MAXCOVER.txt.
+
+  - id: opponent-model-value
+    status: complete
+    fold: none
+    question: Is modelling the opponent's placement bias worth anything?
+    metric: expected shots, exact over enumerated boards
+    design: every board enumerated and weighted; only the learning is sampled
+    result: >
+      oracle gain 1.14 shots at theta = 3 on 5x5 {4,3,2}; learnable in about ten
+      games if the shape is known, several hundred if not; believing a bias that
+      is absent costs 0.51 shots; a mild permanent assumption has the better
+      worst case.
+    notes: see docs/OPPONENT.txt.
+
+  - id: headline-policy-comparison
+    status: registered
+    fold: test
+    question: >
+      Does the density policy beat parity hunt/target on mean shots, and does
+      max-information-gain underperform max-hit-probability, on sealed data?
+    metric: mean shots to clear; 95th percentile; paired difference
+    design: >
+      Sample size from experiments/preregistration.md, chosen per comparison
+      from the measured correlation. Fixed before the run; no extension and no
+      early stop.
+    result: null
+    notes: >
+      Not yet run. Running it requires an unseal entry in audit.log. This entry
+      exists so that the design is on record before the answer is.
