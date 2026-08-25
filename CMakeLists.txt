@@ -26,6 +26,7 @@ endif()
 add_library(mayflower_core
   src/core/profile_dp.cpp
   src/core/notouch.cpp
+  src/core/weighted.cpp
   src/core/profile_dp_fast.cpp
   src/certify/blocking.cpp
   src/certify/transcripts.cpp
@@ -52,6 +53,9 @@ target_link_libraries(bounds PRIVATE mayflower_core)
 
 add_executable(optimal tools/optimal.cpp)
 target_link_libraries(optimal PRIVATE mayflower_core)
+
+add_executable(weighted tools/weighted.cpp)
+target_link_libraries(weighted PRIVATE mayflower_core)
 
 add_executable(m9 tools/m9.cpp)
 target_link_libraries(m9 PRIVATE mayflower_core)
@@ -102,6 +106,12 @@ target_link_libraries(test_bounds PRIVATE mayflower_core)
 add_executable(test_exact tests/test_exact.cpp)
 target_include_directories(test_exact PRIVATE tests)
 target_link_libraries(test_exact PRIVATE mayflower_core)
+
+add_executable(test_weighted tests/test_weighted.cpp)
+target_include_directories(test_weighted PRIVATE tests)
+target_link_libraries(test_weighted PRIVATE mayflower_core)
+add_test(NAME weighted COMMAND test_weighted)
+set_tests_properties(weighted PROPERTIES LABELS "fast")
 
 add_executable(test_notouch tests/test_notouch.cpp)
 target_include_directories(test_notouch PRIVATE tests)
