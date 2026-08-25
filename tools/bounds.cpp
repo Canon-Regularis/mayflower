@@ -92,8 +92,15 @@ int main() {
     std::printf("  and checking it directly means enumerating C(100,19) sets. The bound is\n");
     std::printf("  therefore not claimed.\n\n");
 
-    std::printf("Rung still to derive: the max-coverage relaxation needs an exact solver, so the\n");
-    std::printf("estimate near 35 shots that would tighten the interval further is not quoted.\n\n");
+    std::printf("Rung withdrawn: the max-coverage relaxation, and the estimate near 35 shots\n");
+    std::printf("that went with it. Replacing the C(t,17) factor with the largest number of\n");
+    std::printf("configurations fitting inside any t-cell set is not a licensed substitution:\n");
+    std::printf("K*C(t,17) counts transcripts, and a finished board is determined by its\n");
+    std::printf("transcript, while max-coverage counts boards inside one shot-set and needs\n");
+    std::printf("the number of shot-sets a policy can reach, which is far larger than K.\n");
+    std::printf("Done anyway it exceeds the true optimum on all six instances where the\n");
+    std::printf("optimum is computable. What it does bound is the NON-ADAPTIVE optimum, which\n");
+    std::printf("is the wrong problem. See tools/maxcover and docs/MAXCOVER.txt.\n\n");
 
     std::printf("Measured for comparison (20,000 games, seeded uniform pool):\n");
     std::printf("  random               95.354  [ 95.288,  95.421]\n");
