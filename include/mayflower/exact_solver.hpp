@@ -36,10 +36,31 @@ struct ExactSolution {
     std::uint64_t configurations = 0;
     std::uint64_t memoStates = 0;
     double seconds = 0;
+    std::uint64_t nodesExpanded = 0;   // states whose children were generated
+    std::uint64_t cellsPruned = 0;     // candidate shots the bound rejected outright
+    std::uint64_t branchesCut = 0;     // chance branches abandoned part-way
 };
 
+// Pruning strength. Each level adds one mechanism to the one before, so a
+// measurement can attribute the change rather than merely observe it.
+//
+// None    the original search: reject a cell whose optimistic value already
+//         reaches the incumbent, then sum branches and stop once the partial sum
+//         does. Cells in index order. This is the reference.
+// Bounds  star1's chance-node bound. Branches not yet evaluated are charged at
+//         their admissible floor instead of at zero, so the running value is a
+//         valid lower bound throughout and cuts earlier. Cells still in index
+//         order.
+// Star1   Bounds, plus move ordering: cells in descending hit probability and
+//         branches in descending floor. Measured and NOT made the default: it
+//         wins 1.3x on 5x4 {3} and loses more than 2x on 4x4 {2}, so it trades
+//         rather than improves. Bounds beats the reference on every instance
+//         measured and is what solveOptimal uses.
+enum class Pruning { None, Bounds, Star1 };
+
 ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit = 60000,
-                           Adversary adversary = Adversary::Committed);
+                           Adversary adversary = Adversary::Committed,
+                           Pruning pruning = Pruning::Bounds);
 
 // Expected shots for a policy, averaged over every configuration. Exact, with no
 // sampling, because the whole space is enumerated.

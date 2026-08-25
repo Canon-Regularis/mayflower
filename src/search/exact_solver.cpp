@@ -76,6 +76,17 @@ int outcomeOf(const World& w, ConfigId b, int cell, Mask shot) {
     return kSunkBase + w.shipLength[i][static_cast<std::size_t>(s)];
 }
 
+// A chance node splits into at most miss, plain hit, and one sunk outcome per
+// distinct ship length, so the branch table has a small fixed bound.
+constexpr int kMaxCells = 32;      // buildWorld refuses larger boards
+constexpr std::size_t kMaxBranches = 12;
+
+struct Branch {
+    const std::vector<ConfigId>* support;
+    double weight;   // share of the support
+    double floor;
+};
+
 struct StateKey {
     Mask shot = 0;
     std::vector<ConfigId> support;
@@ -96,9 +107,14 @@ struct StateHash {
 struct Solver {
     const World& w;
     Adversary adversary;
+    Pruning pruning;
     std::unordered_map<StateKey, double, StateHash> memo;
+    std::uint64_t nodes = 0;
+    std::uint64_t cellsPruned = 0;
+    std::uint64_t branchesCut = 0;
 
-    Solver(const World& world, Adversary adv) : w(world), adversary(adv) {
+    Solver(const World& world, Adversary adv, Pruning prune)
+        : w(world), adversary(adv), pruning(prune) {
         memo.reserve(1 << 16);
     }
 
@@ -121,6 +137,44 @@ struct Solver {
         return true;
     }
 
+    // Candidate shots, best first. A cell that is occupied in about half the
+    // surviving configurations splits them most evenly and tends to be the
+    // optimal move, so trying those first produces a tight incumbent on the
+    // first cell rather than the last. Index order is kept for Pruning::None so
+    // the reference search stays exactly what it was.
+    mutable std::vector<double> scoreScratch;
+
+    // Fills `out` with the unshot cells, best first, and returns how many. The
+    // buffer is the caller's stack: a vector here costs one allocation per node,
+    // and there are millions of nodes.
+    int candidates(Mask shot, const std::vector<ConfigId>& support, int* out) const {
+        int n = 0;
+        for (int cell = 0; cell < w.cells; ++cell)
+            if (((shot >> cell) & 1u) == 0) out[n++] = cell;
+        if (pruning != Pruning::Star1) return n;
+
+        // One pass over the support per node rather than one per cell: each
+        // configuration contributes its whole occupancy word at once.
+        const double total = static_cast<double>(support.size());
+        std::vector<double>& score = scoreScratch;
+        score.assign(static_cast<std::size_t>(w.cells), 0.0);
+        for (ConfigId b : support) {
+            Mask occ = w.occupancy[b] & ~shot;
+            while (occ) {
+                const int cell = __builtin_ctz(occ);
+                occ &= occ - 1;
+                score[static_cast<std::size_t>(cell)] += 1.0;
+            }
+        }
+        for (double& v : score) v /= total;
+        // Descending hit probability. The greedy shot is known to sit within a
+        // fraction of a shot of optimal here, so it is a good first guess.
+        std::stable_sort(out, out + n, [&](int a, int b) {
+            return score[static_cast<std::size_t>(a)] > score[static_cast<std::size_t>(b)];
+        });
+        return n;
+    }
+
     double value(Mask shot, const std::vector<ConfigId>& support, int* bestCell) {
         if (occupancySettled(support))
             return __builtin_popcount(w.occupancy[support.front()] & ~shot);
@@ -130,49 +184,100 @@ struct Solver {
             const auto it = memo.find(key);
             if (it != memo.end()) return it->second;
         }
+        ++nodes;
 
         double best = std::numeric_limits<double>::infinity();
         int bestAt = -1;
         const double n = static_cast<double>(support.size());
 
-        for (int cell = 0; cell < w.cells; ++cell) {
-            if ((shot >> cell) & 1u) continue;
+        int cellBuf[kMaxCells];
+        const int cellCount = candidates(shot, support, cellBuf);
+        for (int ci = 0; ci < cellCount; ++ci) {
+            const int cell = cellBuf[ci];
             const Mask nextShot = shot | (Mask{1} << cell);
 
             std::map<int, std::vector<ConfigId>> branches;
             for (ConfigId b : support) branches[outcomeOf(w, b, cell, shot)].push_back(b);
 
-            // Cheap floor first: if even the optimistic value cannot beat the
-            // incumbent, skip the cell without recursing.
-            double optimistic = 1.0;
+            // Every branch is charged at its admissible floor to begin with, so
+            // `running` is a lower bound on this cell's true score throughout.
+            // Replacing a floor with the exact value only ever raises it.
+            Branch ordered[kMaxBranches];
+            std::size_t nb = 0;
+            for (const auto& branch : branches) {
+                ordered[nb++] = {&branch.second,
+                                 static_cast<double>(branch.second.size()) / n,
+                                 floorOf(nextShot, branch.second)};
+            }
+
+            if (pruning == Pruning::Star1) {   // branch ordering, Star1 only
+                // Evaluate the branch with the largest floor first: in a worst
+                // case it is the one that decides the node, and in an average it
+                // moves `running` the most per unit of work.
+                std::stable_sort(ordered, ordered + nb,
+                                 [](const Branch& a, const Branch& b) {
+                                     return a.floor > b.floor;
+                                 });
+            }
+
+            double running = 1.0;
             if (adversary == Adversary::Committed) {
-                for (const auto& branch : branches)
-                    optimistic += (static_cast<double>(branch.second.size()) / n) *
-                                  floorOf(nextShot, branch.second);
+                for (std::size_t i = 0; i < nb; ++i) running += ordered[i].weight * ordered[i].floor;
             } else {
                 double worst = 0;
-                for (const auto& branch : branches)
-                    worst = std::max(worst, floorOf(nextShot, branch.second));
-                optimistic += worst;
+                for (std::size_t i = 0; i < nb; ++i) worst = std::max(worst, ordered[i].floor);
+                running += worst;
             }
-            if (optimistic >= best) continue;
+            if (running >= best) { ++cellsPruned; continue; }
 
-            double score = 1.0;
-            if (adversary == Adversary::Committed) {
-                for (const auto& branch : branches) {
-                    score += (static_cast<double>(branch.second.size()) / n) *
-                             value(nextShot, branch.second, nullptr);
-                    if (score >= best) break;
+            double score;
+            if (pruning == Pruning::None && adversary == Adversary::Committed) {
+                // The original: unevaluated branches count for nothing, so the
+                // partial sum is a weaker bound and cuts later.
+                double partial = 1.0;
+                bool cut = false;
+                for (std::size_t i = 0; i < nb; ++i) {
+                    partial += ordered[i].weight * value(nextShot, *ordered[i].support, nullptr);
+                    if (partial >= best && i + 1 < nb) { cut = true; break; }
                 }
+                if (cut) { ++branchesCut; continue; }
+                score = partial;
+            } else if (adversary == Adversary::Committed) {
+                bool cut = false;
+                for (std::size_t i = 0; i < nb; ++i) {
+                    const Branch& b = ordered[i];
+                    const double exact = value(nextShot, *b.support, nullptr);
+                    running += b.weight * (exact - b.floor);
+                    if (running >= best && i + 1 < nb) {
+                        cut = true;
+                        break;
+                    }
+                }
+                if (cut) { ++branchesCut; continue; }
+                score = running;
             } else {
                 // The hider answers to hurt most, so the chance node maximises.
-                double worst = 0;
-                for (const auto& branch : branches) {
-                    worst = std::max(worst, value(nextShot, branch.second, nullptr));
-                    if (1.0 + worst >= best) break;
+                // Branches still to come cannot pull the maximum down, so the
+                // running bound is the largest of what is known and what is
+                // still floored.
+                double valueOf[kMaxBranches] = {0};
+                bool cut = false;
+                for (std::size_t i = 0; i < nb; ++i) {
+                    valueOf[i] = value(nextShot, *ordered[i].support, nullptr);
+                    double bound = 0;
+                    for (std::size_t j = 0; j < nb; ++j)
+                        bound = std::max(bound, j <= i ? valueOf[j] : ordered[j].floor);
+                    if (1.0 + bound >= best && i + 1 < nb) {
+                        cut = true;
+                        break;
+                    }
                 }
+                if (cut) { ++branchesCut; continue; }
+                double worst = 0;
+                for (std::size_t i = 0; i < nb; ++i) worst = std::max(worst, valueOf[i]);
                 score = 1.0 + worst;
             }
+
             if (score < best) {
                 best = score;
                 bestAt = cell;
@@ -188,18 +293,21 @@ struct Solver {
 }  // namespace
 
 ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit,
-                           Adversary adversary) {
+                           Adversary adversary, Pruning pruning) {
     const auto t0 = std::chrono::steady_clock::now();
     const World w = buildWorld(inst, configurationLimit);
 
     std::vector<ConfigId> all(w.occupancy.size());
     for (std::size_t i = 0; i < all.size(); ++i) all[i] = static_cast<ConfigId>(i);
 
-    Solver solver(w, adversary);
+    Solver solver(w, adversary, pruning);
     ExactSolution out;
     out.configurations = w.occupancy.size();
     out.expectedShots = solver.value(0, all, &out.optimalFirstShot);
     out.memoStates = solver.memo.size();
+    out.nodesExpanded = solver.nodes;
+    out.cellsPruned = solver.cellsPruned;
+    out.branchesCut = solver.branchesCut;
     out.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     return out;
 }

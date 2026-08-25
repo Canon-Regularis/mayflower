@@ -5,7 +5,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <stdexcept>
+#include <cmath>
 #include <cstdio>
+#include <string>
 #include <memory>
 #include <vector>
 
@@ -13,7 +15,61 @@
 #include "mayflower/instance.hpp"
 #include "mayflower/policy.hpp"
 
-int main() {
+
+// What the pruning buys, and how much further it carries the solver.
+//
+// Star1 keeps a running lower bound on a chance node by charging branches that
+// have not been evaluated at their admissible floor rather than at zero, and
+// tries cells in descending hit probability so a tight incumbent arrives first.
+// Neither changes the answer, which is the first column below.
+void pruningLadder() {
+    std::printf("\nWhat the pruning buys\n---------------------\n\n");
+    std::printf("Three levels, each adding one mechanism, so the change is attributable.\n");
+    std::printf("None is the original search. Bounds charges branches that have not been\n");
+    std::printf("evaluated at their admissible floor instead of at zero, so the running value\n");
+    std::printf("stays a valid lower bound and cuts earlier. Star1 adds move ordering.\n\n");
+    std::printf("None of them may change the answer, which the last column checks.\n\n");
+
+    std::printf("%-12s %7s %10s %9s %9s %9s %11s %6s\n", "instance", "boards", "E[T]",
+                "none s", "bounds s", "star1 s", "star1 nodes", "agree");
+
+    struct C { int w, h; std::vector<int> f; bool slow; };
+    for (const C& c : std::vector<C>{{3, 3, {2}, false}, {4, 3, {2}, false},
+                                     {4, 4, {2}, false}, {4, 4, {3}, false},
+                                     {5, 4, {3}, true}, {4, 4, {2, 2}, true},
+                                     {4, 4, {3, 2}, true}}) {
+        const mayflower::Instance inst(c.w, c.h, c.f);
+        mayflower::ExactSolution none, bounds, star1;
+        try {
+            bounds = mayflower::solveOptimal(inst, 60000, mayflower::Adversary::Committed,
+                                             mayflower::Pruning::Bounds);
+            star1 = mayflower::solveOptimal(inst, 60000, mayflower::Adversary::Committed,
+                                            mayflower::Pruning::Star1);
+            if (!c.slow)
+                none = mayflower::solveOptimal(inst, 60000, mayflower::Adversary::Committed,
+                                               mayflower::Pruning::None);
+        } catch (const std::exception&) { continue; }
+
+        char noneCell[16] = "-";
+        bool agree = std::abs(bounds.expectedShots - star1.expectedShots) < 1e-12;
+        if (!c.slow) {
+            std::snprintf(noneCell, sizeof noneCell, "%.3f", none.seconds);
+            agree = agree && std::abs(none.expectedShots - star1.expectedShots) < 1e-12;
+        }
+        std::printf("%-12s %7llu %10.6f %9s %9.3f %9.3f %11llu %6s\n", inst.describe().c_str(),
+                    static_cast<unsigned long long>(star1.configurations), star1.expectedShots,
+                    noneCell, bounds.seconds, star1.seconds,
+                    static_cast<unsigned long long>(star1.nodesExpanded),
+                    agree ? "yes" : "*** NO ***");
+        std::fflush(stdout);
+    }
+    std::printf("\nA dash is a run that was not attempted, not a failure.\n");
+}
+
+int main(int argc, char** argv) {
+    const std::string only = argc > 1 ? argv[1] : "";
+    const bool all = only.empty();
+    if (only == "pruning") { pruningLadder(); return 0; }
     using namespace mayflower;
 
     std::printf("Exact optimal play on small instances\n");
@@ -77,5 +133,6 @@ int main() {
     std::printf("to identify it instead of to cover it wastes them. Maximising hit probability is\n");
     std::printf("close to optimal, and exactly optimal on several instances, but it is not\n");
     std::printf("optimal in general.\n");
+    if (all) pruningLadder();
     return 0;
 }
