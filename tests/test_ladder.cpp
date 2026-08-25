@@ -13,6 +13,7 @@
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
 #include "mayflower/profile_dp.hpp"
+#include "mayflower/profile_dp_blocked.hpp"
 
 namespace {
 
@@ -42,6 +43,8 @@ struct Rng {
     int below(int n) { return static_cast<int>(next() % static_cast<std::uint64_t>(n)); }
 };
 
+// Every rung, against V0, on the same constraints. Counts are integers, so this
+// is exact equality and there is no tolerance to argue about.
 bool agree(const Instance& inst, const Constraints& c, const std::string& label) {
     const std::uint64_t v0 = countConfigurations(inst, c).count;
     const std::uint64_t v1 = countConfigurationsFast(inst, c).count;
@@ -51,6 +54,32 @@ bool agree(const Instance& inst, const Constraints& c, const std::string& label)
         std::printf("  FAIL  %s: V0 %llu, V1 %llu\n", label.c_str(),
                     static_cast<unsigned long long>(v0), static_cast<unsigned long long>(v1));
         return false;
+    }
+
+    if (!blockedPathSupports(inst)) return true;
+
+    // V2 is the radix-partitioned merge at one thread, V3 the same work spread
+    // over several. Buckets partition the destination keys, so no two merges
+    // touch one counter and the thread count cannot change the answer.
+    const std::uint64_t v2 = countConfigurationsBlocked(inst, c, 1).count;
+    ++gChecks;
+    if (v0 != v2) {
+        ++gFailures;
+        std::printf("  FAIL  %s: V0 %llu, V2 %llu\n", label.c_str(),
+                    static_cast<unsigned long long>(v0), static_cast<unsigned long long>(v2));
+        return false;
+    }
+
+    for (int threads : {2, 4, 7}) {
+        const std::uint64_t v3 = countConfigurationsBlocked(inst, c, threads).count;
+        ++gChecks;
+        if (v0 != v3) {
+            ++gFailures;
+            std::printf("  FAIL  %s: V0 %llu, V3(%d threads) %llu\n", label.c_str(),
+                        static_cast<unsigned long long>(v0), threads,
+                        static_cast<unsigned long long>(v3));
+            return false;
+        }
     }
     return true;
 }
