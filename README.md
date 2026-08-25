@@ -17,13 +17,22 @@ coverage is what binds.
 
 ## Status
 
-Milestones M0 to M4 are complete apart from the max-coverage bound, both rulesets
-included. M5 has exact
-optimal play on small instances, M6 has its first ladder rung and measurement
-platform, M7 and M8 have a working report pipeline, and M9 is complete: the
-transfer-matrix spectrum, the bond-dimension question, the adaptive adversary,
-constraint density, the adaptivity gap, complexity and related work, noise, and
-the Bimaru and salvo breakdowns.
+Every milestone is complete.
+
+The exact counting core carries both rulesets, ships may touch and ships may not.
+The bound ladder is certified as far as water filling, and the rung beyond it was
+investigated and withdrawn with a counterexample rather than left as an estimate.
+Exact optimal play is solved on small instances with all three objectives priced
+against it. The optimisation ladder runs to four rungs, every one bit-identical.
+The report renders from a figure-data contract and closes with a playable engine
+and a belief scrubber. The mathematical extensions are done, the weighted sweep
+carries opponent priors and noisy channels, and the analysis layer has folds, a
+pre-registration, a registry and a sealed TEST fold.
+
+Three of those ended by contradicting the plan that asked for them: the
+max-coverage rung is not a bound, the opponent prior is learnable rather than
+unlearnable, and star1's move ordering costs more than it saves. Each is recorded
+where it was measured.
 
 | component | |
 | --- | --- |
@@ -64,9 +73,12 @@ the Bimaru and salvo breakdowns.
 | `include/mayflower/policy.hpp` | Random, parity hunt/target, density (cheap tier), and exact-posterior policies |
 | `tests/oracle/` | Independent brute-force enumerator and ordered simulator |
 | `python/oracle.py` | Order-aware reference model |
+| `python/stats.py` | The analysis layer, and the calibration that keeps it honest |
+| `include/mayflower/folds.hpp` | Fold assignment, shared with the analysis |
+| `experiments/` | Pre-registration, registry, and the append-only audit log |
 
-Still to come: the full experiment registry of M11. The max-coverage rung was
-investigated and withdrawn.
+Every milestone is complete. The max-coverage rung was investigated and
+withdrawn.
 
 ## Build
 
@@ -197,7 +209,9 @@ establish that no 19-cell set does, so the adversarial worst-case bound of
 `17 + beta(5) - 1 = 36` that would follow from the other direction is not
 claimed. On instances small enough to solve outright, `tools/m9 adversary`
 computes the worst case exactly instead of bounding it. The max-coverage rung
-is not implemented and is therefore not quoted.
+was investigated and withdrawn: it is not a lower bound on the adaptive optimum,
+and it exceeds the true optimum on every instance small enough to check. See
+below.
 
 Unresolved interval: `[24.088, 44.369]`, a gap of 20.3 shots. Water-filling
 closes 25.9% of the distance from the coverage bound to the best measured policy.
@@ -917,7 +931,7 @@ So the non-adaptive optimum is at most 88.7342, against a density policy that
 measures 44.369. Both are achievable numbers rather than optima, so the pair does
 not bound the adaptivity gap from below, but it does show the gap is not small.
 
-## Two more rungs, and one that did not earn its place
+## Pruning the search, and two more rungs
 
 ### The search
 
@@ -945,11 +959,26 @@ instance      boards       E[T]    none s  bounds s   star1 s  agree
 5x4 {3}           22   6.227273         -   154.763   120.622    yes
 ```
 
-The bound is the win: 10.2x on 4x4 {2}, and never worse than the reference
-anywhere measured. The move ordering is not. It gives half that back on
-4x4 {2} and is worth 1.3x on 5x4 {3}, so it trades rather than improves, and the
-default stops at Bounds. It stays in the code because the measurement is the
-point.
+Read that table alone and the bound is the whole story: 10.2x on 4x4 {2}, never
+worse than the reference, while the ordering gives half of it back. That reading
+is wrong, and it cost a wrong default before the measurement caught it.
+
+Every instance above holds one ship. The instances whose cost is actually felt
+are the fleets, and they are missing from the table because they were too slow to
+run three ways. On those the ordering is not a tie-break, it is the difference
+between finishing and not:
+
+```text
+m9 self-test, which includes 4x4 {3,2}
+  Star1        66 s
+  Bounds   10,490 s
+```
+
+A factor of 158, on the only instances anyone waits for. The default is Star1.
+
+The general lesson is worth more than the setting: a tie-break that only matters
+when the search is expensive has to be chosen on the expensive case, and a table
+of cheap cases will confidently tell you otherwise.
 
 Every level returns the same expected shots to the last digit, which they must:
 the bound charged to an unevaluated branch is admissible, so a cell is abandoned
@@ -1130,6 +1159,90 @@ which is the honest reason it stays out of the headline engine.
 
 Full output in [docs/OPPONENT.txt](docs/OPPONENT.txt).
 
+## The discipline layer
+
+Numbers are easy to produce and hard to trust. This is what stands between the
+two.
+
+### Folds that cannot drift
+
+Every board id belongs to exactly one of TRAIN, VAL or TEST, decided by hashing
+the id and thresholding: 60 / 20 / 20. Nothing about a run, a policy or a date
+enters, so a board keeps its fold forever.
+
+Thresholding rather than a modulus is deliberate. Moving a boundary later moves
+only the boards that boundary crosses, where a modulus would reshuffle the whole
+space, and a fold that cannot survive its own maintenance is not a fold.
+
+The rule lives in two places, `include/mayflower/folds.hpp` and
+`python/stats.py`, because the harness selects boards in C++ and the analysis
+reads them in Python. Both assert the same pinned vector and the same
+`foldFraction(0)` to the last digit, so drift fails the build on both sides
+rather than letting an experiment quietly read data it believes is sealed.
+
+`tools/selfplay` takes the fold as an argument, defaults to TRAIN because an
+unqualified run is exploratory, and refuses TEST outright.
+
+### A seal that leaves a mark
+
+TEST is sealed. Reading it requires an unseal entry in
+[`experiments/audit.log`](experiments/audit.log), recorded before the number is
+read rather than after.
+
+The log is a hash chain: every line carries the SHA-256 of everything before it,
+so an edit or a deletion anywhere invalidates every line after it. `stats.py`
+verifies the chain on every run and refuses to append to a broken one. The test
+suite breaks it on purpose and checks that the break is detected.
+
+`require_unseal()` raises unless the unseal is already on record. That is the
+whole mechanism: it makes reading TEST an event with a timestamp rather than a
+decision someone remembers making.
+
+### Intervals that were checked rather than believed
+
+Interval code is code. Every interval `stats.py` produces is calibrated by
+simulating from a known ground truth and counting how often the interval covers
+it. A 95% interval that covers 91% of the time is a bug, and this is where it is
+caught.
+
+That check found two bugs in this repository's own Wilson implementation: it
+emitted `-0.0000` at `k = 0` and could emit slightly more than 1 at `k = n`,
+which defeats the one property Wilson is chosen for. Both are fixed and pinned.
+
+It also corrected a claim. Wilson is not uniformly better than the normal
+approximation at a point: the binomial is discrete, coverage oscillates with `p`,
+and at `p = 0.02, n = 200` the normal approximation happens to cover more often.
+The comparison has to be made across `p`, where Wilson does win, with a mean
+deviation from 95% of 0.0171 against 0.0207 and a worst case of 0.925 against
+0.865.
+
+### Sample sizes, re-derived
+
+The old table was internally inconsistent, and the calibration found that too.
+
+| effect | paired, rho = 0.923 | paired, rho = 0.00 |
+| --- | --- | --- |
+| 0.10 shots | 9,510 | 123,506 |
+| 0.25 shots | 1,522 | 19,761 |
+| 0.50 shots | 381 | 4,941 |
+| 1.00 shots | 96 | 1,236 |
+
+The paired figures agree with the superseded table exactly, 9,510 at 0.10 shots.
+The independent ones do not: 47,000 was quoted where the formula and the measured
+sigma of 8.87 give 123,506. The old independent column implies sigma = 5.47, so
+the two halves of that table were derived from different spreads and the
+independent half understated the cost by a factor of 2.63.
+
+Both columns above are paired designs. At rho = 0 pairing buys nothing and the
+requirement equals the independent per-arm figure, so the second column serves as
+both. The correlation here is bimodal, 0.923 inside the density family and 0.00
+against the stochastic hunt policy, so the same comparison against two opponents
+differs by a factor of thirteen and no single number covers both.
+
+The formula is checked the same way as the intervals: simulating at exactly the
+prescribed n and confirming the promised 80% power actually arrives, measured at
+0.825.
+
 ## Known limitations
 
 - The `Sampler` holds backward counts for every layer, about 397 MB on the
@@ -1152,12 +1265,22 @@ Full output in [docs/OPPONENT.txt](docs/OPPONENT.txt).
 
 ```text
 include/mayflower/   constants.hpp (single source of truth), board128, instance,
-                     observations, profile_dp
-src/core/            the DP, marginals, sampler
-tools/               omega0, marginals, sample
+                     observations, profile_dp, notouch, weighted, folds
+src/core/            the DP and its rungs, marginals, sampler, no-touching,
+                     weighted counting
+src/certify/         blocking numbers, announcement transcripts
+src/search/          the belief MDP and its pruning
+src/lattice/         the transfer matrix
+src/platform/        core topology and pinning, for the benchmarks
+tools/               omega0, marginals, sample, selfplay, bounds, optimal,
+                     spectrum, m9, weighted, maxcover, opponent, report_data
+bench/               the ladder under the measurement protocol
+web/                 the JS engine, the live widget, the belief scrubber
 tests/oracle/        independent brute-force enumerator and ordered simulator
-python/              order-aware reference model
-docs/                correctness hazards, complexity notes, M9 results
+python/              order-aware reference model, bond dimension, the analysis
+                     layer and its calibration
+experiments/         pre-registration, registry, append-only audit log
+docs/                correctness hazards, complexity notes, captured results
 ```
 
 ## Licence
