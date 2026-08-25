@@ -54,6 +54,12 @@ target_link_libraries(bounds PRIVATE mayflower_core)
 add_executable(optimal tools/optimal.cpp)
 target_link_libraries(optimal PRIVATE mayflower_core)
 
+add_executable(maxcover tools/maxcover.cpp)
+target_link_libraries(maxcover PRIVATE mayflower_core)
+
+add_test(NAME maxcover COMMAND maxcover selftest)
+set_tests_properties(maxcover PROPERTIES LABELS "pr" TIMEOUT 900)
+
 add_executable(weighted tools/weighted.cpp)
 target_link_libraries(weighted PRIVATE mayflower_core)
 
