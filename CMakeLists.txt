@@ -23,10 +23,13 @@ if(MF_NATIVE AND CMAKE_BUILD_TYPE STREQUAL "Release")
   target_compile_options(mf_flags INTERFACE -march=native)
 endif()
 
+find_package(Threads REQUIRED)
+
 add_library(mayflower_core
   src/core/profile_dp.cpp
   src/core/notouch.cpp
   src/core/weighted.cpp
+  src/core/profile_dp_blocked.cpp
   src/core/profile_dp_fast.cpp
   src/certify/blocking.cpp
   src/certify/transcripts.cpp
@@ -34,7 +37,7 @@ add_library(mayflower_core
   src/platform/bench_platform_win.cpp
   src/lattice/spectrum.cpp)
 target_include_directories(mayflower_core PUBLIC include)
-target_link_libraries(mayflower_core PUBLIC mf_flags)
+target_link_libraries(mayflower_core PUBLIC mf_flags Threads::Threads)
 
 add_executable(omega0 tools/omega0.cpp)
 target_link_libraries(omega0 PRIVATE mayflower_core)
