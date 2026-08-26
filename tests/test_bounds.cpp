@@ -166,15 +166,20 @@ void testAgainstBruteForce() {
 void testWitnessesAreValid() {
     std::printf("[witnesses]\n");
     for (int L : {2, 3, 4, 5}) {
-        const auto witness = mayflower::blockingWitness(10, 10, L);
+        const auto found = mayflower::blockingWitness(10, 10, L);
+        const std::vector<int>& witness = found.cells;
         check(witnessBlocksEverything(10, 10, L, witness),
-              "greedy witness for L=" + std::to_string(L) + " meets every placement");
+              "witness for L=" + std::to_string(L) + " meets every placement");
         const auto exact = mayflower::blockingNumber(10, 10, L);
         check(static_cast<int>(witness.size()) >= exact.blocking,
               "witness is no smaller than beta(L)");
-        std::printf("  L=%d  beta %2d, greedy witness %2zu cells%s\n", L, exact.blocking,
-                    witness.size(),
-                    static_cast<int>(witness.size()) == exact.blocking ? " (optimal)" : "");
+        // The flag has to describe the set rather than the intention behind it,
+        // since the figure labels the drawing from it.
+        check(found.optimal == (static_cast<int>(witness.size()) == exact.blocking),
+              "the optimal flag matches the set it came with");
+        std::printf("  L=%d  beta %2d, witness %2zu cells%s%s\n", L, exact.blocking,
+                    witness.size(), found.optimal ? " (minimum)" : " (greedy, not minimum)",
+                    found.selfReduced ? ", self-reduced" : "");
     }
 }
 

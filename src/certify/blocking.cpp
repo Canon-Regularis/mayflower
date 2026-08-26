@@ -18,11 +18,16 @@ namespace {
 //
 // The array is dense, not hashed, and the cell loop is decomposed into
 // (high, digit, low) so extracting the current column's digit needs no division.
+// Free, Blocked, or not yet decided. The DP takes these so the self-reduction
+// can ask what the best free set is that respects the decisions made so far.
+enum class Decision : std::int8_t { Either = 0, Free = 1, Blocked = 2 };
+
 struct FreeSetDp {
     int W, H, L;
     std::vector<std::int64_t> pow;   // pow[c] = L^c
     std::int64_t vertStates = 1;
     std::vector<std::int8_t> cur, next;
+    const std::vector<Decision>* fixed = nullptr;   // null means every cell is free to choose
 
     FreeSetDp(int w, int h, int l) : W(w), H(h), L(l) {
         pow.assign(static_cast<std::size_t>(W) + 1, 1);
@@ -39,7 +44,7 @@ struct FreeSetDp {
         std::fill(cur.begin(), cur.end(), -1);
         cur[0] = 0;
         for (int row = 0; row < H; ++row) {
-            for (int col = 0; col < W; ++col) step(col);
+            for (int col = 0; col < W; ++col) step(row, col);
             foldRow();
         }
         std::int8_t best = -1;
@@ -48,10 +53,14 @@ struct FreeSetDp {
         return best;
     }
 
-    void step(int col) {
+    void step(int row, int col) {
         std::fill(next.begin(), next.end(), -1);
         const std::int64_t low = pow[static_cast<std::size_t>(col)];
         const std::int64_t high = vertStates / (low * L);
+        const Decision want = fixed ? (*fixed)[static_cast<std::size_t>(row * W + col)]
+                                    : Decision::Either;
+        const bool mayBlock = want != Decision::Free;
+        const bool mayTake = want != Decision::Blocked;
 
         for (std::int64_t h = 0; h < high; ++h) {
             const std::int64_t hb = h * low * L;
@@ -64,12 +73,15 @@ struct FreeSetDp {
                         if (value < 0) continue;
 
                         // Cell excluded from the free set: both runs restart.
-                        const std::int64_t clearedVert = hb + lo;
-                        std::int8_t& blocked = next[static_cast<std::size_t>(clearedVert * L)];
-                        blocked = std::max(blocked, value);
+                        if (mayBlock) {
+                            const std::int64_t clearedVert = hb + lo;
+                            std::int8_t& blocked =
+                                next[static_cast<std::size_t>(clearedVert * L)];
+                            blocked = std::max(blocked, value);
+                        }
 
                         // Cell in the free set: both runs extend and must stay below L.
-                        if (d + 1 < L && horiz + 1 < L) {
+                        if (mayTake && d + 1 < L && horiz + 1 < L) {
                             const std::int64_t grownVert = hb + static_cast<std::int64_t>(d + 1) * low + lo;
                             std::int8_t& taken =
                                 next[static_cast<std::size_t>(grownVert * L + horiz + 1)];
@@ -114,10 +126,10 @@ BlockingResult blockingNumber(int width, int height, int length) {
     return out;
 }
 
-// Greedy witness, then verified: repeatedly shoot the cell meeting the most
-// still-unmet placements. The greedy set is an upper bound on beta(L); the DP
-// gives the exact value, and the two are reported together so any gap is visible.
-std::vector<int> blockingWitness(int width, int height, int length) {
+// Greedy cover: repeatedly shoot the cell meeting the most still-unmet
+// placements. It is an upper bound on beta(L) and on this board it happens to
+// reach it for lengths 2 and 5 and to miss by one and two for 3 and 4.
+std::vector<int> greedyCover(int width, int height, int length) {
     std::vector<std::vector<int>> placements;
     for (int r = 0; r < height; ++r)
         for (int c = 0; c + length <= width; ++c) {
@@ -155,6 +167,54 @@ std::vector<int> blockingWitness(int width, int height, int length) {
         }
     }
     return chosen;
+}
+
+// Self-reduction to a minimum witness. Walk the cells in order, try each one as
+// free, and keep that choice when the DP says a maximum free set still exists
+// under the decisions made so far. The invariant is that the decided prefix
+// always extends to some maximum free set, so after the last cell every cell is
+// decided and the blocked ones number exactly beta(L).
+//
+// One DP run per cell. The caller decides whether that is affordable, since the
+// DP's own cost is what makes it so.
+std::vector<int> minimumCover(int width, int height, int length, int target) {
+    std::vector<Decision> fixed(static_cast<std::size_t>(width * height), Decision::Either);
+    for (int cell = 0; cell < width * height; ++cell) {
+        fixed[static_cast<std::size_t>(cell)] = Decision::Free;
+        FreeSetDp dp(width, height, length);
+        dp.fixed = &fixed;
+        if (dp.run() < target) fixed[static_cast<std::size_t>(cell)] = Decision::Blocked;
+    }
+    std::vector<int> chosen;
+    for (int cell = 0; cell < width * height; ++cell)
+        if (fixed[static_cast<std::size_t>(cell)] == Decision::Blocked) chosen.push_back(cell);
+    return chosen;
+}
+
+BlockingWitness blockingWitness(int width, int height, int length) {
+    const BlockingResult b = blockingNumber(width, height, length);
+
+    BlockingWitness out;
+    out.cells = greedyCover(width, height, length);
+    out.optimal = static_cast<int>(out.cells.size()) == b.blocking;
+    if (out.optimal) return out;
+
+    // The reduction costs one DP run per cell, so the work is the cell count
+    // squared times the DP's state space. Gate on that rather than on the
+    // measured seconds: a wall-clock gate makes the figure depend on how busy
+    // the machine was, and would draw 24 cells on an idle run and 26 on a loaded
+    // one. On the standard board this admits lengths up to 4 and leaves 5 to the
+    // greedy cover, which already reaches beta(5) anyway.
+    constexpr double kBudgetOps = 1e11;
+    double states = 1;
+    for (int c = 0; c <= width; ++c) states *= length;
+    const double cells = static_cast<double>(width) * height;
+    if (cells * cells * states > kBudgetOps) return out;
+
+    out.cells = minimumCover(width, height, length, b.largestFreeSet);
+    out.optimal = static_cast<int>(out.cells.size()) == b.blocking;
+    out.selfReduced = true;
+    return out;
 }
 
 }  // namespace mayflower

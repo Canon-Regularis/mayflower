@@ -368,8 +368,10 @@ def blocking_boards(witnesses, width, height, cell=26):
                     f'<rect class="cellmark" x="{x + 1}" y="{y + 1}" width="{cell - 2}" '
                     f'height="{cell - 2}" rx="2" '
                     f'fill="{"var(--series-1)" if on else "var(--ramp-0)"}"/>')
-        note = ("optimal" if wit["greedy"] == wit["beta"]
-                else f'greedy needs {wit["greedy"]}')
+        # The label has to describe the drawing. Titling a 34-cell greedy cover
+        # "beta = 33" leaves a reader who counts the marks with the wrong number.
+        note = ("minimum" if wit.get("optimal")
+                else f'a greedy cover of {len(wit["cells"])}')
         out.append(text(ox + width * cell / 2, 28 + height * cell + 18, note, "tick"))
     out.append("</svg>")
     return "".join(out)

@@ -222,13 +222,14 @@ int main(int argc, char** argv) {
     out += "  \"blockingWitness\": [";
     bool firstW = true;
     for (int L : {2, 3, 4, 5}) {
-        const auto witness = blockingWitness(inst.width, inst.height, L);
+        const auto found = blockingWitness(inst.width, inst.height, L);
         const auto b = blockingNumber(inst.width, inst.height, L);
-        std::vector<std::uint64_t> cellsOut(witness.begin(), witness.end());
+        std::vector<std::uint64_t> cellsOut(found.cells.begin(), found.cells.end());
         if (!firstW) out += ", ";
         out += "\n    {\"length\": " + std::to_string(L) +
                ", \"beta\": " + std::to_string(b.blocking) +
-               ", \"greedy\": " + std::to_string(witness.size()) +
+               ", \"drawn\": " + std::to_string(found.cells.size()) +
+               ", \"optimal\": " + std::string(found.optimal ? "true" : "false") +
                ", \"cells\": " + jsonArray(cellsOut) + "}";
         firstW = false;
     }

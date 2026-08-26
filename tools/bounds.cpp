@@ -61,7 +61,8 @@ int main() {
     // 5-placement, feed those cells to the counting DP as misses, and the
     // hypothesis space must collapse to nothing.
     std::printf("Cross-check: a beta(5) blocking set makes the fleet impossible.\n");
-    const auto witness = blockingWitness(inst.width, inst.height, 5);
+    const auto found = blockingWitness(inst.width, inst.height, 5);
+    const std::vector<int>& witness = found.cells;
     std::vector<CellConstraint> cells(static_cast<std::size_t>(inst.cellCount()),
                                       CellConstraint::Free);
     for (int c : witness) cells[static_cast<std::size_t>(c)] = CellConstraint::MustBeEmpty;

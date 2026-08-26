@@ -31,8 +31,23 @@ struct BlockingResult {
 
 BlockingResult blockingNumber(int width, int height, int length);
 
-// A witness: a set of `blocking` cells meeting every length-L placement.
-std::vector<int> blockingWitness(int width, int height, int length);
+// A witness: a set of cells meeting every length-L placement, so a figure can
+// show the covering instead of asserting the number.
+//
+// `optimal` says whether the set is as small as beta(L). A greedy cover is tried
+// first and is often already minimum; where it is not, the set is rebuilt by
+// self-reduction, deciding each cell in turn and keeping the choice the DP says
+// still admits a maximum free set. That costs one DP run per cell, so it is
+// skipped when the DP is slow enough to make it minutes, and then the greedy
+// cover comes back with `optimal` false rather than a smaller claim than the set
+// can support.
+struct BlockingWitness {
+    std::vector<int> cells;
+    bool optimal = false;      // cells.size() == blockingNumber(...).blocking
+    bool selfReduced = false;  // greedy missed and the reduction ran
+};
+
+BlockingWitness blockingWitness(int width, int height, int length);
 
 // Distinct announcement strings the hits of a full fleet can produce, where each
 // of the ship-cell hits reads either as a plain hit or as one that sinks a ship
