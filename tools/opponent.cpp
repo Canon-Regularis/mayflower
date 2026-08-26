@@ -77,7 +77,7 @@ World buildWorld(const Instance& inst) {
 
     World w;
     w.cells = inst.cellCount();
-    w.placementSlots = placementSlots(inst);
+    w.placementSlots = static_cast<int>(placementSlots(inst));
     for (std::uint64_t r = 0; r < total; ++r) {
         const auto ps = sampler.unrank(r);
         std::uint32_t occ = 0;

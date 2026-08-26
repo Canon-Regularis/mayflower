@@ -6,6 +6,8 @@
 // merges touch one counter, and the order they run in cannot matter.
 #pragma once
 
+#include <vector>
+
 #include "mayflower/instance.hpp"
 #include "mayflower/profile_dp.hpp"
 
@@ -15,6 +17,12 @@ namespace mayflower {
 [[nodiscard]] bool blockedPathSupports(const Instance& inst);
 
 CountResult countConfigurationsBlocked(const Instance& inst, const Constraints& constraints,
+                                       int threads = 1);
+
+// Per-cell constraints only, matching the shape countConfigurations, countNoTouch
+// and weightedCount all offer. This rung was the odd one out.
+CountResult countConfigurationsBlocked(const Instance& inst,
+                                       const std::vector<CellConstraint>& cells,
                                        int threads = 1);
 CountResult countConfigurationsBlocked(const Instance& inst, int threads = 1);
 

@@ -122,6 +122,17 @@ add_executable(test_exact tests/test_exact.cpp)
 target_include_directories(test_exact PRIVATE tests)
 target_link_libraries(test_exact PRIVATE mayflower_core)
 
+add_executable(test_parallel tests/test_parallel.cpp)
+target_link_libraries(test_parallel PRIVATE mayflower_core)
+add_test(NAME parallel COMMAND test_parallel)
+set_tests_properties(parallel PROPERTIES LABELS "pr" TIMEOUT 900)
+
+add_executable(test_gated tests/test_gated.cpp)
+target_include_directories(test_gated PRIVATE tests)
+target_link_libraries(test_gated PRIVATE mayflower_core)
+add_test(NAME gated COMMAND test_gated)
+set_tests_properties(gated PROPERTIES LABELS "fast")
+
 add_executable(test_folds tests/test_folds.cpp)
 target_link_libraries(test_folds PRIVATE mayflower_core)
 add_test(NAME folds COMMAND test_folds)

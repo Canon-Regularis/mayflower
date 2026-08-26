@@ -94,7 +94,8 @@ void testNames() {
           "the three names parse");
     bool threw = false;
     try {
-        foldFromName("Train");
+        // The value is deliberately discarded; the throw is what is under test.
+        (void)foldFromName("Train");
     } catch (const std::exception&) { threw = true; }
     check(threw, "a typo is refused rather than widening the pool");
 }

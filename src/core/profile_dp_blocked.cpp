@@ -421,6 +421,14 @@ CountResult countConfigurationsBlocked(const Instance& inst, const Constraints& 
     return result;
 }
 
+CountResult countConfigurationsBlocked(const Instance& inst,
+                                       const std::vector<CellConstraint>& cells,
+                                       int threads) {
+    Constraints c;
+    c.cells = cells;
+    return countConfigurationsBlocked(inst, c, threads);
+}
+
 CountResult countConfigurationsBlocked(const Instance& inst, int threads) {
     Constraints c;
     c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);

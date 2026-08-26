@@ -290,10 +290,12 @@ int main(int argc, char** argv) {
         std::vector<int> frames;
         const bool withFrames = (g == 0);
         const auto pushFrame = [&](const Constraints& c) {
-            std::uint64_t total = 0;
-            const std::vector<std::uint64_t> occ = occupancyMap(inst, c, total);
-            for (std::uint64_t v : occ) {
-                const double p = total ? static_cast<double>(v) / static_cast<double>(total) : 0.0;
+            std::uint64_t frameTotal = 0;
+            const std::vector<std::uint64_t> cells = occupancyMap(inst, c, frameTotal);
+            for (std::uint64_t v : cells) {
+                const double p = frameTotal ? static_cast<double>(v) /
+                                                  static_cast<double>(frameTotal)
+                                            : 0.0;
                 frames.push_back(static_cast<int>(p * 255.0 + 0.5));
             }
         };
