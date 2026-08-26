@@ -41,29 +41,42 @@ void pruningLadder() {
         const mayflower::Instance inst(c.w, c.h, c.f);
         mayflower::ExactSolution none, bounds, star1;
         try {
-            bounds = mayflower::solveOptimal(inst, 60000, mayflower::Adversary::Committed,
-                                             mayflower::Pruning::Bounds);
             star1 = mayflower::solveOptimal(inst, 60000, mayflower::Adversary::Committed,
                                             mayflower::Pruning::Star1);
-            if (!c.slow)
+            // On the fleet instances the weaker levels are not slow, they are
+            // hours: 4x4 {3,2} takes about three under Bounds against a minute
+            // under Star1. Running them here would make the tool unusable, and
+            // the gap is the finding rather than a cost worth paying twice.
+            if (!c.slow) {
+                bounds = mayflower::solveOptimal(inst, 60000, mayflower::Adversary::Committed,
+                                                 mayflower::Pruning::Bounds);
                 none = mayflower::solveOptimal(inst, 60000, mayflower::Adversary::Committed,
                                                mayflower::Pruning::None);
+            }
         } catch (const std::exception&) { continue; }
 
-        char noneCell[16] = "-";
-        bool agree = std::abs(bounds.expectedShots - star1.expectedShots) < 1e-12;
+        char noneCell[16] = "-", boundsCell[16] = "-", agreeCell[12] = "-";
         if (!c.slow) {
             std::snprintf(noneCell, sizeof noneCell, "%.3f", none.seconds);
-            agree = agree && std::abs(none.expectedShots - star1.expectedShots) < 1e-12;
+            std::snprintf(boundsCell, sizeof boundsCell, "%.3f", bounds.seconds);
+            const bool agree =
+                std::abs(bounds.expectedShots - star1.expectedShots) < 1e-12 &&
+                std::abs(none.expectedShots - star1.expectedShots) < 1e-12;
+            std::snprintf(agreeCell, sizeof agreeCell, "%s", agree ? "yes" : "*** NO ***");
         }
-        std::printf("%-12s %7llu %10.6f %9s %9.3f %9.3f %11llu %6s\n", inst.describe().c_str(),
+        std::printf("%-12s %7llu %10.6f %9s %9s %9.3f %11llu %6s\n", inst.describe().c_str(),
                     static_cast<unsigned long long>(star1.configurations), star1.expectedShots,
-                    noneCell, bounds.seconds, star1.seconds,
-                    static_cast<unsigned long long>(star1.nodesExpanded),
-                    agree ? "yes" : "*** NO ***");
+                    noneCell, boundsCell, star1.seconds,
+                    static_cast<unsigned long long>(star1.nodesExpanded), agreeCell);
         std::fflush(stdout);
     }
-    std::printf("\nA dash is a run that was not attempted, not a failure.\n");
+    std::printf("\nA dash is a run that was not attempted, not a failure. The fleet instances\n");
+    std::printf("are dashed because the weaker levels take hours there rather than minutes,\n");
+    std::printf("which is itself the result: 4x4 {3,2} solves in about a minute under Star1\n");
+    std::printf("and took just under three hours under Bounds. The ordering is not a\n");
+    std::printf("tie-break on the instances anyone waits for.\n");
+    std::printf("\nEquality of the answers is checked wherever more than one level ran, and\n");
+    std::printf("across every level by tests/test_exact.cpp on the pinned optima.\n");
 }
 
 int main(int argc, char** argv) {
