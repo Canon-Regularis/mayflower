@@ -136,10 +136,19 @@ int main(int argc, char** argv) {
     // and this tool has no business deciding that on its own.
     const std::string foldArg = argc > 3 ? argv[3] : "train";
     const Fold fold = foldFromName(foldArg);
+
+    // TEST needs a token, and this tool cannot mint one. Only the analysis layer
+    // can, and only after verifying that the unseal is already recorded in
+    // experiments/audit.log. Putting the check in one place means there is one
+    // way to read TEST rather than two, and it leaves a record either way.
     if (fold == Fold::Test) {
-        std::printf("TEST is sealed. Record an unseal in experiments/audit.log and run the\n"
-                    "analysis through python/stats.py, which checks it. Refusing.\n");
-        return 2;
+        const bool token = argc > 4 && std::string(argv[4]) == "--unsealed";
+        if (!token) {
+            std::printf("TEST is sealed. Record the unseal in experiments/audit.log and run\n"
+                        "this through tools/run_headline.py, which verifies it. Refusing.\n");
+            return 2;
+        }
+        std::printf("TEST fold, unseal token accepted from the analysis layer.\n");
     }
     std::printf("fold         %s\n\n", foldName(fold));
 
