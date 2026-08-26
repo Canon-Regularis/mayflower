@@ -89,6 +89,22 @@ struct WeightedResult {
     bool rescaled = false;        // a layer was divided by a power of two
     double maxLayerSum = 0;       // largest sum over one layer, for the 2^53 argument
 
+    // A product of two non-zero factors came out zero, so a configuration this
+    // sweep was asked to weigh has been dropped and the total below is a lower
+    // bound rather than the answer.
+    //
+    // Rescaling cannot prevent it. The scale is one power of two for the whole
+    // layer, so it can centre one end of the layer's dynamic range and not both,
+    // and once that range passes what a double holds the low end goes to zero.
+    // Since the guard watches the layer maximum, a record whose heavy states stay
+    // near 1 while its light states decay away sets no other flag at all: the
+    // 8x8 fleet under a noisy channel with eps = 1e-25 reports the record as
+    // impossible, with rescaled false.
+    //
+    // The condition is detected at the multiply rather than inferred, so this is
+    // exact both ways.
+    bool underflowed = false;
+
     // True when this particular run is exact rather than approximate: the
     // weights were all 1, so every value was a non-negative integer, no layer
     // sum reached 2^53, and no rescale intervened. The bound in the comment

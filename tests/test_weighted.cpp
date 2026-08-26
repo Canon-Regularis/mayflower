@@ -364,6 +364,142 @@ void testRejectsBadInput() {
     check(threw, "a mis-sized weight vector is refused");
 }
 
+// Weights a double cannot hold.
+//
+// Rescaling divides a layer by one power of two, so it can centre one end of the
+// layer's dynamic range and not both. Once that range passes what a double holds,
+// values a factor of 1e308 behind the maximum reach zero and the configurations
+// running through them are gone. No rescale fixes that. What the sweep must not
+// do is stay quiet about it, and it used to: the guard watches the layer maximum,
+// so a record whose heavy states sit near 1 while its light states decay away set
+// no flag at all.
+//
+// The oracle is a weight every configuration carries equally, which makes the
+// answer a closed form: with occupied weight a on every cell, every board weighs
+// a^S and the total is exactly count * a^S. Under the noisy channel with every
+// cell answered MISS the same holds, at eps^occupied * (1-eps)^empty.
+void testUnderflowIsReported() {
+    std::printf("[weights beyond a double]\n");
+    const mayflower::Instance inst(8, 8, {4, 4, 3, 3, 2});
+    const double n = static_cast<double>(mayflower::countConfigurations(inst).count);
+    const int shipCells = 4 + 4 + 3 + 3 + 2;
+    const int cells = inst.cellCount();
+
+    // Inside the range: the closed form comes back and nothing is flagged.
+    {
+        mayflower::Weights w = mayflower::Weights::uniform();
+        w.occupied.assign(static_cast<std::size_t>(cells), 1e10);
+        w.empty.assign(static_cast<std::size_t>(cells), 1.0);
+        const auto r = mayflower::weightedCount(inst, w);
+        const double truth = std::log(n) + shipCells * std::log(1e10);
+        check(std::abs(r.logTotal - truth) < 1e-9 && !r.underflowed,
+              "a weight the range holds is exact and unflagged");
+    }
+
+    // Past it: the answer is short and the run says so.
+    {
+        mayflower::Weights w = mayflower::Weights::uniform();
+        w.occupied.assign(static_cast<std::size_t>(cells), 1e50);
+        w.empty.assign(static_cast<std::size_t>(cells), 1.0);
+        const auto r = mayflower::weightedCount(inst, w);
+        const double truth = std::log(n) + shipCells * std::log(1e50);
+        const double kept = std::exp(r.logTotal - truth);
+        char buf[160];
+        std::snprintf(buf, sizeof buf,
+                      "a weight it cannot hold is flagged (kept %.3f%% of the total)",
+                      100 * kept);
+        check(r.underflowed && kept < 0.5, buf);
+    }
+
+    // Through the public channel constructor, with an eps its own validator
+    // accepts. This is the one that used to report a possible record as
+    // impossible with `rescaled` false, since the layer maximum never moved.
+    {
+        const std::vector<int> allMiss(static_cast<std::size_t>(cells), 0);
+        const auto fine = mayflower::weightedCount(
+            inst, mayflower::Weights::noisyChannel(inst, allMiss, 1e-20));
+        const double truth = std::log(n) + shipCells * std::log(1e-20) +
+                             (cells - shipCells) * std::log1p(-1e-20);
+        check(!fine.underflowed && std::abs(fine.logTotal - truth) < 1e-9,
+              "eps = 1e-20 still fits, and reads exactly");
+
+        const auto gone = mayflower::weightedCount(
+            inst, mayflower::Weights::noisyChannel(inst, allMiss, 1e-25));
+        check(gone.underflowed,
+              "eps = 1e-25 does not, and does not pass for impossible");
+    }
+
+    // The unweighted bridge is untouched, and an underflowed run is never exact.
+    {
+        const auto r = mayflower::weightedCount(mayflower::standardInstance(),
+                                                mayflower::Weights::uniform());
+        check(r.exact && !r.underflowed && !r.rescaled,
+              "the standard instance is exact with nothing lost");
+    }
+}
+
+// The forward-backward multiplies a forward value by a backward one, so it fails
+// where each factor is representable and the product is not. It comes back inside
+// [0, 1] with nothing wrong on the face of it, which is why it refuses instead.
+void testMarginalsRefuseWhatTheyCannotHold() {
+    std::printf("[marginals under a weight that cancels]\n");
+    const mayflower::Instance inst(5, 5, {3, 2, 2});
+    mayflower::Constraints cons;
+    cons.cells.assign(static_cast<std::size_t>(inst.cellCount()),
+                      mayflower::CellConstraint::Free);
+    const auto reference =
+        mayflower::weightedMarginals(inst, cons, mayflower::Weights::uniform());
+
+    // A uniform weight on occupied and empty alike cancels in every ratio, so
+    // the marginals must not move at all.
+    const auto marginalsAt = [&](double u) {
+        mayflower::Weights w = mayflower::Weights::uniform();
+        w.occupied.assign(static_cast<std::size_t>(inst.cellCount()), u);
+        w.empty.assign(static_cast<std::size_t>(inst.cellCount()), u);
+        return w;
+    };
+
+    const auto worstAgainstReference = [&](const std::vector<double>& v) {
+        double d = 0;
+        for (std::size_t i = 0; i < reference.size(); ++i)
+            d = std::max(d, std::abs(v[i] - reference[i]));
+        return d;
+    };
+
+    {
+        const auto w = marginalsAt(1e-6);
+        const double d = worstAgainstReference(mayflower::weightedMarginals(inst, cons, w));
+        char buf[128];
+        std::snprintf(buf, sizeof buf,
+                      "a weight the range holds moves nothing (largest move %.3e)", d);
+        check(d < 1e-12, buf);
+    }
+
+    // 1e-13 used to move them by 0.047 and 1e-14 used to return all zeros, which
+    // is what an unsatisfiable record returns and means the opposite thing.
+    for (double u : {1e-13, 1e-14}) {
+        const auto w = marginalsAt(u);
+        bool threw = false;
+        try {
+            (void)mayflower::weightedMarginals(inst, cons, w);
+        } catch (const std::runtime_error&) {
+            threw = true;
+        }
+        char buf[128];
+        std::snprintf(buf, sizeof buf,
+                      "at u = %.0e the forward-backward refuses rather than answers", u);
+        check(threw, buf);
+
+        // And the path it names in the message is still right, since it divides
+        // two counts carrying the same scale.
+        const double d = worstAgainstReference(
+            mayflower::weightedMarginalsByRecount(inst, cons, w));
+        std::snprintf(buf, sizeof buf,
+                      "the recount it names survives u = %.0e, off by %.3e", u, d);
+        check(d < 1e-9, buf);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -374,6 +510,8 @@ int main() {
     testNoisyChannel();
     testMarginalsSum();
     testRescaling();
+    testUnderflowIsReported();
+    testMarginalsRefuseWhatTheyCannotHold();
     testRejectsBadInput();
     std::printf("\n%s\n", failures ? "FAILED" : "all checks passed");
     return failures ? 1 : 0;
