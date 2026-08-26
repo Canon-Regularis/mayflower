@@ -407,8 +407,15 @@ WeightedResult weightedCount(const Instance& inst, const Weights& weights) {
 
 double weightedMarginal(const Instance& inst, const Constraints& constraints,
                         const Weights& weights, int cell) {
+    // A cell the record has already settled is not a question. Forcing it the
+    // other way would count a disjoint set of boards and divide it by this one,
+    // which is not a conditional probability and is not bounded by 1.
+    const CellConstraint fixed = constraints.cells[static_cast<std::size_t>(cell)];
+    if (fixed == CellConstraint::MustBeEmpty) return 0.0;
+
     const WeightedResult all = weightedCount(inst, constraints, weights);
     if (all.logTotal == -std::numeric_limits<double>::infinity()) return 0.0;
+    if (fixed == CellConstraint::MustBeOccupied) return 1.0;
 
     Constraints forced = constraints;
     forced.cells[static_cast<std::size_t>(cell)] = CellConstraint::MustBeOccupied;
@@ -427,6 +434,14 @@ std::vector<double> weightedMarginalsByRecount(const Instance& inst,
     if (all.logTotal == -std::numeric_limits<double>::infinity()) return out;
 
     for (int cell = 0; cell < inst.cellCount(); ++cell) {
+        // Same rule as weightedMarginal: a settled cell is read off the record
+        // rather than recounted against it.
+        const CellConstraint fixed = constraints.cells[static_cast<std::size_t>(cell)];
+        if (fixed == CellConstraint::MustBeEmpty) continue;              // stays 0
+        if (fixed == CellConstraint::MustBeOccupied) {
+            out[static_cast<std::size_t>(cell)] = 1.0;
+            continue;
+        }
         Constraints forced = constraints;
         forced.cells[static_cast<std::size_t>(cell)] = CellConstraint::MustBeOccupied;
         const WeightedResult hit = weightedCount(inst, forced, weights);
@@ -524,8 +539,22 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
                 if (completions != 0) bCur.add(e.first, completions);
             }
             // Everything that did not leave the cell empty occupied it.
-            const double occupied = total - emptyFlow;
-            out[cell] = occupied > 0 ? occupied / total : 0.0;
+            //
+            // A cell the constraints have already settled is written straight
+            // in. Deriving it from this subtraction is correct in exact
+            // arithmetic but leaves about one ulp of dust in floating point,
+            // because total and emptyFlow are the same sum accumulated in
+            // different orders. A cell known to be empty has posterior zero, not
+            // 1.6e-16, and saying so costs nothing.
+            const CellConstraint settled = constraints.cells[cell];
+            if (settled == CellConstraint::MustBeEmpty) {
+                out[cell] = 0.0;
+            } else if (settled == CellConstraint::MustBeOccupied) {
+                out[cell] = 1.0;
+            } else {
+                const double occupied = total - emptyFlow;
+                out[cell] = occupied > 0 ? occupied / total : 0.0;
+            }
             std::swap(bCur, bNext);
         }
     }
