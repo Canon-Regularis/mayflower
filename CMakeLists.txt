@@ -131,6 +131,12 @@ add_test(NAME stats COMMAND ${CMAKE_COMMAND} -E env python
          ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick)
 set_tests_properties(stats PROPERTIES LABELS "fast")
 
+# Two tools computing one quantity have to agree, and the collector is where
+# that is checked. It also fails if a tool changes a table this parses.
+add_test(NAME results COMMAND ${CMAKE_COMMAND} -E env python
+         ${CMAKE_CURRENT_SOURCE_DIR}/tools/collect_results.py --check)
+set_tests_properties(results PROPERTIES LABELS "fast")
+
 add_executable(test_weighted tests/test_weighted.cpp)
 target_include_directories(test_weighted PRIVATE tests)
 target_link_libraries(test_weighted PRIVATE mayflower_core)
