@@ -52,14 +52,12 @@ struct ExactSolution {
 //         valid lower bound throughout and cuts earlier. Cells still in index
 //         order.
 // Star1   Bounds, plus move ordering: cells in descending hit probability and
-//         branches in descending floor. This is the default, and the reason is
-//         where it wins rather than how often. On the cheap single-ship
-//         instances Bounds alone is up to 2x better. On the fleet instances,
-//         which are the only ones whose cost is felt, ordering is worth more
-//         than an order of magnitude: the m9 self-test runs in about five
-//         minutes under Star1 and took just under three hours under Bounds.
-//         A tie-break that only matters when the search is expensive should be
-//         chosen on the expensive case.
+//         branches in descending floor. This is the default. On an idle machine
+//         it is at least as fast as Bounds on every instance measured, and on
+//         the fleet instances it is worth 158x: the m9 self-test runs in 66 s
+//         under Star1 and took 10,490 s under Bounds. An earlier reading taken
+//         while the machine was busy suggested Bounds won on the cheap cases;
+//         it does not, and a single timing run is not a measurement.
 enum class Pruning { None, Bounds, Star1 };
 
 ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit = 60000,

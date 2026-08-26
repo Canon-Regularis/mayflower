@@ -43,7 +43,7 @@ class. What it wins is size:
 28,743,172 lattice edges  against  15,046,987,768 configurations
 ```
 
-The lattice is 524 times smaller than the set it counts, and the count is read
+The lattice is 523 times smaller than the set it counts, and the count is read
 off without touching a configuration. That is the whole argument for per-turn
 exact inference, and it is a statement about constants.
 
@@ -155,7 +155,7 @@ the sweep was told that number.
 ## 8. What this project adds
 
 Nothing above is new. What is new here is arithmetic on a specific instance:
-`|Omega_0| = 15,046,987,768` verified three ways, a lattice 524 times smaller
+`|Omega_0| = 15,046,987,768` verified three ways, a lattice 523 times smaller
 than the set it counts, exact marginals, a provably uniform sampler, a certified
 optimality interval, and the exact non-adaptive and adaptive optima side by side
 on instances small enough to solve both.

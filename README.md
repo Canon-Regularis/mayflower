@@ -162,7 +162,7 @@ sampling noise at that sample size.
 
 ```text
 E1  coverage        17.0000 shots   exact: all 17 ship cells must be shot
-E2  entropy         13.0800 shots   exact: 33.8088 bits over an outcome alphabet of 6
+E2  entropy         13.0790 shots   exact: 33.8088 bits over an outcome alphabet of 6
 E4  water-filling   24.0876 shots   exact, by transcript counting
 ```
 
@@ -380,8 +380,10 @@ density(b=10)          -0.012       -0.012        1.000        0.923
 density(b=50)          -0.011       -0.012        0.923        1.000
 ```
 
-Within the density family the correlation is 0.923 and the paired interval is
-12.9 times narrower than the unpaired one. Against the stochastic hunt policy the
+Within the density family the correlation is 0.923, which is worth 12.9 times
+fewer games for the same precision. The interval itself narrows by the square
+root of that, about 3.6 times; the harness prints the variance saving because
+that is what decides a sample size. Against the stochastic hunt policy the
 correlation is zero, because that policy's variance comes from its own draws
 and not from board difficulty, so pairing buys nothing there. Sample sizes
 have to be derived per comparison from the measured correlation.
@@ -404,14 +406,20 @@ memory-latency bound, so the lever is memory-level parallelism, with a faster
 hash being beside the point.
 
 ```text
-speedup     1.94x  (ratio of minima)
-noise floor 1.39x  (A/A control)
+speedup     1.67x to 2.13x  (ratio of minima, across runs)
+noise floor 1.02x to 1.39x  (A/A control, same runs)
 counts and edge totals identical between rungs
 ```
 
-Measured four times: 1.99, 1.85, 1.88, 1.94. `tests/test_ladder.cpp` holds the
-rungs to bit-identical output across 197 checks, including 180 fuzzed ordered
-histories and the pinned order-dependence cases.
+A single figure here would be false precision. Repeated runs on this machine put
+V1 between 1.67x and 2.13x, and the A/A control moves with it, so the speedup is
+only meaningful read against the noise floor of its own run. The tightest run
+measured 1.67x against a 1.02x floor. That spread is the reason the harness
+prints the control at all.
+
+`tests/test_ladder.cpp` holds every rung to bit-identical output across 965
+checks, including 180 fuzzed ordered histories, the pinned order-dependence
+cases, and thread counts of 1, 2, 4 and 7.
 
 ### Measurement protocol
 
@@ -753,7 +761,14 @@ Integer exactness is gone, so the path carries its own validation regime.
 ### Three bridges
 
 Setting every weight to 1 must return the count bit for bit, and does:
-15,046,987,768 exactly, in 4.0 s, with no rescaling. The log-linear prior at
+15,046,987,768 exactly, with no rescaling. The exactness is the claim; the wall
+clock varies by run and is not one.
+
+The run certifies itself rather than relying on the argument. `WeightedResult`
+carries an `exact` flag, true only when the weights were all 1, no layer sum
+reached 2^53, and no rescale intervened. The bound behind that argument is
+instance-dependent, so an instance large enough to break it reports `exact`
+false instead of quietly returning an approximation. The log-linear prior at
 `theta = 0` gives the same number, and a sharper check besides: its marginals are
 0.0800 at the corner, 0.2136 at the centre and 0.1667 at the edge midpoint, which
 is the exact prior table the *integer* path derives. Two routes, same numbers.
@@ -782,6 +797,17 @@ it bottoms out near 0.1 and climbs back, because a channel that noisy stops
 punishing disagreement.
 
 ### What noise does to the posterior
+
+All hundred marginals come from one forward and one backward pass. The empty
+transition maps a state to itself, so the weight that passes through a cell
+without occupying it is a single sum and the occupied weight is the total minus
+it. Two passes replace a hundred constrained sweeps, which is the structural
+claim. The measured saving was 23.8 s against 280 on an idle machine and roughly
+half that under load, so read the ratio as an order of magnitude rather than a
+constant. The heatmaps are unchanged and still sum to exactly 17.000000.
+
+The two routes share no code, so `weightedMarginalsByRecount` is kept and the
+test asserts they agree to 1e-12 under both uniform and tilted weights.
 
 Thirty shots at a fixed hidden board, then the exact marginals. At `eps = 0.05`
 the fleet is legible; the 2-ship at the bottom left is invisible only because no
@@ -950,23 +976,21 @@ Three levels, each adding one mechanism, so the change is attributable:
 - **Star1** adds move ordering: cells in descending hit probability, branches in
   descending floor.
 
+Three runs each on an idle machine, seconds:
+
 ```text
-instance      boards       E[T]    none s  bounds s   star1 s  agree
-3x3 {2}           12   4.500000     0.004     0.006     0.009    yes
-4x3 {2}           17   5.117647     0.082     0.079     0.087    yes
-4x4 {2}           24   6.083333    36.605     3.600     7.636    yes
-4x4 {3}           16   5.625000     3.186     2.772     2.807    yes
-5x4 {3}           22   6.227273         -   154.763   120.622    yes
+instance      boards       E[T]         none         bounds          star1
+3x3 {2}           12   4.500000  .003 .002 .004  .005 .003 .003  .004 .003 .004
+4x3 {2}           17   5.117647  .056 .030 .029  .046 .026 .027  .039 .034 .034
+4x4 {2}           24   6.083333  3.08 3.94 3.71  2.49 2.66 1.68  2.03 1.85 1.75
+4x4 {3}           16   5.625000  1.49 1.98 1.46  1.27 1.68 1.76  0.98 1.48 1.37
 ```
 
-Read that table alone and the bound is the whole story: 10.2x on 4x4 {2}, never
-worse than the reference, while the ordering gives half of it back. That reading
-is wrong, and it cost a wrong default before the measurement caught it.
+Each level is at least as fast as the one before, and on these instances the
+margins between Bounds and Star1 sit inside the run-to-run spread.
 
-Every instance above holds one ship. The instances whose cost is actually felt
-are the fleets, and they are missing from the table because they were too slow to
-run three ways. On those the ordering is not a tie-break, it is the difference
-between finishing and not:
+The fleet instances are where it stops being a margin. They are absent from the
+table because the weaker levels take hours there rather than seconds:
 
 ```text
 m9 self-test, which includes 4x4 {3,2}
@@ -974,11 +998,15 @@ m9 self-test, which includes 4x4 {3,2}
   Bounds   10,490 s
 ```
 
-A factor of 158, on the only instances anyone waits for. The default is Star1.
+A factor of 158. The default is Star1.
 
-The general lesson is worth more than the setting: a tie-break that only matters
-when the search is expensive has to be chosen on the expensive case, and a table
-of cheap cases will confidently tell you otherwise.
+Two lessons, and the second cost more than the first. A tie-break that only
+matters when the search is expensive has to be chosen on the expensive case.
+And an earlier version of this table, measured while the machine was busy,
+showed `none` at 36.6 s where it now shows 3.1, and on that reading I concluded
+Bounds beat Star1 on the cheap instances and made it the default. It does not,
+and the reversal survived until a three-hour test run made it impossible to
+ignore. A single timing run is not a measurement.
 
 Every level returns the same expected shots to the last digit, which they must:
 the bound charged to an unevaluated branch is admissible, so a cell is abandoned
@@ -1011,12 +1039,13 @@ was the memory system either way.
 
 ```text
   threads     min (s)        vs 1
-        1       5.457       1.00x
-        2       4.223       1.29x
-        4       3.145       1.74x
-        6       2.988       1.83x
-        8       2.982       1.83x
-       10       3.311       1.65x
+        1       5.918       1.00x
+        2       3.285       1.80x
+        3       2.933       2.02x
+        4       2.629       2.25x
+        6       2.522       2.35x
+        8       2.222       2.66x
+       10       2.400       2.47x
 ```
 
 Sublinear, and it turns over at ten. This machine has two performance cores and
@@ -1024,6 +1053,18 @@ eight efficiency cores, so threads past the first few land on slower cores and
 the curve bends for that reason as much as for any scaling limit. The parallel
 section is measured unpinned, because pinning to one core is exactly wrong for
 it, and it is therefore not comparable with the table above.
+
+That table is the second one. The first version of V3 created a thread per
+bucket range **per cell**, and thread creation measured several milliseconds
+here against a merge measured in microseconds. It was reliably slower than doing
+nothing: 0.56x at ten threads on this instance, and 4.5 s on 6x6 {4,3,2} where
+one thread took 0.008. The work was never the problem, and no amount of tuning
+the bucket count would have found it.
+
+It surfaced as a test timeout rather than a benchmark result. `test_ladder` runs
+V3 at three thread counts over every case, so it absorbed the cost 540 times and
+went from 19 s to over 900. A persistent pool, created once per sweep with one
+barrier per cell, is what the table above measures.
 
 **Both rungs are bit-identical to V0**, across 965 checks covering the
 small-board ladder, the pinned order-dependence cases, 180 fuzzed ordered
@@ -1183,20 +1224,35 @@ rather than letting an experiment quietly read data it believes is sealed.
 `tools/selfplay` takes the fold as an argument, defaults to TRAIN because an
 unqualified run is exploratory, and refuses TEST outright.
 
-### A seal that leaves a mark
+### A seal that leaves a mark, and what it cannot do
 
 TEST is sealed. Reading it requires an unseal entry in
 [`experiments/audit.log`](experiments/audit.log), recorded before the number is
-read rather than after.
+read rather than after. `require_unseal()` raises unless it is already there, so
+reading TEST is an event with a timestamp rather than a decision someone
+remembers making.
 
-The log is a hash chain: every line carries the SHA-256 of everything before it,
-so an edit or a deletion anywhere invalidates every line after it. `stats.py`
-verifies the chain on every run and refuses to append to a broken one. The test
-suite breaks it on purpose and checks that the break is detected.
+The log is a hash chain, and `audit.log.head` records how many entries there
+should be and what the last hash is. That pair catches an edit, an interior
+deletion, a truncated tail, and an entry commented out so it stays visible while
+leaving the chain.
 
-`require_unseal()` raises unless the unseal is already on record. That is the
-whole mechanism: it makes reading TEST an event with a timestamp rather than a
-decision someone remembers making.
+**It is not tamper-proof, and an earlier version of this section claimed it was.**
+An adversarial review broke that claim in minutes, twice:
+
+- The chain verified forward from genesis with nothing anchoring the tail, so
+  peek-then-erase went undetected. Record the unseal, read TEST, dislike the
+  number, delete the line: the log still verified and reported the experiment as
+  never unsealed. Prefixing the line with `#` did the same while leaving it in
+  plain sight.
+- The digest takes only public inputs, so anyone with write access can recompute
+  the entire history.
+
+The head file closes the first. The second cannot be closed without a key or an
+external witness, and neither exists here. The honest claim is that the chain
+reduces tampering from editing one line to rewriting the log, the head, and the
+version history containing them. Git is the anchor; the cryptography only makes
+the rewrite total rather than local.
 
 ### Intervals that were checked rather than believed
 
@@ -1209,12 +1265,31 @@ That check found two bugs in this repository's own Wilson implementation: it
 emitted `-0.0000` at `k = 0` and could emit slightly more than 1 at `k = n`,
 which defeats the one property Wilson is chosen for. Both are fixed and pinned.
 
-It also corrected a claim. Wilson is not uniformly better than the normal
-approximation at a point: the binomial is discrete, coverage oscillates with `p`,
-and at `p = 0.02, n = 200` the normal approximation happens to cover more often.
-The comparison has to be made across `p`, where Wilson does win, with a mean
-deviation from 95% of 0.0171 against 0.0207 and a worst case of 0.925 against
-0.865.
+It also caught a claim I had put there myself and got backwards. The comparison
+between Wilson and the normal approximation was originally simulated, and at 400
+replicates the noise was large enough to reverse the ordering at `p = 0.02`. I
+wrote that reversal up as a correction. It was not one.
+
+Coverage of a binomial interval is a finite sum, so it is now computed rather
+than sampled, at `n = 200`:
+
+```text
+     p     Wilson       Wald    |W-.95|    |N-.95|
+  0.01     0.9483     0.8650     0.0017     0.0850
+  0.02     0.9331     0.9081     0.0169     0.0419
+  0.05     0.9672     0.9256     0.0172     0.0244
+  0.10     0.9561     0.9271     0.0061     0.0229
+  0.50     0.9440     0.9440     0.0060     0.0060
+```
+
+Wilson is closer to 95% at every `p` at or below 0.10, by a factor of fifty at
+`p = 0.01`, and the two coincide exactly at `p = 0.5` where the normal
+approximation is at its best. Mean deviation across the grid is 0.0088 against
+0.0276. There was never a point where the normal approximation was better; there
+was a simulation too small to see it.
+
+The general lesson is the one worth keeping: do not estimate a quantity that can
+be summed.
 
 ### Sample sizes, re-derived
 
@@ -1239,9 +1314,10 @@ both. The correlation here is bimodal, 0.923 inside the density family and 0.00
 against the stochastic hunt policy, so the same comparison against two opponents
 differs by a factor of thirteen and no single number covers both.
 
-The formula is checked the same way as the intervals: simulating at exactly the
-prescribed n and confirming the promised 80% power actually arrives, measured at
-0.825.
+The formula is checked by simulating at exactly the prescribed n and confirming
+the promised 80% power actually arrives, measured at 0.807 over 2,000 replicates.
+That one is a genuine simulation, since the power of a t-test against a
+correlated alternative has no comparably cheap closed form here.
 
 ## Known limitations
 
@@ -1254,10 +1330,10 @@ prescribed n and confirming the promised 80% power actually arrives, measured at
 - The report page is about 1.5 MB, over the 0.7 to 1.0 MB budget. Nearly all of
   it is the base64 board pool the live widget needs; the scrubber adds about
   18 KB.
-- Weighted marginals cost one sweep per cell, about 280 s on the standard
-  instance, because there is no weighted forward-backward. The unweighted path
-  gets all 100 in two passes and the same trick applies, since the empty
-  transition stays state-preserving once it carries a weight.
+- The weighted forward-backward does not rescale, because the backward pass has
+  to combine f and b from the same layer and a per-layer scale would not cancel
+  the way a global one does. Weights extreme enough to overflow a double need
+  `weightedMarginalsByRecount`, which does rescale.
 - The belief MDP caps near 300 configurations, which is what stops the adaptive
   column of the adaptivity table well before the subset lattice runs out.
 
