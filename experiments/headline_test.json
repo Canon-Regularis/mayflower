@@ -1,0 +1,181 @@
+{
+ "experiment": "headline-policy-comparison",
+ "fold": "test",
+ "games": 20000,
+ "preregistered": "experiments/preregistration.md",
+ "commit": "",
+ "primary": "mean shots to clear",
+ "secondary": "95th percentile shots",
+ "results": {
+  "policies": [
+   {
+    "name": "random",
+    "mean": 95.339,
+    "sd": 4.847,
+    "ci": [
+     95.271,
+     95.406
+    ],
+    "median": 97,
+    "p95": 100,
+    "best": 50,
+    "worst": 100
+   },
+   {
+    "name": "parity-hunt-target",
+    "mean": 51.564,
+    "sd": 8.647,
+    "ci": [
+     51.444,
+     51.684
+    ],
+    "median": 53,
+    "p95": 64,
+    "best": 20,
+    "worst": 71
+   },
+   {
+    "name": "density(b=10)",
+    "mean": 44.443,
+    "sd": 8.924,
+    "ci": [
+     44.32,
+     44.567
+    ],
+    "median": 44,
+    "p95": 61,
+    "best": 19,
+    "worst": 97
+   },
+   {
+    "name": "density(b=50)",
+    "mean": 44.407,
+    "sd": 8.881,
+    "ci": [
+     44.283,
+     44.53
+    ],
+    "median": 44,
+    "p95": 61,
+    "best": 19,
+    "worst": 93
+   },
+   {
+    "name": "density(b=200)",
+    "mean": 44.407,
+    "sd": 8.881,
+    "ci": [
+     44.283,
+     44.53
+    ],
+    "median": 44,
+    "p95": 61,
+    "best": 19,
+    "worst": 93
+   }
+  ],
+  "paired": [
+   {
+    "a": "random",
+    "b": "parity-hunt-target",
+    "difference": 43.775,
+    "ci": [
+     43.637,
+     43.912
+    ],
+    "rho": -0.008
+   },
+   {
+    "a": "random",
+    "b": "density(b=10)",
+    "difference": 50.895,
+    "ci": [
+     50.754,
+     51.036
+    ],
+    "rho": -0.006
+   },
+   {
+    "a": "random",
+    "b": "density(b=50)",
+    "difference": 50.932,
+    "ci": [
+     50.791,
+     51.073
+    ],
+    "rho": -0.008
+   },
+   {
+    "a": "random",
+    "b": "density(b=200)",
+    "difference": 50.932,
+    "ci": [
+     50.791,
+     51.073
+    ],
+    "rho": -0.008
+   },
+   {
+    "a": "parity-hunt-target",
+    "b": "density(b=10)",
+    "difference": 7.121,
+    "ci": [
+     6.947,
+     7.294
+    ],
+    "rho": -0.014
+   },
+   {
+    "a": "parity-hunt-target",
+    "b": "density(b=50)",
+    "difference": 7.158,
+    "ci": [
+     6.984,
+     7.331
+    ],
+    "rho": -0.015
+   },
+   {
+    "a": "parity-hunt-target",
+    "b": "density(b=200)",
+    "difference": 7.158,
+    "ci": [
+     6.984,
+     7.331
+    ],
+    "rho": -0.015
+   },
+   {
+    "a": "density(b=10)",
+    "b": "density(b=50)",
+    "difference": 0.037,
+    "ci": [
+     -0.014,
+     0.087
+    ],
+    "rho": 0.916
+   },
+   {
+    "a": "density(b=10)",
+    "b": "density(b=200)",
+    "difference": 0.037,
+    "ci": [
+     -0.014,
+     0.087
+    ],
+    "rho": 0.916
+   },
+   {
+    "a": "density(b=50)",
+    "b": "density(b=200)",
+    "difference": 0.0,
+    "ci": [
+     0.0,
+     0.0
+    ],
+    "rho": 1.0
+   }
+  ]
+ },
+ "raw": "Self-play on a seeded uniform board pool, 10x10 {5,4,3,3,2}\n======================================================\n\nboard pool   15046987768 configurations, key 0xA1B2C3D4, 20000 games\nbank build   41.15 s\n\nTEST fold, unseal token accepted from the analysis layer.\nfold         test\n\ndrew 20000 boards from the test fold, skipping 79376 outside it\n\npolicy                   mean      sd     95% CI on mean  median    p95   best  worst    us/game\nrandom                 95.339   4.847  [ 95.271,  95.406]      97    100     50    100      131.0\nparity-hunt-target     51.564   8.647  [ 51.444,  51.684]      53     64     20     71      384.2\ndensity(b=10)          44.443   8.924  [ 44.320,  44.567]      44     61     19     97     1199.8\ndensity(b=50)          44.407   8.881  [ 44.283,  44.530]      44     61     19     93     1148.9\ndensity(b=200)         44.407   8.881  [ 44.283,  44.530]      44     61     19     93     2000.0\n\nharness self-test: random shooter measured 95.3387, theory k(N+1)/(k+1) = 95.3889  OK\n\ncorrelation across the shared board pool:\n                           random parity-hun density(b= density(b= density(b=\nrandom                      1.000     -0.008     -0.006     -0.008     -0.008\nparity-hunt-target         -0.008      1.000     -0.014     -0.015     -0.015\ndensity(b=10)              -0.006     -0.014      1.000      0.916      0.916\ndensity(b=50)              -0.008     -0.015      0.916      1.000      1.000\ndensity(b=200)             -0.008     -0.015      0.916      1.000      1.000\n\nCommon random numbers pay off only where two policies share board-driven\nvariance. Within the density family the correlation is high and the paired\ninterval shrinks accordingly; against a stochastic hunt policy, whose variance\ncomes mostly from its own draws, the pairing buys nothing. Sample sizes have to\nbe derived per comparison from the measured correlation.\n\npaired differences (negative favours the first policy):\n  random               - parity-hunt-target    +43.775  [+43.637, +43.912]   rho -0.008   CRN saves 1.0x\n  random               - density(b=10)         +50.895  [+50.754, +51.036]   rho -0.006   CRN saves 1.0x\n  random               - density(b=50)         +50.932  [+50.791, +51.073]   rho -0.008   CRN saves 1.0x\n  random               - density(b=200)        +50.932  [+50.791, +51.073]   rho -0.008   CRN saves 1.0x\n  parity-hunt-target   - density(b=10)          +7.121  [ +6.947,  +7.294]   rho -0.014   CRN saves 1.0x\n  parity-hunt-target   - density(b=50)          +7.158  [ +6.984,  +7.331]   rho -0.015   CRN saves 1.0x\n  parity-hunt-target   - density(b=200)         +7.158  [ +6.984,  +7.331]   rho -0.015   CRN saves 1.0x\n  density(b=10)        - density(b=50)          +0.037  [ -0.014,  +0.087]   rho 0.916   CRN saves 11.9x\n  density(b=10)        - density(b=200)         +0.037  [ -0.014,  +0.087]   rho 0.916   CRN saves 11.9x\n  density(b=50)        - density(b=200)         +0.000  [ +0.000,  +0.000]   rho 1.000   CRN saves infx\n\nbounds for reference: coverage 17 shots, entropy 13.08 shots\ngap from the coverage bound to density(b=200): 27.407 shots\n"
+}

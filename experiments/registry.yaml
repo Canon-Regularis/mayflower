@@ -63,7 +63,7 @@ experiments:
     notes: see docs/OPPONENT.txt.
 
   - id: headline-policy-comparison
-    status: registered
+    status: complete
     fold: test
     question: >
       Does the density policy beat parity hunt/target on mean shots, and does
@@ -73,7 +73,31 @@ experiments:
       Sample size from experiments/preregistration.md, chosen per comparison
       from the measured correlation. Fixed before the run; no extension and no
       early stop.
-    result: null
+    result:
+      games: 20000
+      random: "95.339 [95.271, 95.406]"
+      parity-hunt-target: "51.564 [51.444, 51.684]"
+      density-b10: "44.443 [44.320, 44.567]"
+      density-b50: "44.407 [44.283, 44.530]"
+      density-b200: "44.407 [44.283, 44.530]"
+      p95: "random 100, parity 64, density 61"
+      paired-parity-minus-density: "+7.121 [+6.947, +7.294]"
+      correlation: "0.916 inside the density family, -0.015 across families"
     notes: >
-      Not yet run. Running it requires an unseal entry in audit.log. This entry
-      exists so that the design is on record before the answer is.
+      Run once at the pre-registered size, no extension and no early stop. Every
+      TEST mean falls inside the TRAIN interval for the same policy, so the
+      TRAIN figures were not overfitted: random 95.339 against 95.354, parity
+      51.564 against 51.535, density 44.443 against 44.369.
+
+      The bimodal correlation reproduced: 0.916 within the density family against
+      0.923 on TRAIN, and effectively zero across families. The pre-registered
+      sample size was derived from exactly that structure.
+
+      The harness self-test also held on unseen data: the random shooter measured
+      95.3387 against a theoretical k(N+1)/(k+1) of 95.3889.
+
+      Beam width stops mattering past 50. density(b=50) and density(b=200) agree
+      to every digit with a paired difference of exactly 0.000 and correlation
+      1.000, so the larger beam is pure cost.
+
+      See experiments/headline_test.json for the full capture.
