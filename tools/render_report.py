@@ -340,11 +340,12 @@ def build(data, out_path):
     w('<p class="lede">A hidden fleet, drawn uniformly from all {:,} legal arrangements. '
       "The engine sees only what it has shot. Each cell shows the current probability that "
       "a ship covers it, and the engine fires at the highest one.</p>".format(omega))
-    w("<p>Two regimes run underneath, because the costs are opposite. Early on the "
-      "posterior spans billions of boards and an exact sweep would take half a minute in a "
-      "browser, while a uniform sample of 200,000 still holds most of its survivors and is "
-      "accurate. Late on the sample is exhausted and the exact sweep has become cheap. The "
-      "readout says which one is answering.</p></div>")
+    w("<p>Two regimes run underneath, because the costs are opposite. At turn 0 the "
+      "posterior spans all {:,} boards and an exact sweep takes about 27 seconds in a "
+      "browser, while a 200,000-board sample answers at once. The handoff keys on the "
+      "surviving sample alone, which is what makes the two complementary: the sample runs "
+      "out only once the record is constraining, and a constraining record is a cheap "
+      "sweep. The readout says which one is answering.</p></div>".format(omega))
     w('<div class="livewrap" id="live" data-pool="' + POOL_B64 + '">')
     w('<div class="livegrid"><div class="liveboard"></div>')
     w('<div><div class="livestats"></div><div class="livebtns">'
@@ -505,9 +506,10 @@ def build(data, out_path):
     w(blocking_boards(data["blockingWitness"], prior["width"], prior["height"]))
     w("</div><figcaption><b>Blocking sets.</b> Shoot the marked cells and no placement of "
       "that length survives untouched, which is what makes beta(L) the number of shots "
-      "guaranteeing first contact with a lone ship of that length. For lengths 2 and 5 a "
-      "greedy cover happens to reach the optimum; for 3 and 4 it does "
-      "not.</figcaption></figure>")
+      "guaranteeing first contact with a lone ship of that length. Each set is drawn at "
+      "its minimum size, so the marks can be counted. A greedy cover reaches that size "
+      "for lengths 2 and 5 and misses by one and two for 3 and 4, where the set shown is "
+      "rebuilt by deciding each cell against the exact DP.</figcaption></figure>")
 
     w('<figure><div class="plate">')
     w(order_dependence(data["orderDependence"]))

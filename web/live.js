@@ -6,9 +6,18 @@
 // survivors and is accurate. Late on the sample is exhausted while the exact
 // sweep has become cheap. The widget uses whichever is sound and says which.
 //
-// Measured on this machine: the exact sweep costs about 30 s at shot 4, 4 s at
-// shot 10, and under 1 s from shot 14, while a 200,000-board sample keeps over a
-// thousand survivors to about shot 12. The handoff sits in between.
+// The handoff is on the survivor count alone, which is what makes the two
+// regimes complementary: the sample runs out only when the record is highly
+// constraining, and a highly constraining record is a cheap sweep. Measured on
+// this machine, every reachable state below the threshold sweeps in 2.0 to 3.4 s,
+// and every state that costs more than that (a lone ship sunk in the opening,
+// 3.8 to 4.3 s) still holds over fifteen hundred survivors.
+//
+// An earlier version also forced the sampled branch for the first six shots, to
+// keep the expensive opening sweep out of the browser. That inverted the
+// guarantee. Sinking the 2-ship and a 3-ship in the first five shots leaves 12
+// survivors of 200,000, and the widget drew a posterior quantised to twelfths
+// and fired on it, while the exact sweep it declined to run costs 2.0 s.
 
 (function () {
   const LENS = [5, 4, 3, 3, 2];
@@ -74,7 +83,7 @@
     survivors = [];
     for (let bi = 0; bi < NBOARDS; bi++) if (consistent(bi)) survivors.push(bi);
 
-    if (survivors.length >= SWITCH_TO_EXACT || history.length < 6) {
+    if (survivors.length >= SWITCH_TO_EXACT) {
       exactMode = false;
       posterior = new Float64Array(CELLS);
       for (const bi of survivors) {
