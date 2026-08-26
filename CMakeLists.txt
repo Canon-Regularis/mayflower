@@ -122,10 +122,23 @@ add_executable(test_exact tests/test_exact.cpp)
 target_include_directories(test_exact PRIVATE tests)
 target_link_libraries(test_exact PRIVATE mayflower_core)
 
+add_executable(test_uniformity tests/test_uniformity.cpp)
+target_link_libraries(test_uniformity PRIVATE mayflower_core)
+add_test(NAME uniformity COMMAND test_uniformity 300000)
+set_tests_properties(uniformity PROPERTIES LABELS "nightly" TIMEOUT 3600)
+
 add_executable(test_parallel tests/test_parallel.cpp)
 target_link_libraries(test_parallel PRIVATE mayflower_core)
 add_test(NAME parallel COMMAND test_parallel)
 set_tests_properties(parallel PROPERTIES LABELS "pr" TIMEOUT 900)
+
+# Degenerate fleets and shapes. Four of the five sweeps were wrong on a fleet of
+# length-1 ships, which the ladder never used and both oracles always handled.
+add_executable(test_degenerate tests/test_degenerate.cpp)
+target_include_directories(test_degenerate PRIVATE tests)
+target_link_libraries(test_degenerate PRIVATE mayflower_core)
+add_test(NAME degenerate COMMAND test_degenerate)
+set_tests_properties(degenerate PROPERTIES LABELS "fast")
 
 add_executable(test_gated tests/test_gated.cpp)
 target_include_directories(test_gated PRIVATE tests)
@@ -142,11 +155,24 @@ add_test(NAME stats COMMAND ${CMAKE_COMMAND} -E env python
          ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick)
 set_tests_properties(stats PROPERTIES LABELS "fast")
 
+# The belief frames the scrubber replays have no other reader, so their
+# invariants are checked here rather than by the thing that draws them.
+add_test(NAME report_data COMMAND ${CMAKE_COMMAND} -E env python
+         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_report_data.py)
+set_tests_properties(report_data PROPERTIES LABELS "fast")
+
 # Two tools computing one quantity have to agree, and the collector is where
 # that is checked. It also fails if a tool changes a table this parses.
 add_test(NAME results COMMAND ${CMAKE_COMMAND} -E env python
          ${CMAKE_CURRENT_SOURCE_DIR}/tools/collect_results.py --check)
 set_tests_properties(results PROPERTIES LABELS "fast")
+
+# The JavaScript engine is a third implementation of the sweep, and the report's
+# live widget is the only thing that runs it. Checked against the Python oracle,
+# which shares no code with either it or the C++.
+add_test(NAME engine_js COMMAND ${CMAKE_COMMAND} -E env python
+         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_engine_js.py)
+set_tests_properties(engine_js PROPERTIES LABELS "fast")
 
 add_executable(test_weighted tests/test_weighted.cpp)
 target_include_directories(test_weighted PRIVATE tests)
