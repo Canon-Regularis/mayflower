@@ -158,6 +158,13 @@ void testUnweightedBridge() {
     check(wr.total == static_cast<double>(mayflower::constants::kOmega0),
           "10x10 {5,4,3,3,2}: 15,046,987,768 exactly");
     check(!wr.rescaled, "and no layer needed rescaling");
+    check(wr.exact, "and the run certifies itself exact");
+
+    // A weighted run must never claim exactness.
+    const auto tilted = mayflower::weightedCount(
+        std10, mayflower::Weights::noisyChannel(
+                   std10, std::vector<int>(100, -1), 0.1));
+    check(!tilted.exact, "a weighted run does not claim to be exact");
 
     // The exactness argument rests on this staying below 2^53.
     const double limit = 9007199254740992.0;
@@ -266,7 +273,15 @@ void testMarginalsSum() {
     mayflower::Constraints free;
     free.cells.assign(25, mayflower::CellConstraint::Free);
 
+    // The two routes share no code: one is a forward-backward pass, the other a
+    // constrained recount per cell. Agreement is a real check.
     const auto flat = mayflower::weightedMarginals(inst, free, mayflower::Weights::uniform());
+    const auto slow = mayflower::weightedMarginalsByRecount(inst, free,
+                                                            mayflower::Weights::uniform());
+    double worst = 0;
+    for (std::size_t i = 0; i < flat.size(); ++i)
+        worst = std::max(worst, std::abs(flat[i] - slow[i]));
+    check(worst < 1e-12, "forward-backward agrees with the recount, uniform weights");
     double sum = 0;
     for (double v : flat) sum += v;
     check(close(sum, inst.shipCells(), 1e-12),
@@ -274,6 +289,11 @@ void testMarginalsSum() {
 
     const mayflower::Weights w = drawWeights(inst, 2024);
     const auto tilted = mayflower::weightedMarginals(inst, free, w);
+    const auto tiltedSlow = mayflower::weightedMarginalsByRecount(inst, free, w);
+    worst = 0;
+    for (std::size_t i = 0; i < tilted.size(); ++i)
+        worst = std::max(worst, std::abs(tilted[i] - tiltedSlow[i]));
+    check(worst < 1e-12, "and under tilted weights too");
     double tiltedSum = 0;
     for (double v : tilted) tiltedSum += v;
     check(close(tiltedSum, inst.shipCells(), 1e-12),

@@ -1,12 +1,14 @@
 3. The posterior heatmap under noise
 ------------------------------------
 
-One sweep per cell, since there is no weighted forward-backward yet. The
-truthful marginals are printed against the noisy ones so the smearing is
-visible: at eps = 0 a shot cell reads exactly 1 or 0, and noise pulls every
-cell back toward the prior.
+One forward and one backward pass for all hundred cells. The empty
+transition maps a state to itself, so the weight passing through a cell
+without occupying it is a single sum, and the occupied weight is the total
+minus it. Two passes replace a hundred constrained sweeps, which is the
+claim. The measured saving was about twelve times on an idle machine and
+about five under load, so the timing below is not a constant.
 
-  eps = 0.05, 30 shots, 279.7 s for 100 constrained sweeps
+  eps = 0.05, 30 shots, 62.9 s for the whole board
            0      1      2      3      4      5      6      7      8      9
   r0   0.379  0.889  0.866  0.904  0.392  0.018  0.041  0.055  0.045  0.332
   r1   0.029  0.095  0.062  0.154  0.088  0.106  0.119  0.136  0.104  0.903
@@ -20,7 +22,7 @@ cell back toward the prior.
   r9   0.043  0.036  0.037  0.039  0.005  0.041  0.085  0.018  0.006  0.024
   marginals sum to 17.000000, and 13 of the top 17 cells are really ships
 
-  eps = 0.20, 30 shots, 267.5 s for 100 constrained sweeps
+  eps = 0.20, 30 shots, 24.8 s for the whole board
            0      1      2      3      4      5      6      7      8      9
   r0   0.214  0.492  0.478  0.534  0.271  0.074  0.091  0.096  0.077  0.210
   r1   0.058  0.144  0.105  0.212  0.143  0.161  0.201  0.194  0.150  0.520

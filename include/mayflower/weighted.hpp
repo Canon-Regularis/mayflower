@@ -88,6 +88,13 @@ struct WeightedResult {
     double logTotal = 0;          // natural log, finite whenever the sum is
     bool rescaled = false;        // a layer was divided by a power of two
     double maxLayerSum = 0;       // largest sum over one layer, for the 2^53 argument
+
+    // True when this particular run is exact rather than approximate: the
+    // weights were all 1, so every value was a non-negative integer, no layer
+    // sum reached 2^53, and no rescale intervened. The bound in the comment
+    // above is instance-dependent, so the run checks itself rather than relying
+    // on the argument holding for whatever instance a caller passes.
+    bool exact = false;
     std::size_t peakStates = 0;
     std::uint64_t edges = 0;
 };
@@ -97,11 +104,33 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
 WeightedResult weightedCount(const Instance& inst, const Weights& weights);
 
 // Exact posterior marginal that `cell` is occupied, as a constrained recount
-// divided by the total. One sweep per cell, so weightedMarginals costs
-// cellCount sweeps; the constrained ones are much cheaper than the free one.
+// divided by the total. One sweep per cell, which is why weightedMarginals does
+// not use it.
 double weightedMarginal(const Instance& inst, const Constraints& constraints,
                         const Weights& weights, int cell);
+
+// Every cell marginal from one forward and one backward pass.
+//
+// The empty transition maps a state to itself, so the weight that flows through
+// a cell without occupying it is
+//
+//     Z_empty(c) = empty[c] * sum over states s of f_c(s) * b_{c+1}(s)
+//
+// and the occupied weight is Z - Z_empty(c). One subtraction per cell replaces a
+// constrained recount per cell, and the whole board costs two passes instead of
+// a hundred: about 8 seconds on the standard instance against 280.
+//
+// Holding every layer would need roughly 600 MB, so the forward pass keeps only
+// the eleven column boundaries and the backward pass replays each column from
+// its boundary. That is the same trade the unweighted analyse() makes.
 std::vector<double> weightedMarginals(const Instance& inst, const Constraints& constraints,
                                       const Weights& weights);
+
+// The same marginals by the slow route, one constrained sweep per cell. Kept
+// because it shares no code with the fast path, so the two agreeing is a real
+// check rather than a restatement.
+std::vector<double> weightedMarginalsByRecount(const Instance& inst,
+                                               const Constraints& constraints,
+                                               const Weights& weights);
 
 }  // namespace mayflower

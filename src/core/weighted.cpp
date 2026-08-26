@@ -118,7 +118,21 @@ public:
         for (std::size_t slot : dense_) fn(keys_[slot], vals_[slot]);
     }
 
+    [[nodiscard]] double get(const Key& key) const {
+        std::size_t slot = probe(key);
+        while (used_[slot]) {
+            if (keys_[slot] == key) return vals_[slot];
+            slot = (slot + 1) & mask_;
+        }
+        return 0.0;
+    }
+
     // Exact: ldexp edits the exponent and leaves the mantissa untouched.
+    template <typename Fn>
+    void forEachSlot(Fn&& fn) const {
+        for (std::size_t slot : dense_) fn(keys_[slot], vals_[slot]);
+    }
+
     void scaleByPowerOfTwo(int exponent) {
         for (std::size_t slot : dense_) vals_[slot] = std::ldexp(vals_[slot], exponent);
     }
@@ -155,6 +169,17 @@ private:
     std::vector<bool> used_;
     std::vector<std::size_t> dense_;
 };
+
+std::vector<std::pair<Key, double>> snapshotOf(const WeightMap& m) {
+    std::vector<std::pair<Key, double>> out;
+    m.forEach([&](const Key& k, double v) { out.emplace_back(k, v); });
+    return out;
+}
+
+void loadInto(WeightMap& m, const std::vector<std::pair<Key, double>>& entries) {
+    m.clear();
+    for (const auto& e : entries) m.add(e.first, e.second);
+}
 
 struct CellCtx {
     int row = 0;
@@ -203,15 +228,15 @@ inline void transitions(const Key& key, const CellCtx& ctx, const FleetCounter& 
 
     if (d > 0) {
         if (vrem > 0 || ctx.mustBeEmpty) return;
-        emit(Key{key.ext - (std::uint64_t{1} << ctx.shift), key.aux}, ctx.occupied);
+        emit(Key{key.ext - (std::uint64_t{1} << ctx.shift), key.aux}, ctx.occupied, false);
         return;
     }
     if (vrem > 0) {
         if (ctx.mustBeEmpty) return;
-        emit(Key{key.ext, packAux(vrem - 1, fleet)}, ctx.occupied);
+        emit(Key{key.ext, packAux(vrem - 1, fleet)}, ctx.occupied, false);
         return;
     }
-    if (!ctx.mustBeOccupied) emit(key, ctx.empty);
+    if (!ctx.mustBeOccupied) emit(key, ctx.empty, true);
     if (ctx.mustBeEmpty) return;
 
     const std::size_t nLengths = fc.lengths.size();
@@ -223,11 +248,11 @@ inline void transitions(const Key& key, const CellCtx& ctx, const FleetCounter& 
             const double w = ctx.startH ? ctx.occupied * ctx.startH[li] : ctx.occupied;
             emit(Key{key.ext | (static_cast<std::uint64_t>(L - 1) << ctx.shift),
                      packAux(0, nf)},
-                 w);
+                 w, false);
         }
         if (ctx.row + L <= H && (ctx.allowV == nullptr || ctx.allowV[li])) {
             const double w = ctx.startV ? ctx.occupied * ctx.startV[li] : ctx.occupied;
-            emit(Key{key.ext, packAux(L - 1, nf)}, w);
+            emit(Key{key.ext, packAux(L - 1, nf)}, w, false);
         }
     }
 }
@@ -330,7 +355,8 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
             next.clear();
             std::uint64_t edges = 0;
             cur.forEach([&](const Key& key, double value) {
-                transitions(key, ctx, fc, W, H, [&](const Key& dst, double w) {
+                transitions(key, ctx, fc, W, H,
+                            [&](const Key& dst, double w, bool) {
                     next.add(dst, value * w);
                     ++edges;
                 });
@@ -360,6 +386,13 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
     // Reconstructing through ldexp rounds once and saturates correctly, where
     // total * exp(logScale) would overflow the intermediate whenever logScale
     // passed 709 even if the product itself were representable.
+    // Self-certifying exactness. Integers below 2^53 add exactly in a double, so
+    // an unweighted run is bit-exact provided no layer reached that far and no
+    // rescale ran. Anything else is floating point and says so.
+    constexpr double kExactLimit = 9007199254740992.0;   // 2^53
+    result.exact = weights.trivial() && !result.rescaled &&
+                   result.maxLayerSum < kExactLimit;
+
     result.total = total > 0 ? scale.apply(total) : 0.0;
     result.logTotal =
         total > 0 ? scale.log(total) : -std::numeric_limits<double>::infinity();
@@ -386,8 +419,9 @@ double weightedMarginal(const Instance& inst, const Constraints& constraints,
     return std::exp(hit.logTotal - all.logTotal);
 }
 
-std::vector<double> weightedMarginals(const Instance& inst, const Constraints& constraints,
-                                      const Weights& weights) {
+std::vector<double> weightedMarginalsByRecount(const Instance& inst,
+                                               const Constraints& constraints,
+                                               const Weights& weights) {
     const WeightedResult all = weightedCount(inst, constraints, weights);
     std::vector<double> out(static_cast<std::size_t>(inst.cellCount()), 0.0);
     if (all.logTotal == -std::numeric_limits<double>::infinity()) return out;
@@ -400,6 +434,100 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
             hit.logTotal == -std::numeric_limits<double>::infinity()
                 ? 0.0
                 : std::exp(hit.logTotal - all.logTotal);
+    }
+    return out;
+}
+
+std::vector<double> weightedMarginals(const Instance& inst, const Constraints& constraints,
+                                      const Weights& weights) {
+    inst.validate();
+    if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
+        throw std::invalid_argument("constraint vector size must equal cellCount()");
+
+    const int W = inst.width, H = inst.height;
+    const FleetCounter fc(inst);
+    std::vector<double> out(static_cast<std::size_t>(inst.cellCount()), 0.0);
+
+    using Layer = std::vector<std::pair<Key, double>>;
+
+    // Forward, keeping only the column boundaries. Everything between them is
+    // replayed later, which is what keeps this inside memory.
+    //
+    // Rescaling is deliberately absent here. The backward pass has to combine f
+    // and b from the same layer, and a per-layer scale would have to be undone
+    // consistently on both sides; the marginal is a ratio, so any global scale
+    // cancels, but a per-layer one does not. Callers whose weights overflow a
+    // double should use the recount path, which rescales safely.
+    std::vector<Layer> boundary(static_cast<std::size_t>(W) + 1);
+    double total = 0;
+    {
+        WeightMap cur(1024), next(1024);
+        cur.add(Key{0, packAux(0, 0)}, 1.0);
+        boundary[0] = snapshotOf(cur);
+        for (int col = 0; col < W; ++col) {
+            for (int row = 0; row < H; ++row) {
+                const CellCtx ctx = makeCtx(inst, constraints, weights, fc, row, col);
+                next.clear();
+                cur.forEach([&](const Key& key, double value) {
+                    transitions(key, ctx, fc, W, H,
+                                [&](const Key& dst, double w, bool) {
+                        next.add(dst, value * w);
+                    });
+                });
+                std::swap(cur, next);
+            }
+            boundary[static_cast<std::size_t>(col) + 1] = snapshotOf(cur);
+        }
+        cur.forEach([&](const Key& key, double value) {
+            if (accepting(key, fc)) total += value;
+        });
+    }
+    if (!(total > 0)) return out;
+
+    // Backward, one column at a time, replaying the forward layers inside it.
+    WeightMap bNext(1024), bCur(1024), replayCur(1024), replayNext(1024);
+    for (const auto& e : boundary[static_cast<std::size_t>(W)])
+        if (accepting(e.first, fc)) bNext.add(e.first, 1.0);
+
+    std::vector<Layer> fLayers(static_cast<std::size_t>(H));
+    for (int col = W - 1; col >= 0; --col) {
+        loadInto(replayCur, boundary[static_cast<std::size_t>(col)]);
+        for (int row = 0; row < H; ++row) {
+            fLayers[static_cast<std::size_t>(row)] = snapshotOf(replayCur);
+            const CellCtx ctx = makeCtx(inst, constraints, weights, fc, row, col);
+            replayNext.clear();
+            replayCur.forEach([&](const Key& key, double value) {
+                transitions(key, ctx, fc, W, H,
+                            [&](const Key& dst, double w, bool) {
+                    replayNext.add(dst, value * w);
+                });
+            });
+            std::swap(replayCur, replayNext);
+        }
+
+        for (int row = H - 1; row >= 0; --row) {
+            const CellCtx ctx = makeCtx(inst, constraints, weights, fc, row, col);
+            const Layer& F = fLayers[static_cast<std::size_t>(row)];
+            const std::size_t cell = static_cast<std::size_t>(row * W + col);
+
+            double emptyFlow = 0;
+            bCur.clear();
+            for (const auto& e : F) {
+                double completions = 0;
+                transitions(e.first, ctx, fc, W, H,
+                            [&](const Key& dst, double w, bool isEmpty) {
+                    const double b = bNext.get(dst);
+                    if (b == 0) return;
+                    completions += w * b;
+                    if (isEmpty) emptyFlow += e.second * w * b;
+                });
+                if (completions != 0) bCur.add(e.first, completions);
+            }
+            // Everything that did not leave the cell empty occupied it.
+            const double occupied = total - emptyFlow;
+            out[cell] = occupied > 0 ? occupied / total : 0.0;
+            std::swap(bCur, bNext);
+        }
     }
     return out;
 }

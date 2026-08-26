@@ -3,7 +3,7 @@
 //
 //   bridge      every weight 1 must return the integer count bit for bit
 //   evidence    a noisy record has an exact normaliser, one sweep
-//   marginals   the posterior heatmap under noise, one sweep per cell
+//   marginals   the posterior heatmap under noise, forward and backward once
 //   prior       a log-linear opponent model, folded in as placement weights
 //
 // Run a section by name, or all of them with no argument.
@@ -142,10 +142,12 @@ void evidence() {
 void marginals() {
     std::printf("3. The posterior heatmap under noise\n");
     std::printf("------------------------------------\n\n");
-    std::printf("One sweep per cell, since there is no weighted forward-backward yet. The\n");
-    std::printf("truthful marginals are printed against the noisy ones so the smearing is\n");
-    std::printf("visible: at eps = 0 a shot cell reads exactly 1 or 0, and noise pulls every\n");
-    std::printf("cell back toward the prior.\n\n");
+    std::printf("One forward and one backward pass for all hundred cells. The empty\n");
+    std::printf("transition maps a state to itself, so the weight passing through a cell\n");
+    std::printf("without occupying it is a single sum, and the occupied weight is the total\n");
+    std::printf("minus it. Two passes replace a hundred constrained sweeps, which is the\n");
+    std::printf("claim. The measured saving was about twelve times on an idle machine and\n");
+    std::printf("about five under load, so the timing below is not a constant.\n\n");
 
     const Instance inst;
     Constraints free;
@@ -161,8 +163,7 @@ void marginals() {
         const double seconds =
             std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 
-        std::printf("  eps = %.2f, 30 shots, %.1f s for 100 constrained sweeps\n", eps,
-                    seconds);
+        std::printf("  eps = %.2f, 30 shots, %.1f s for the whole board\n", eps, seconds);
         std::printf("     ");
         for (int c = 0; c < 10; ++c) std::printf("%7d", c);
         std::printf("\n");
