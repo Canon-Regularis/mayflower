@@ -253,6 +253,37 @@ inline int popcount128(Mask m) {
 
 using BoardShips = std::vector<Mask>;
 
+// Every physical board under the no-touching rule, as its list of ship masks.
+// Same recursion as enumerateBoards with the halo test added, so the two stay
+// obviously parallel.
+inline std::vector<std::vector<Mask>> enumerateBoardsNoTouch(int W, int H,
+                                                             std::vector<int> fleet) {
+    const std::vector<detail::HaloGroup> groups =
+        detail::buildHaloGroups(W, H, std::move(fleet));
+    std::vector<std::vector<Mask>> boards;
+    if (groups.empty()) return boards;
+
+    std::vector<Mask> chosen;
+    auto go = [&](auto&& self, std::size_t gi, int need, std::size_t from, Mask occ) -> void {
+        if (gi == groups.size()) { boards.push_back(chosen); return; }
+        if (need == 0) {
+            const std::size_t next = gi + 1;
+            self(self, next, next < groups.size() ? groups[next].multiplicity : 0, 0, occ);
+            return;
+        }
+        const detail::HaloGroup& g = groups[gi];
+        for (std::size_t i = from; i + static_cast<std::size_t>(need) <= g.options.size();
+             ++i) {
+            if ((g.dilated[i] & occ) != 0) continue;
+            chosen.push_back(g.options[i]);
+            self(self, gi, need - 1, i + 1, occ | g.options[i]);
+            chosen.pop_back();
+        }
+    };
+    go(go, 0, groups[0].multiplicity, 0, Mask{0});
+    return boards;
+}
+
 // Every physical board, as its list of ship masks.
 inline std::vector<BoardShips> enumerateBoards(int W, int H, std::vector<int> fleet) {
     const std::vector<detail::Group> groups = detail::buildGroups(W, H, std::move(fleet));
