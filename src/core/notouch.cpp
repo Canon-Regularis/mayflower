@@ -73,8 +73,15 @@ struct Layout {
                 ? 0
                 : 64 - std::countl_zero(static_cast<std::uint64_t>(fc.stateCount - 1));
         bits = fleetShift + fleetBits;
-        extMask = (std::uint64_t{1} << colShift) - 1;
-        belowFleet = (std::uint64_t{1} << fleetShift) - 1;
+        // The masks are only meaningful for a key that fits, and callers ask
+        // whether it fits by building this and reading `bits`. Height 20 is a
+        // legal instance and puts fleetShift at 84, so an unguarded shift here
+        // is undefined behaviour reached while answering the question that
+        // exists to avoid it. `bits` is computed above and stays right.
+        extMask = colShift >= 64 ? ~std::uint64_t{0}
+                                 : (std::uint64_t{1} << colShift) - 1;
+        belowFleet = fleetShift >= 64 ? ~std::uint64_t{0}
+                                      : (std::uint64_t{1} << fleetShift) - 1;
     }
 
     [[nodiscard]] int ext(std::uint64_t k, int row) const {
