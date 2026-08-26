@@ -219,7 +219,9 @@ inline void transitions(const Key& key, const CellCtx& ctx, const FleetCounter& 
                      packAux(0, nf)},
                  Kind::StartH, L);
         }
-        if (ctx.row + L <= H && (ctx.allowV == nullptr || ctx.allowV[li])) {
+        // A length-1 ship has one placement, not two, so only the horizontal
+        // branch emits it. Real fleets start at 2 and never reach this.
+        if (L > 1 && ctx.row + L <= H && (ctx.allowV == nullptr || ctx.allowV[li])) {
             emit(Key{key.ext, packAux(L - 1, nf)}, Kind::StartV, L);
         }
     }

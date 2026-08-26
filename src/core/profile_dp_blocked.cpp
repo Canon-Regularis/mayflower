@@ -328,7 +328,9 @@ inline void transitions(std::uint64_t key, const CellCtx& ctx, const FleetCounte
             k = lay.setVrem(k, 0);
             emit(lay.setFleet(k, nf));
         }
-        if (ctx.row + L <= H && (ctx.allowV == nullptr || ctx.allowV[li])) {
+        // A length-1 ship has one placement, not two, so only the horizontal
+        // branch emits it. Real fleets start at 2 and never reach this.
+        if (L > 1 && ctx.row + L <= H && (ctx.allowV == nullptr || ctx.allowV[li])) {
             std::uint64_t k = lay.setVrem(key, L - 1);
             emit(lay.setFleet(k, nf));
         }
