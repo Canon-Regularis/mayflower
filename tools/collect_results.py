@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import math
 import os
 import re
 import subprocess
@@ -186,6 +187,25 @@ def opponent(results):
                             believesTheta=num(r[0]), regret=num(r[2])))
 
 
+def headline(results):
+    """The pre-registered run, on whichever folds have been played."""
+    for fold in ("train", "test"):
+        target = path("experiments", "headline_{}.json".format(fold))
+        if not os.path.exists(target):
+            continue
+        d = json.loads(io.open(target, encoding="utf-8").read())
+        src = "experiments/headline_{}.json".format(fold)
+        for p_ in d["results"]["policies"]:
+            results.append(dict(source=src, family="headline",
+                                id="{}-{}".format(fold, p_["name"]),
+                                instance="10x10 {5,4,3,3,2}",
+                                metric="mean shots to clear, {} fold".format(fold.upper()),
+                                value=p_["mean"], unit="shots", exact=False,
+                                fold=fold, games=d["games"], sd=p_["sd"],
+                                ciLow=p_["ci"][0], ciHigh=p_["ci"][1],
+                                p95=p_["p95"], note=p_["name"]))
+
+
 def constants(results):
     t = read("include/mayflower/constants.hpp")
     src = "include/mayflower/constants.hpp"
@@ -218,6 +238,31 @@ def cross_checks(results):
         ("configurations", pick("adaptivity", "configurations"),
          pick("maxcover", "configurations"), "m9 adaptivity", "maxcover"),
     ]
+
+    # TRAIN against TEST, measured by the same tool at the same size on disjoint
+    # boards. These are independent samples, so the sound question is whether the
+    # difference is distinguishable from zero, not whether one mean happens to
+    # land inside the other's interval. A TRAIN figure that had been overfitted
+    # would show a difference the interval excludes.
+    train = {r["note"]: r for r in results
+             if r["family"] == "headline" and r["fold"] == "train"}
+    test = {r["note"]: r for r in results
+            if r["family"] == "headline" and r["fold"] == "test"}
+    shared = sorted(set(train) & set(test))
+    apart = []
+    for n in shared:
+        a, b = train[n], test[n]
+        se = math.sqrt(a["sd"] ** 2 / a["games"] + b["sd"] ** 2 / b["games"])
+        diff = a["value"] - b["value"]
+        half = 1.959963985 * se
+        if abs(diff) > half:
+            apart.append({"instance": n, "difference": round(diff, 4),
+                          "interval": [round(diff - half, 4), round(diff + half, 4)]})
+    if shared:
+        checks.append({"quantity": "TRAIN and TEST agree on the same policy",
+                       "sources": ["selfplay TRAIN", "selfplay TEST"],
+                       "instances": len(shared), "agree": not apart,
+                       "disagreements": apart})
     for label, a, b, sa, sb in pairs:
         shared = sorted(set(a) & set(b))
         bad = [i for i in shared if abs(a[i] - b[i]) > 1e-9]
@@ -242,7 +287,7 @@ def main():
     args = ap.parse_args()
 
     results = []
-    for fn in (core, m9, maxcover, opponent, constants):
+    for fn in (core, m9, maxcover, opponent, headline, constants):
         fn(results)
 
     checks = cross_checks(results)

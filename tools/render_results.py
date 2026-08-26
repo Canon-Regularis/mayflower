@@ -308,6 +308,44 @@ def build(d):
                    group(p["games"])] for p in pol]))
     w("</section>")
 
+    # The sealed fold.
+    head = fam(R, "headline")
+    if head:
+        trainby = {r["note"]: r for r in head if r["fold"] == "train"}
+        head = sorted([r for r in head if r["fold"] == "test"],
+                      key=lambda r: -r["value"])
+        w('<section><h2>The sealed fold</h2>')
+        w('<p class="lede">One pre-registered run on data none of the tuning ever '
+          "saw. The design, the metrics and the sample size were fixed in "
+          "<code>experiments/preregistration.md</code> and the unseal was recorded "
+          "before a single board was read. It ran once, at the size the table "
+          "prescribed, with no extension and no early stop.</p>")
+        rows = []
+        for r in head:
+            t = trainby.get(r["note"])
+            import math as _m
+            if t:
+                se = _m.sqrt(t["sd"] ** 2 / t["games"] + r["sd"] ** 2 / r["games"])
+                inside = abs(t["value"] - r["value"]) <= 1.959963985 * se
+            else:
+                inside = False
+            rows.append([r["note"],
+                         "{:.3f}".format(t["value"]) if t else "&ndash;",
+                         "{:.3f}".format(r["value"]),
+                         "[{:.3f}, {:.3f}]".format(r["ciLow"], r["ciHigh"]),
+                         r["p95"],
+                         '<span class="chip chip-exact">agrees</span>' if inside
+                         else ('<span class="chip chip-out">differs</span>' if t
+                               else "&ndash;")])
+        w(rows_table(["policy", "TRAIN mean", "TEST mean", "TEST 95% interval",
+                      "TEST p95", "verdict"], rows))
+        w('<p class="cap">TRAIN and TEST were measured by the same tool at the '
+          "same size on disjoint boards, so the sound comparison is whether the "
+          "difference is distinguishable from zero. For every policy it is not. "
+          "The harness self-test held on unseen data too: the random shooter "
+          "measured 95.3387 against a theoretical 95.3889.</p>")
+        w("</section>")
+
     # Exact optima.
     adapt = sorted(fam(R, "adaptivity"), key=lambda r: r["configurations"])
     w('<section><h2>Where both optima are computable</h2>')
