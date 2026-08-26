@@ -7,3 +7,6 @@ out/
 *.gcda
 *.gcno
 __pycache__/
+
+# Sanitizer build tree, configured on demand.
+build-ub/
