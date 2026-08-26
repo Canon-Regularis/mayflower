@@ -113,6 +113,30 @@ def wilson_interval(successes, n, alpha=0.05):
     return p, max(0.0, centre - half), min(1.0, centre + half)
 
 
+def wald_interval(successes, n, alpha=0.05):
+    """The textbook normal approximation, here only to be compared against."""
+    z = normal_quantile(1 - alpha / 2)
+    p = successes / n
+    half = z * math.sqrt(max(p * (1 - p), 0.0) / n)
+    return p, p - half, p + half
+
+
+def exact_coverage(p_true, n, interval, alpha=0.05):
+    """Coverage of a binomial interval, summed rather than sampled.
+
+    The binomial is discrete, so coverage oscillates with p and a simulation
+    needs an enormous number of replicates to resolve a difference between two
+    intervals at one p. The sum over all n+1 outcomes is exact and costs
+    nothing.
+    """
+    total = 0.0
+    for k in range(n + 1):
+        _, lo, hi = interval(k, n, alpha)
+        if lo <= p_true <= hi:
+            total += math.comb(n, k) * (p_true ** k) * ((1 - p_true) ** (n - k))
+    return total
+
+
 def paired_interval(xs, ys, alpha=0.05):
     """Interval for a paired difference. With common random numbers the pairing
     is the whole point, so the difference is what carries the variance."""
@@ -166,13 +190,40 @@ def holm(pvalues, alpha=0.05):
 
 # --- the seal -------------------------------------------------------------
 #
-# TEST is sealed, and a seal only means something if breaking it leaves a mark.
-# The audit log is a hash chain: every line carries the digest of everything
-# before it, so an edit or a deletion anywhere invalidates every line after.
-# Appending is the only operation that keeps the chain intact.
+# TEST is sealed, and a seal is only worth something if breaking it leaves a
+# mark. What follows is the mechanism and, more importantly, its limits.
+#
+# WHAT IT CATCHES
+#   Editing an entry.        Every line carries the digest of everything before
+#                            it, so an edit invalidates every later line.
+#   Deleting an interior     Same reason.
+#     entry.
+#   Deleting or commenting   The head file records how many entries there should
+#     out trailing entries.  be and what the last hash is. Removing the tail
+#                            leaves a chain that is internally consistent, which
+#                            is why the chain alone is not enough, and the head
+#                            file is what notices.
+#
+# WHAT IT DOES NOT CATCH
+#   Anyone with write access to both files can recompute the whole history:
+#   the digest takes only public inputs, so there is no key and no proof of
+#   authorship. A determined author can rewrite the log and the head together
+#   and both will verify.
+#
+#   The anchor against that is version control, not cryptography. Once the log
+#   and its head are committed, rewriting them is a diff someone can see. The
+#   chain reduces tampering from "edit one line" to "rewrite the file, the head,
+#   and the history that contains them", which is the honest claim. It is not
+#   append-only in the tamper-proof sense and this file does not claim to be.
+#
+# An earlier version of this comment did claim that, and an adversarial review
+# broke it in two ways within minutes: truncating the last line still verified,
+# and so did prefixing it with "#", which left the entry visible while removing
+# it from the chain.
 
 AUDIT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "..", "experiments", "audit.log")
+HEAD_PATH = AUDIT_PATH + ".head"
 GENESIS = "0" * 64
 
 
@@ -181,8 +232,7 @@ def _digest(previous: str, payload: str) -> str:
 
 
 def audit_entries(path=None):
-    """Every entry as (payload, recorded_hash). Comments and blanks are skipped
-    and are not part of the chain, so the file stays readable."""
+    """Every entry as (payload, recorded_hash), in file order."""
     path = path or AUDIT_PATH
     if not os.path.exists(path):
         return []
@@ -196,48 +246,88 @@ def audit_entries(path=None):
     return out
 
 
+def _head_path(path):
+    return (path or AUDIT_PATH) + ".head"
+
+
+def read_head(path=None):
+    """The expected (count, hash). Absent head means an unanchored log."""
+    hp = _head_path(path)
+    if not os.path.exists(hp):
+        return None
+    text = io.open(hp, encoding="utf-8").read().split()
+    if len(text) != 2:
+        return None
+    return int(text[0]), text[1]
+
+
+def write_head(count, digest, path=None):
+    with io.open(_head_path(path), "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("{} {}\n".format(count, digest))
+
+
 def verify_audit(path=None):
-    """Recompute the chain. Returns (ok, index of the first bad entry)."""
+    """Recompute the chain and check it against the head.
+
+    Returns (ok, index of the first bad entry), with -1 for a chain that is
+    internally fine but whose head disagrees, which is what a truncation looks
+    like.
+    """
+    entries = audit_entries(path)
     previous = GENESIS
-    for i, (payload, recorded) in enumerate(audit_entries(path)):
+    for i, (payload, recorded) in enumerate(entries):
+        # The sequence number is inside the payload, so a gap breaks the digest
+        # as well as the count.
         expected = _digest(previous, payload)
         if expected != recorded:
             return False, i
         previous = recorded
+
+    head = read_head(path)
+    if head is None:
+        return len(entries) == 0, -1
+    count, digest = head
+    if count != len(entries) or digest != previous:
+        return False, -1
     return True, -1
 
 
 def record(event: str, experiment: str, detail: str, path=None, when=None):
-    """Append one entry and close the chain over it."""
+    """Append one entry, extend the chain, and move the head."""
     path = path or AUDIT_PATH
     ok, bad = verify_audit(path)
     if not ok:
         raise RuntimeError(
-            "audit chain is broken at entry {}; refusing to append".format(bad))
+            "audit chain or head is broken at entry {}; refusing to append".format(bad))
     entries = audit_entries(path)
     previous = entries[-1][1] if entries else GENESIS
     stamp = when or datetime.datetime.now(datetime.timezone.utc).strftime(
         "%Y-%m-%dT%H:%M:%SZ")
-    payload = "{} | {} | {} | {}".format(stamp, event, experiment, detail)
+    if "|" in experiment or "|" in event:
+        raise ValueError("event and experiment must not contain the field separator")
+    payload = "{:04d} | {} | {} | {} | {}".format(
+        len(entries) + 1, stamp, event, experiment, detail)
+    digest = _digest(previous, payload)
     with io.open(path, "a", encoding="utf-8", newline="\n") as fh:
-        fh.write(payload + " | " + _digest(previous, payload) + "\n")
+        fh.write(payload + " | " + digest + "\n")
+    write_head(len(entries) + 1, digest, path)
     return payload
 
 
 def is_unsealed(experiment: str, path=None) -> bool:
     ok, bad = verify_audit(path)
     if not ok:
-        raise RuntimeError("audit chain is broken at entry {}".format(bad))
+        raise RuntimeError("audit chain or head is broken at entry {}".format(bad))
     for payload, _ in audit_entries(path):
         parts = [p.strip() for p in payload.split("|")]
-        if len(parts) >= 3 and parts[1] == "unseal" and parts[2] == experiment:
+        # seq | timestamp | event | experiment | detail
+        if len(parts) >= 4 and parts[2] == "unseal" and parts[3] == experiment:
             return True
     return False
 
 
 def require_unseal(experiment: str, path=None):
-    """Guards TEST-fold data. Raises unless the unseal is already on record, so
-    the number cannot be read first and justified afterwards."""
+    """Guards TEST-fold data. Raises unless the unseal is already on record."""
     if not is_unsealed(experiment, path):
         raise PermissionError(
             "experiment '{}' has not been unsealed; record the unseal in "
@@ -279,7 +369,8 @@ def test_audit():
     fails += check(is_unsealed("demo", tmp), "and permitted once the unseal is recorded")
 
     # Tamper with the middle and the chain must notice.
-    lines = io.open(tmp, encoding="utf-8").read().split("\n")
+    saved = io.open(tmp, encoding="utf-8").read()
+    lines = saved.split("\n")
     for i, line in enumerate(lines):
         if "design fixed" in line:
             lines[i] = line.replace("design fixed", "design changed")
@@ -287,6 +378,41 @@ def test_audit():
     ok, bad = verify_audit(tmp)
     fails += check(not ok, "editing an entry breaks the chain",
                    "first bad entry at index {}".format(bad))
+
+    # Peek-then-erase. An adversarial review broke the first version of this
+    # seal exactly here: record the unseal, read TEST, then delete the line.
+    # The chain alone still verified, because nothing follows the tail.
+    io.open(tmp, "w", encoding="utf-8", newline="\n").write(saved)
+    kept = [l for l in saved.split("\n") if "unseal" not in l]
+    io.open(tmp, "w", encoding="utf-8", newline="\n").write("\n".join(kept))
+    ok, _ = verify_audit(tmp)
+    fails += check(not ok, "truncating the tail is caught by the head")
+
+    # The same trick with a comment marker, which leaves the entry visible.
+    io.open(tmp, "w", encoding="utf-8", newline="\n").write(saved)
+    commented = ["# " + l if "unseal" in l else l for l in saved.split("\n")]
+    io.open(tmp, "w", encoding="utf-8", newline="\n").write("\n".join(commented))
+    ok, _ = verify_audit(tmp)
+    fails += check(not ok, "commenting an entry out is caught too")
+
+    io.open(tmp, "w", encoding="utf-8", newline="\n").write(saved)
+    fails += check(verify_audit(tmp)[0], "and the untouched log still verifies")
+
+    # A name carrying the field separator must not be able to forge a match.
+    threw = False
+    try:
+        record("register", "demo | unseal | demo", "smuggled", path=tmp,
+               when="2026-01-05T00:00:00Z")
+    except ValueError:
+        threw = True
+    fails += check(threw, "a separator in the experiment name is refused")
+
+    lines = io.open(tmp, encoding="utf-8").read().split("\n")
+    for i, line in enumerate(lines):
+        if "design fixed" in line:
+            lines[i] = line.replace("design fixed", "design changed")
+    io.open(tmp, "w", encoding="utf-8", newline="\n").write("\n".join(lines))
+    ok, bad = verify_audit(tmp)
     try:
         record("unseal", "other", "should fail", path=tmp, when="2026-01-04T00:00:00Z")
         fails += check(False, "and appending to a broken chain is refused")
@@ -392,28 +518,34 @@ def test_calibration(replicates):
     fails += check(f_lo >= 0.0 and f_hi <= 1.0 and f_lo < 1.0,
                    "and stays inside [0, 1] when everything does")
 
+    # Coverage of a binomial interval is a finite sum, so it is computed here
+    # rather than simulated. An earlier version of this file sampled it, and at
+    # 400 replicates the noise was large enough to reverse the ordering at
+    # p = 0.02 and put a false claim in the documentation. There is no reason to
+    # estimate a quantity that can be summed exactly.
     grid = [0.01, 0.02, 0.05, 0.10, 0.20, 0.35, 0.50]
-    reps = max(200, replicates // 2)
-    cov_w, cov_n = [], []
-    for p_true in grid:
-        cw = cn = 0
-        for _ in range(reps):
-            k = sum(1 for _ in range(n_b) if rng.random() < p_true)
-            _, lo, hi = wilson_interval(k, n_b)
-            cw += lo <= p_true <= hi
-            p = k / n_b
-            half = 1.959963985 * math.sqrt(max(p * (1 - p), 0) / n_b)
-            cn += p - half <= p_true <= p + half
-        cov_w.append(cw / reps)
-        cov_n.append(cn / reps)
+    cov_w = [exact_coverage(p, n_b, wilson_interval) for p in grid]
+    cov_n = [exact_coverage(p, n_b, wald_interval) for p in grid]
 
     dev_w = sum(abs(c - 0.95) for c in cov_w) / len(grid)
     dev_n = sum(abs(c - 0.95) for c in cov_n) / len(grid)
     fails += check(dev_w < dev_n, "averaged over p, Wilson tracks 95% more closely",
-                   "mean deviation {:.4f} against {:.4f}".format(dev_w, dev_n))
+                   "mean deviation {:.4f} against {:.4f}, exact".format(dev_w, dev_n))
     fails += check(min(cov_w) > min(cov_n), "and its worst case over p is better",
-                   "worst {:.3f} against {:.3f}, both at p = {:.2f}".format(
-                       min(cov_w), min(cov_n), grid[cov_n.index(min(cov_n))]))
+                   "worst {:.4f} against {:.4f}".format(min(cov_w), min(cov_n)))
+    # Where it matters. Over-coverage is a defect too, so the criterion is
+    # distance from 0.95 rather than coverage itself. Below p = 0.10 Wilson is
+    # closer at every point; by p = 0.5 the normal approximation is at its best
+    # and the two coincide exactly, which is the textbook picture and the reason
+    # the choice only matters for rare events.
+    low = [i for i, pv in enumerate(grid) if pv <= 0.10]
+    fails += check(
+        all(abs(cov_w[i] - 0.95) < abs(cov_n[i] - 0.95) for i in low),
+        "and closer at every p <= 0.10, where win rates are not",
+        "at p = 0.02, {:.4f} against {:.4f}".format(cov_w[1], cov_n[1]))
+    fails += check(abs(cov_w[-1] - cov_n[-1]) < 1e-12,
+                   "the two coincide at p = 0.5, as they should",
+                   "both {:.4f}".format(cov_w[-1]))
 
     # Paired differences under the measured correlation.
     rho, sigma = 0.923, 8.87
