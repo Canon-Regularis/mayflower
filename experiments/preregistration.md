@@ -18,7 +18,11 @@ pinned vector so they cannot drift.
 - **VAL** chooses among finished candidates. Unlimited looks, but no tuning
   against it.
 - **TEST** is sealed. Reading it is an event, recorded in
-  [`audit.log`](audit.log) before the number may be quoted anywhere.
+  [`audit.log`](audit.log) before the number may be quoted anywhere. The log is
+  chained and anchored by `audit.log.head`, which catches edits, interior
+  deletions and a truncated tail. It is not tamper-proof against its own author:
+  there is no key, so the real anchor is that both files are committed and a
+  rewrite shows up as a diff.
 
 A board keeps its fold forever, because only its id decides it. Thresholding
 rather than a modulus means a later change to the split moves only boards the
@@ -41,16 +45,19 @@ per-ship-length breakdown is a headline, and any such number is exploratory.
 - Intervals at 95%, two-sided, alpha = 0.05.
 - Means: normal-approximation interval on the paired difference where a pairing
   exists, on the raw mean otherwise.
-- Proportions: Wilson score interval. Not the normal approximation, which loses
-  four points of coverage at p = 0.01 and is degenerate at k = 0.
+- Proportions: Wilson score interval. The normal approximation covers 0.8650 at
+  p = 0.01 with n = 200 against Wilson's 0.9483, a loss of 8.3 points, and is
+  degenerate at k = 0. Both figures are exact binomial sums, not estimates.
 - Bootstrap where a statistic has no closed form: percentile, resampling
   **boards**, not moves, because boards are the independent unit.
 - Round robin: Holm step-down over the family of pairwise comparisons. No
   independence assumption is available, so no procedure that needs one is used.
 
-The interval code is calibrated rather than trusted: `python/stats.py` simulates
-from known ground truth and asserts that a 95% interval covers 95% of the time.
-That check is part of the fast test suite.
+The interval code is calibrated rather than trusted. `python/stats.py` checks
+every interval it produces against a known ground truth and asserts that a 95%
+interval covers 95% of the time. Binomial coverage is summed exactly rather than
+simulated, because it can be; the rest is simulated at 2,000 replicates. That
+check is part of the fast test suite.
 
 ## Sample sizes, fixed in advance
 

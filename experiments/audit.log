@@ -1,12 +1,15 @@
-# Append-only audit log.
+# Audit log.
 #
-# Every line carries the SHA-256 of everything before it, so an edit or a
-# deletion anywhere invalidates every line after it. python/stats.py verifies
-# the chain on every run and refuses to append to a broken one.
+# Every line carries the SHA-256 of everything before it, and audit.log.head
+# records how many entries there should be and what the last hash is. Editing,
+# deleting or commenting out an entry is caught by one or the other.
 #
-# Format: timestamp | event | experiment | detail | chain hash
+# It is NOT tamper-proof. The digest takes only public inputs, so anyone with
+# write access to both files can recompute the whole history. The anchor against
+# that is version control: once these files are committed, a rewrite is a diff.
 #
-# Reading the TEST fold requires an "unseal" entry for that experiment, recorded
-# before the number is read rather than after.
-2026-08-25T15:50:14Z | create | registry | folds 60/20/20, preregistration and registry written | c6eb271023fb5eb76f380b739885b7bcdf518c218ed8d90b8601bbc88c55b9ba
-2026-08-25T15:50:14Z | register | headline-policy-comparison | design fixed before any TEST read | e705159d66d7f31bb13fb2fc280ade421fd1d07a41c30f6a03872321ac40d8c4
+# Format: seq | timestamp | event | experiment | detail | chain hash
+#
+# Reading TEST requires an "unseal" entry recorded before the number is read.
+0001 | 2026-08-26T03:05:45Z | create | registry | folds 60/20/20, preregistration and registry written | 029d4643f1303ffd19cec78c73b1472ca1eebd2f897bd6e8272c6cade6177445
+0002 | 2026-08-26T03:05:45Z | register | headline-policy-comparison | design fixed before any TEST read | d9c50e4ed805438a7c1f417561be2e9c0c0d9878fed662cb9472eb04dd159ce7
