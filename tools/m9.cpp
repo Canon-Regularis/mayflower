@@ -480,7 +480,7 @@ SalvoStats salvoRun(const Instance& inst, const std::vector<std::uint64_t>& conf
     const std::vector<CellConstraint> blank(static_cast<std::size_t>(inst.cellCount()),
                                             CellConstraint::Free);
     SalvoStats out;
-    Rng rng(0x5A1F0ull + static_cast<std::uint64_t>(inst.cellCount() * 8 + k));
+    Rng rng(UINT64_C(0x5A1F0) + static_cast<std::uint64_t>(inst.cellCount() * 8 + k));
 
     for (int g = 0; g < games; ++g) {
         const std::uint64_t truth = configs[static_cast<std::size_t>(

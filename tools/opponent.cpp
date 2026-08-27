@@ -21,6 +21,7 @@
 // The audit is the gap between the second and the third, read against N.
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -284,7 +285,7 @@ void audit(const Instance& inst, const std::vector<double>& thetas, int replicat
         for (int games : {5, 10, 25, 50, 100, 250, 1000}) {
             double sumShots = 0, sumTheta = 0;
             for (int rep = 0; rep < replicates; ++rep) {
-                Rng rng(0xA11CEull + static_cast<std::uint64_t>(games) * 1000 +
+                Rng rng(UINT64_C(0xA11CE) + static_cast<std::uint64_t>(games) * 1000 +
                         static_cast<std::uint64_t>(rep));
                 double borderSum = 0;
                 for (int g = 0; g < games; ++g)
@@ -323,7 +324,7 @@ void nonparametric(const Instance& inst) {
         double sumShots = 0, sumSeen = 0;
         const int replicates = 3;
         for (int rep = 0; rep < replicates; ++rep) {
-            Rng rng(0xBEE5ull + static_cast<std::uint64_t>(games) * 977 +
+            Rng rng(UINT64_C(0xBEE5) + static_cast<std::uint64_t>(games) * 977 +
                     static_cast<std::uint64_t>(rep));
             // One pseudocount per slot, so an unseen placement stays possible.
             std::vector<double> count(static_cast<std::size_t>(w.placementSlots), 1.0);

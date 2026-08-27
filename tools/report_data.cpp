@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
 
     std::vector<std::uint64_t> policySeeds(static_cast<std::size_t>(games));
     for (int i = 0; i < games; ++i) {
-        std::uint64_t z = static_cast<std::uint64_t>(i) + 0xD1B54A32D192ED03ull;
+        std::uint64_t z = static_cast<std::uint64_t>(i) + UINT64_C(0xD1B54A32D192ED03);
         z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
         z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
         policySeeds[static_cast<std::size_t>(i)] = z ^ (z >> 31);
