@@ -33,6 +33,10 @@ import oracle  # noqa: E402
 
 FREE, EMPTY, OCCUPIED = 0, 1, 2
 
+# Distributions disagree about whether the binary is node or nodejs, so the
+# build hands over the one it found.
+NODE = os.environ.get("MF_NODE", "node")
+
 # Small enough for literal enumeration, varied enough to exercise both
 # orientations, repeated lengths and a non-square board.
 CASES = [
@@ -77,7 +81,7 @@ def run_js(jobs):
     driver = os.path.join(ROOT, "_engine_probe.mjs")
     io.open(driver, "w", encoding="utf-8", newline="\n").write(DRIVER)
     try:
-        proc = subprocess.run(["node", driver, json.dumps(jobs)],
+        proc = subprocess.run([NODE, driver, json.dumps(jobs)],
                               cwd=ROOT, capture_output=True, text=True)
         if proc.returncode != 0:
             print("node failed:", proc.stderr[:600])

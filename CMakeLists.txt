@@ -25,6 +25,20 @@ endif()
 
 find_package(Threads REQUIRED)
 
+# The interpreters the test suite shells out to, resolved once and by name
+# rather than assumed. "python" does not exist on a Debian image, which is how
+# four tests came to fail everywhere except the machine they were written on.
+# Node is discovered the same way and its path is handed to the test, since
+# distributions disagree about whether the binary is node or nodejs.
+find_package(Python3 COMPONENTS Interpreter)
+find_program(MF_NODE NAMES node nodejs)
+if(NOT Python3_Interpreter_FOUND)
+  message(STATUS "Python 3 not found: the Python tests will not be registered")
+endif()
+if(NOT MF_NODE)
+  message(STATUS "Node not found: the JavaScript engine test will not be registered")
+endif()
+
 add_library(mayflower_core
   src/core/profile_dp.cpp
   src/core/notouch.cpp
@@ -151,28 +165,32 @@ target_link_libraries(test_folds PRIVATE mayflower_core)
 add_test(NAME folds COMMAND test_folds)
 set_tests_properties(folds PROPERTIES LABELS "fast")
 
-add_test(NAME stats COMMAND ${CMAKE_COMMAND} -E env python
+if(Python3_Interpreter_FOUND)
+add_test(NAME stats COMMAND ${Python3_EXECUTABLE}
          ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick)
 set_tests_properties(stats PROPERTIES LABELS "fast")
 
 # The belief frames the scrubber replays have no other reader, so their
 # invariants are checked here rather than by the thing that draws them.
-add_test(NAME report_data COMMAND ${CMAKE_COMMAND} -E env python
+add_test(NAME report_data COMMAND ${Python3_EXECUTABLE}
          ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_report_data.py)
 set_tests_properties(report_data PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
 
 # Two tools computing one quantity have to agree, and the collector is where
 # that is checked. It also fails if a tool changes a table this parses.
-add_test(NAME results COMMAND ${CMAKE_COMMAND} -E env python
+add_test(NAME results COMMAND ${Python3_EXECUTABLE}
          ${CMAKE_CURRENT_SOURCE_DIR}/tools/collect_results.py --check)
 set_tests_properties(results PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+endif()
 
 # The JavaScript engine is a third implementation of the sweep, and the report's
 # live widget is the only thing that runs it. Checked against the Python oracle,
 # which shares no code with either it or the C++.
-add_test(NAME engine_js COMMAND ${CMAKE_COMMAND} -E env python
-         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_engine_js.py)
+if(Python3_Interpreter_FOUND AND MF_NODE)
+add_test(NAME engine_js COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE}
+         ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_engine_js.py)
 set_tests_properties(engine_js PROPERTIES LABELS "fast")
+endif()
 
 add_executable(test_weighted tests/test_weighted.cpp)
 target_include_directories(test_weighted PRIVATE tests)
@@ -227,7 +245,6 @@ set_tests_properties(spectrum PROPERTIES LABELS "pr" TIMEOUT 900)
 add_test(NAME spectrum_tool COMMAND spectrum)
 set_tests_properties(spectrum_tool PROPERTIES LABELS "pr" TIMEOUT 900)
 
-find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
   add_test(NAME bond_dimension
            COMMAND ${Python3_EXECUTABLE} bond_dimension.py --quick
