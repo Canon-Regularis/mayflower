@@ -1,0 +1,6 @@
+{
+  "name": "mayflower-web",
+  "private": true,
+  "type": "module",
+  "description": "engine.js is an ES module. Node infers module type from the nearest package.json, and without this it reads the .js extension as CommonJS and refuses the named exports. Node 22 and later guess correctly from the syntax; 18 and 20 do not, and the differential test has to run on all of them. The report inlines this source and republishes it as window.MayflowerEngine, so nothing in the browser path depends on the declaration."
+}
