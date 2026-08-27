@@ -127,14 +127,26 @@ public:
         return 0.0;
     }
 
-    // Exact: ldexp edits the exponent and leaves the mantissa untouched.
     template <typename Fn>
     void forEachSlot(Fn&& fn) const {
         for (std::size_t slot : dense_) fn(keys_[slot], vals_[slot]);
     }
 
-    void scaleByPowerOfTwo(int exponent) {
-        for (std::size_t slot : dense_) vals_[slot] = std::ldexp(vals_[slot], exponent);
+    // ldexp edits the exponent and leaves the mantissa alone, which is exact
+    // while the result stays normal and not once it does not. The scale is one
+    // power of two for the whole layer, so bringing the maximum back into range
+    // pushes everything a factor of 1e308 behind it out of range, and those
+    // values reach zero. Returns whether any did, because a layer that lost a
+    // value has lost the configurations that ran through it.
+    [[nodiscard]] bool scaleByPowerOfTwo(int exponent) {
+        bool lost = false;
+        for (std::size_t slot : dense_) {
+            const double before = vals_[slot];
+            const double after = std::ldexp(before, exponent);
+            if (after == 0.0 && before != 0.0) lost = true;
+            vals_[slot] = after;
+        }
+        return lost;
     }
 
     [[nodiscard]] double maxValue() const {
@@ -250,7 +262,9 @@ inline void transitions(const Key& key, const CellCtx& ctx, const FleetCounter& 
                      packAux(0, nf)},
                  w, false);
         }
-        if (ctx.row + L <= H && (ctx.allowV == nullptr || ctx.allowV[li])) {
+        // A length-1 ship has one placement, not two, so only the horizontal
+        // branch emits it. Real fleets start at 2 and never reach this.
+        if (L > 1 && ctx.row + L <= H && (ctx.allowV == nullptr || ctx.allowV[li])) {
             const double w = ctx.startV ? ctx.occupied * ctx.startV[li] : ctx.occupied;
             emit(Key{key.ext, packAux(L - 1, nf)}, w, false);
         }
@@ -357,7 +371,11 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
             cur.forEach([&](const Key& key, double value) {
                 transitions(key, ctx, fc, W, H,
                             [&](const Key& dst, double w, bool) {
-                    next.add(dst, value * w);
+                    const double v = value * w;
+                    // Two non-zero factors giving zero is a configuration lost,
+                    // and it is the only way one can be lost here.
+                    if (v == 0.0 && value != 0.0 && w != 0.0) result.underflowed = true;
+                    next.add(dst, v);
                     ++edges;
                 });
             });
@@ -371,12 +389,21 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
             if (m > kRescaleHigh || (m > 0 && m < kRescaleLow)) {
                 int ex = 0;
                 std::frexp(m, &ex);              // m = mantissa * 2^ex, mantissa in [0.5,1)
-                cur.scaleByPowerOfTwo(-ex);
+                if (cur.scaleByPowerOfTwo(-ex)) result.underflowed = true;
                 scale.exponent += ex;
                 result.rescaled = true;
             }
         }
     }
+
+    // The last cell's output layer, which the loop above never sampled: it
+    // measures the layer entering each cell, so the layer the final cell
+    // produces is the one total is read out of and the one the certificate
+    // would otherwise skip. It matters only when a cell can emit more than one
+    // edge per state at the end of the sweep, which needs a length-1 ship, and
+    // the certificate has to hold for every instance the library accepts.
+    result.peakStates = std::max(result.peakStates, cur.size());
+    result.maxLayerSum = std::max(result.maxLayerSum, cur.sum());
 
     double total = 0;
     cur.forEach([&](const Key& key, double value) {
@@ -390,7 +417,7 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
     // an unweighted run is bit-exact provided no layer reached that far and no
     // rescale ran. Anything else is floating point and says so.
     constexpr double kExactLimit = 9007199254740992.0;   // 2^53
-    result.exact = weights.trivial() && !result.rescaled &&
+    result.exact = weights.trivial() && !result.rescaled && !result.underflowed &&
                    result.maxLayerSum < kExactLimit;
 
     result.total = total > 0 ? scale.apply(total) : 0.0;
@@ -453,6 +480,11 @@ std::vector<double> weightedMarginalsByRecount(const Instance& inst,
     return out;
 }
 
+constexpr const char* kUnderflowMessage =
+    "weightedMarginals: the weights span more than a double holds, so a product of "
+    "two representable factors underflowed and configurations were dropped. Use "
+    "weightedMarginalsByRecount, which divides two equally scaled counts.";
+
 std::vector<double> weightedMarginals(const Instance& inst, const Constraints& constraints,
                                       const Weights& weights) {
     inst.validate();
@@ -471,10 +503,24 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
     // Rescaling is deliberately absent here. The backward pass has to combine f
     // and b from the same layer, and a per-layer scale would have to be undone
     // consistently on both sides; the marginal is a ratio, so any global scale
-    // cancels, but a per-layer one does not. Callers whose weights overflow a
-    // double should use the recount path, which rescales safely.
+    // cancels, but a per-layer one does not. Callers whose weights leave a double
+    // should use the recount path, which divides two equally scaled counts and so
+    // survives weights this cannot hold.
+    //
+    // Overflow is loud. Underflow is not, and it is the direction this fails in:
+    // f and b are each representable while the product f * b is not, and the
+    // marginals come back inside [0, 1] with nothing wrong on the face of them.
+    // With a uniform weight of 1e-13 on a 5x5 {3,2,2} board, where the weight
+    // cancels in every ratio and the answer must not move at all, they move by
+    // 0.047; at 1e-14 they are all zero while the recount is still right to 2e-14.
+    // So the multiply is watched, and a sweep that has lost a configuration says
+    // so rather than returning the part it kept.
     std::vector<Layer> boundary(static_cast<std::size_t>(W) + 1);
     double total = 0;
+    bool underflowed = false;
+    const auto note = [&](double a, double b, double product) {
+        if (product == 0.0 && a != 0.0 && b != 0.0) underflowed = true;
+    };
     {
         WeightMap cur(1024), next(1024);
         cur.add(Key{0, packAux(0, 0)}, 1.0);
@@ -486,7 +532,9 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
                 cur.forEach([&](const Key& key, double value) {
                     transitions(key, ctx, fc, W, H,
                                 [&](const Key& dst, double w, bool) {
-                        next.add(dst, value * w);
+                        const double v = value * w;
+                        note(value, w, v);
+                        next.add(dst, v);
                     });
                 });
                 std::swap(cur, next);
@@ -497,7 +545,13 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
             if (accepting(key, fc)) total += value;
         });
     }
-    if (!(total > 0)) return out;
+    if (!(total > 0)) {
+        // Zero here means either that no configuration survives the record or
+        // that every one of them underflowed away, and those want opposite
+        // answers from the caller.
+        if (underflowed) throw std::runtime_error(kUnderflowMessage);
+        return out;
+    }
 
     // Backward, one column at a time, replaying the forward layers inside it.
     WeightMap bNext(1024), bCur(1024), replayCur(1024), replayNext(1024);
@@ -514,7 +568,9 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
             replayCur.forEach([&](const Key& key, double value) {
                 transitions(key, ctx, fc, W, H,
                             [&](const Key& dst, double w, bool) {
-                    replayNext.add(dst, value * w);
+                    const double v = value * w;
+                    note(value, w, v);
+                    replayNext.add(dst, v);
                 });
             });
             std::swap(replayCur, replayNext);
@@ -533,8 +589,14 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
                             [&](const Key& dst, double w, bool isEmpty) {
                     const double b = bNext.get(dst);
                     if (b == 0) return;
-                    completions += w * b;
-                    if (isEmpty) emptyFlow += e.second * w * b;
+                    const double wb = w * b;
+                    note(w, b, wb);
+                    completions += wb;
+                    if (isEmpty) {
+                        const double flow = e.second * wb;
+                        note(e.second, wb, flow);
+                        emptyFlow += flow;
+                    }
                 });
                 if (completions != 0) bCur.add(e.first, completions);
             }
@@ -558,6 +620,7 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
             std::swap(bCur, bNext);
         }
     }
+    if (underflowed) throw std::runtime_error(kUnderflowMessage);
     return out;
 }
 

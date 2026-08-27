@@ -111,7 +111,8 @@ function expand(inst, ext, aux, row, mustEmpty, mustOcc, allowH, allowV, col, em
     const nf = fleet + inst.stride[li];
     if (col + L <= inst.width && (!allowH || allowH[li]))
       emit(ext | ((L - 1) << shift), nf);
-    if (row + L <= inst.height && (!allowV || allowV[li]))
+    // A length-1 ship has one placement, not two.
+    if (L > 1 && row + L <= inst.height && (!allowV || allowV[li]))
       emit(ext, ((L - 1) << AUX_SHIFT) | nf);
   }
 }
