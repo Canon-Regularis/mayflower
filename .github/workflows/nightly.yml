@@ -27,7 +27,7 @@ jobs:
     # itself may spend 240 minutes before giving up.
     timeout-minutes: 260
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -61,7 +61,7 @@ jobs:
     # test_uniformity carries TIMEOUT 3600 on its own.
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Cache compilation
         uses: hendrikmuhs/ccache-action@v1
@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:

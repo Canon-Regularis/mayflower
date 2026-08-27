@@ -63,7 +63,7 @@ jobs:
             node: '22'
             werror: -Werror
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -116,7 +116,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The development toolchain is MinGW-w64 GCC on the UCRT runtime, and this
       # is the only configuration that compiles src/platform/bench_platform_win.cpp;
@@ -177,7 +177,7 @@ jobs:
             build_type: RelWithDebInfo
             tests: -R '^(parallel|ladder)$'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -233,7 +233,7 @@ jobs:
     # itself may spend 240 minutes before it gives up on its own.
     timeout-minutes: 260
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -266,7 +266,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
