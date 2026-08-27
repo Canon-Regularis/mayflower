@@ -1,0 +1,14 @@
+version: 2
+
+updates:
+  # The workflows pin actions to major tags, which float within a major version
+  # and stop at the next one. This raises a pull request when a major lands, so
+  # an action going stale is visible rather than silent.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore
+    labels:
+      - ci

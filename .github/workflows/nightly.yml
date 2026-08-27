@@ -1,0 +1,175 @@
+name: Nightly
+
+on:
+  schedule:
+    # 03:00 UTC. Nothing here gates a merge, so it runs when the queue is quiet.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+# A long run must never be cancelled by the next night's, and two must never
+# overlap on the same cache.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CMAKE_ARGS: -DMF_NATIVE=OFF
+  WERROR: -Werror -Wno-error=stringop-overread -Wno-error=array-bounds
+
+jobs:
+  extended:
+    name: extended suite
+    runs-on: ubuntu-24.04
+    # -L pr is fourteen tests, twelve at TIMEOUT 900 and two at 1800, so ctest
+    # itself may spend 240 minutes before giving up.
+    timeout-minutes: 260
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache compilation
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ubuntu-24.04-g++-13-Release
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_FLAGS="$WERROR" \
+            $CMAKE_ARGS
+          cmake --build build
+
+      - name: Extended tests
+        run: ctest --test-dir build -L pr --output-on-failure --no-tests=error
+
+  uniformity:
+    name: uniformity at scale
+    runs-on: ubuntu-24.04
+    # test_uniformity carries TIMEOUT 3600 on its own.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache compilation
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ubuntu-24.04-g++-13-Release
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_FLAGS="$WERROR" \
+            $CMAKE_ARGS
+          cmake --build build --target test_uniformity
+
+      # 300,000 draws against the exact marginals. A biased board generator would
+      # poison every measured statistic in the project without being visible
+      # anywhere else, which is why this is checked at scale as well as proved by
+      # the exhaustive unrank test.
+      - name: Uniformity
+        run: ctest --test-dir build -L nightly --output-on-failure --no-tests=error
+
+  report-pipeline:
+    name: report pipeline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache compilation
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ubuntu-24.04-g++-13-Release
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_FLAGS="$WERROR" \
+            $CMAKE_ARGS
+          cmake --build build
+
+      # The game count matches what the README documents, because
+      # collect_results cross-checks tool output against the captured tables in
+      # docs/ and a different count would move the measured rows.
+      - name: Generate the figure data
+        run: |
+          mkdir -p out
+          ./build/report_data 20000 > out/figures.json
+
+      # ctest reports Skipped, and exits zero, when out/figures.json is absent.
+      # That is right for the per-push suite and wrong here, where running these
+      # two for real is the whole point of the job.
+      - name: The figure data is there to check
+        run: |
+          python - <<'EOF'
+          import json, sys
+          d = json.load(open("out/figures.json", encoding="utf-8"))
+          missing = [k for k in ("meta", "prior", "collapse", "bounds") if k not in d]
+          if missing:
+              sys.exit("figures.json is missing {}".format(missing))
+          print("figures.json carries", len(d), "sections")
+          EOF
+
+      - name: The figure-data contract
+        run: ctest --test-dir build -R '^(report_data|results)$' --output-on-failure --no-tests=error
+
+      - name: Render the report
+        run: python tools/render_report.py out/figures.json out/report.html
+
+      # The renderer concatenates strings and cannot fail on a page that came out
+      # empty, so the page is checked for the things it is supposed to contain.
+      - name: The report is a report
+        run: |
+          python - <<'EOF'
+          import io, sys
+          html = io.open("out/report.html", encoding="utf-8").read()
+          size = len(html.encode("utf-8"))
+          figures = html.count("<svg")
+          if size < 500_000:
+              sys.exit("report.html is {} bytes, far under the expected size".format(size))
+          if figures < 10:
+              sys.exit("report.html carries {} inline figures".format(figures))
+          if "15,046,987,768" not in html:
+              sys.exit("report.html does not carry the hypothesis-space size")
+          print("report.html: {:.0f} KB, {} inline figures".format(size / 1024, figures))
+          EOF
+
+      # Keep the output whether or not the checks passed, so a failure can be
+      # inspected rather than only described.
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: |
+            out/report.html
+            out/figures.json
+          retention-days: 14
+          if-no-files-found: ignore

@@ -1,0 +1,288 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A superseded pull-request run is worth nothing, so cancel it. A push to main
+  # is the record of what that commit did, so let it finish: github.run_id makes
+  # every main run its own group.
+  group: >-
+    ${{ github.workflow }}-${{ github.ref }}-${{
+      github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # -march=native is the default for local Release builds and is wrong here:
+  # runners are heterogeneous, and a cached object built for one microarchitecture
+  # can fault on another.
+  CMAKE_ARGS: -DMF_NATIVE=OFF
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux gcc-13 release
+            os: ubuntu-24.04
+            cxx: g++-13
+            build_type: Release
+            node: '20'
+            # Two GCC 13 diagnostics fire inside libstdc++ where it inlines into
+            # our code: a memcmp bound in the std::set<std::vector<unsigned char>>
+            # comparator, and an array-bounds on copying a one-element
+            # std::vector<int>, where offset 4 in [0, 4] is the legal
+            # one-past-the-end pointer. Both are known false positives, and both
+            # stay visible as warnings without failing the build. The flags are
+            # per compiler because clang rejects the names outright, which failed
+            # the configure step rather than the build.
+            werror: -Werror -Wno-error=stringop-overread -Wno-error=array-bounds
+          - name: linux gcc-13 debug
+            os: ubuntu-24.04
+            cxx: g++-13
+            build_type: Debug
+            node: '20'
+            werror: -Werror -Wno-error=stringop-overread -Wno-error=array-bounds
+          - name: linux clang release
+            os: ubuntu-24.04
+            cxx: clang++
+            build_type: Release
+            # Node 22 and later infer a module's type from its syntax, where 20
+            # reads the .js extension and needs web/package.json to say so. The
+            # differential test has to pass either way, so the two legs differ.
+            node: '22'
+            werror: -Werror
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Cache compilation
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ${{ matrix.os }}-${{ matrix.cxx }}-${{ matrix.build_type }}
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_FLAGS="${{ matrix.werror }}" \
+            $CMAKE_ARGS
+
+      - name: Build
+        run: cmake --build build
+
+      # Five fast tests are registered only when CMake finds an interpreter, so a
+      # runner without Python or Node would shrink the suite and still report
+      # green. Name them rather than count them, so adding a test does not have to
+      # touch this.
+      - name: Every interpreter-gated test was registered
+        shell: bash
+        run: |
+          for t in stats report_data results engine_js bond_dimension; do
+            ctest --test-dir build -N -R "^$t$" --no-tests=error >/dev/null \
+              || { echo "$t is missing: CMake did not find its interpreter"; exit 1; }
+          done
+
+      # out/ is generated and not in the repository, so the two tests that read
+      # out/figures.json report Skipped here. The nightly workflow generates it
+      # and runs them for real.
+      - name: Test
+        run: ctest --test-dir build -L fast --output-on-failure --no-tests=error
+
+  windows:
+    name: windows mingw-ucrt release
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The development toolchain is MinGW-w64 GCC on the UCRT runtime, and this
+      # is the only configuration that compiles src/platform/bench_platform_win.cpp;
+      # everywhere else it preprocesses to the fallback. MSYS2 has no version
+      # pinning, so the compiler here floats and -Werror would turn a new GCC's
+      # new diagnostic into a red build on an unrelated pull request. Warnings are
+      # still printed, and the Linux legs hold the -Werror line against a pinned
+      # compiler.
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          cache: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-nodejs
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release $CMAKE_ARGS
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Every interpreter-gated test was registered
+        run: |
+          for t in stats report_data results engine_js bond_dimension; do
+            ctest --test-dir build -N -R "^$t$" --no-tests=error >/dev/null \
+              || { echo "$t is missing: CMake did not find its interpreter"; exit 1; }
+          done
+
+      - name: Test
+        run: ctest --test-dir build -L fast --output-on-failure --no-tests=error
+
+  sanitizers:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    # The tsan leg selects two pr-labelled tests carrying TIMEOUT 900 apiece, so
+    # ctest alone may spend 30 minutes before the job has any right to give up.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # MinGW ships no sanitizer runtimes, so the development machine can only
+          # run -fsanitize=undefined -fsanitize-trap=undefined. These are the
+          # checks that platform cannot make.
+          - name: asan + ubsan
+            flags: -fsanitize=address,undefined -fno-omit-frame-pointer -g
+            build_type: Debug
+            tests: -L fast
+          # The V3 rung merges across a persistent thread pool, which is the only
+          # concurrency in the engine and the only thing worth a race detector.
+          - name: tsan
+            flags: -fsanitize=thread -g
+            build_type: RelWithDebInfo
+            tests: -R '^(parallel|ladder)$'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache compilation
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: sanitizers-${{ matrix.name }}
+
+      # ThreadSanitizer's shadow mapping does not survive the ASLR entropy modern
+      # kernels default to, and aborts with "unexpected memory mapping" before any
+      # test runs.
+      - name: Lower ASLR entropy for ThreadSanitizer
+        if: matrix.name == 'tsan'
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+      # The sanitizer flags have to reach the linker as well as the compiler.
+      # Without that the binaries build and then fail to start.
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_FLAGS="${{ matrix.flags }}" \
+            -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.flags }}" \
+            $CMAKE_ARGS
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        env:
+          # Report on the first finding rather than continuing with a corrupted
+          # process, and make the exit code visible to ctest.
+          ASAN_OPTIONS: halt_on_error=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          TSAN_OPTIONS: halt_on_error=1
+        run: ctest --test-dir build ${{ matrix.tests }} --output-on-failure --no-tests=error
+
+  extended:
+    name: extended suite
+    # The label is called pr because this is when it is meant to run. It holds
+    # the full 10x10 sweeps and the exact solver, so it gates a merge rather than
+    # every push to a branch.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    # -L pr is fourteen tests, twelve at TIMEOUT 900 and two at 1800, so ctest
+    # itself may spend 240 minutes before it gives up on its own.
+    timeout-minutes: 260
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache compilation
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: ubuntu-24.04-g++-13-Release
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_FLAGS="-Werror -Wno-error=stringop-overread -Wno-error=array-bounds" \
+            $CMAKE_ARGS
+          cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build -L pr --output-on-failure --no-tests=error
+
+  reference-models:
+    name: reference models
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Everything here is standard library only, so there is nothing to install.
+      # These are the independent implementations the engine is checked against,
+      # and they are worth running even when the C++ does not build.
+      - name: The order-aware oracle reproduces its counterexamples
+        run: python python/oracle.py --order-dependence
+
+      - name: The analysis layer's own calibration
+        run: python python/stats.py --quick
+
+      # The report generators are only exercised by the nightly pipeline, which
+      # means a syntax error in one of them stays invisible for a day. This costs
+      # a second and closes that window.
+      - name: Every tracked Python program parses
+        run: python -m compileall -q python tools tests
