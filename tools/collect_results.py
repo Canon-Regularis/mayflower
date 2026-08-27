@@ -281,7 +281,17 @@ def git_commit():
         return "unknown"
 
 
+# ctest reads this as "Skipped" via SKIP_RETURN_CODE. out/ is generated and
+# gitignored, so a clean clone has nothing to collect and should say so rather
+# than fail or quietly pass.
+SKIP = 77
+
+
 def main():
+    if not os.path.exists(os.path.join(ROOT, "out", "figures.json")):
+        print("out/figures.json is missing; run tools/report_data first")
+        return SKIP
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="verify without writing")
     args = ap.parse_args()

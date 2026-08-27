@@ -159,13 +159,13 @@ set_tests_properties(stats PROPERTIES LABELS "fast")
 # invariants are checked here rather than by the thing that draws them.
 add_test(NAME report_data COMMAND ${CMAKE_COMMAND} -E env python
          ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_report_data.py)
-set_tests_properties(report_data PROPERTIES LABELS "fast")
+set_tests_properties(report_data PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
 
 # Two tools computing one quantity have to agree, and the collector is where
 # that is checked. It also fails if a tool changes a table this parses.
 add_test(NAME results COMMAND ${CMAKE_COMMAND} -E env python
          ${CMAKE_CURRENT_SOURCE_DIR}/tools/collect_results.py --check)
-set_tests_properties(results PROPERTIES LABELS "fast")
+set_tests_properties(results PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
 
 # The JavaScript engine is a third implementation of the sweep, and the report's
 # live widget is the only thing that runs it. Checked against the Python oracle,

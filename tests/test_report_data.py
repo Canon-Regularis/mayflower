@@ -31,6 +31,9 @@ FIGURES = os.path.join(ROOT, "out", "figures.json")
 SHIP_CELLS = 17
 MISS = 0
 
+# ctest reads this as "Skipped" via SKIP_RETURN_CODE.
+SKIP = 77
+
 failures = 0
 
 
@@ -47,8 +50,11 @@ def main():
     print("the figure-data contract")
     print("========================")
     if not os.path.exists(FIGURES):
+        # Not a pass and not a failure. out/ is generated and gitignored, so a
+        # clean clone has nothing to check; ctest reports this as Skipped, which
+        # stays visible instead of turning green on an empty run.
         print("  out/figures.json is missing; run tools/report_data first")
-        return 1
+        return SKIP
 
     fig = json.load(io.open(FIGURES, encoding="utf-8"))
     prior = fig["prior"]
