@@ -1,84 +1,19 @@
 # Mayflower
 
-Exact Bayesian inference and optimisation engine, using Battleships as the
-problem instance.
+Exact Bayesian inference and optimisation, with Battleships as the problem
+instance.
 
-Mayflower maintains the exact posterior over every fleet configuration
-consistent with the observation record. A broken-profile transfer-matrix DP
-replaces enumeration of 15,046,987,768 configurations with a single sweep over a
-lattice of 2.87e7 edges. On that posterior it compares shot-selection objectives
-(hit probability, information gain, expected remaining shots) against certified
-lower bounds and localises the residual optimality gap.
+Mayflower maintains the exact posterior over every fleet configuration consistent
+with an observation record. A broken-profile transfer-matrix DP replaces
+enumeration of 15,046,987,768 configurations with one sweep over a lattice of
+2.87e7 edges. On that posterior it compares shot-selection objectives against
+certified lower bounds.
 
-Identifying the board takes 33.81 bits, and a typical game carries far more
-information capacity than that, but all 17 ship cells must be hit. The entropy
-bound of 13.08 shots therefore falls below the trivial coverage bound of 17, and
-coverage is what binds.
-
-## Status
-
-Every milestone is complete.
-
-The exact counting core carries both rulesets, ships may touch and ships may not.
-The bound ladder is certified as far as water filling, and the rung beyond it was
-investigated and withdrawn with a counterexample rather than left as an estimate.
-Exact optimal play is solved on small instances with all three objectives priced
-against it. The optimisation ladder runs to four rungs, every one bit-identical.
-The report renders from a figure-data contract and closes with a playable engine
-and a belief scrubber. The mathematical extensions are done, the weighted sweep
-carries opponent priors and noisy channels, and the analysis layer has folds, a
-pre-registration, a registry and a sealed TEST fold.
-
-Three of those ended by contradicting the plan that asked for them: the
-max-coverage rung is not a bound, the opponent prior is learnable rather than
-unlearnable, and star1's move ordering costs more than it saves. Each is recorded
-where it was measured.
-
-| component | |
-| --- | --- |
-| `src/core/profile_dp.cpp` | The DP, parameterised over board size and fleet |
-| `src/core/notouch.cpp` | The same sweep under the rule that ships may not touch |
-| `src/core/weighted.cpp` | The sweep as a partition function: opponent priors and noisy answers |
-| `tools/weighted` | Evidence, posterior heatmaps and a log-linear opponent model |
-| `tools/maxcover` | Why the max-coverage rung is not a rung |
-| `tools/opponent` | What an opponent model is worth, and what it costs to get wrong |
-| `include/mayflower/observations.hpp` | Ordered observation record and the placement predicate it induces |
-| `occupancyMap` | Every cell marginal from one forward and one backward sweep |
-| `Sampler` | Exact uniform sampling by unranking; the board generator |
-| `tools/omega0` | Reproduces \|Omega_0\| and the lattice statistics |
-| `tools/marginals` | The exact prior heatmap and the 15 D4 orbit integers |
-| `tools/sample` | Uniform board generation, checked against the exact marginals |
-| `tools/selfplay` | Paired self-play over a seeded pool, with correlations and confidence intervals |
-| `tools/bounds` | The lower-bound ladder, each rung labelled by how firmly it is established |
-| `src/certify/blocking.cpp` | Exact blocking numbers by a row-sweep DP |
-| `src/certify/transcripts.cpp` | Announcement-string counting and the water-filling bound |
-| `src/lattice/spectrum.cpp` | The transfer matrix diagonalised: free energy, density, correlation length |
-| `tools/spectrum` | The hard-rod strip as a lattice gas |
-| `python/bond_dimension.py` | How small the boundary state could be |
-| `docs/COMPLEXITY.md` | Which step makes this hard, with the references checked |
-| `tools/m9` | Adversary, constraint density, adaptivity, Bimaru, salvo, noise |
-| `src/search/exact_solver.cpp` | Exact optimal play on small instances |
-| `tools/optimal` | Optimal play and the measured optimality gap of each objective |
-| `src/core/profile_dp_fast.cpp` | Ladder rung V1: packed key, epoch tagging, batched prefetch |
-| `src/core/profile_dp_blocked.cpp` | Ladder rungs V2 and V3: radix-partitioned merge, then threads |
-| `src/platform/` | Core-topology detection and thread pinning for benchmarking |
-| `bench/dp_bench` | The ladder under the measurement protocol |
-| `tools/report_data` | Runs the analyses and writes the figure-data contract as JSON |
-| `tools/render_report.py` | Renders that JSON as a self-contained HTML report |
-| `tools/export_pool` | Uniform board sample for the browser engine, five bytes per board |
-| `web/engine.js` | The DP ported to JavaScript, exact and verified against the C++ |
-| `web/live.js` | The live widget: sampled posterior early, exact sweep late |
-| `web/scrubber.js` | The belief scrubber: one recorded game, replayed frame by frame |
-| `outcomeDistribution` | Exact one-ply {MISS, HIT, SUNK(L)} split and information gain per cell |
-| `include/mayflower/policy.hpp` | Random, parity hunt/target, density (cheap tier), and exact-posterior policies |
-| `tests/oracle/` | Independent brute-force enumerator and ordered simulator |
-| `python/oracle.py` | Order-aware reference model |
-| `python/stats.py` | The analysis layer, and the calibration that keeps it honest |
-| `include/mayflower/folds.hpp` | Fold assignment, shared with the analysis |
-| `experiments/` | Pre-registration, registry, and the append-only audit log |
-
-Every milestone is complete. The max-coverage rung was investigated and
-withdrawn.
+The result it exists to measure: identifying the board costs 33.81 bits, which an
+ordinary game supplies several times over, yet all 17 ship cells must still be
+hit. The entropy bound of 13.08 shots falls below the coverage bound of 17, so
+coverage is what binds, and playing for information is measurably worse than
+playing for coverage.
 
 ## Build
 
@@ -88,21 +23,24 @@ C++20, CMake >= 3.24, Ninja. Developed against MinGW-w64 GCC 13.2 on Windows.
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 
-ctest --test-dir build -L fast     # 3 suites, ~2 s
-ctest --test-dir build -L pr       # adds the full 10x10 runs, ~2.5 min
-
-./build/omega0                     # the hypothesis-space size
-./build/marginals                  # the exact prior heatmap
-./build/bounds                     # the lower-bound ladder
-./build/optimal                    # optimal play and the price of each objective
-./build/dp_bench                   # the optimisation ladder, pinned and ABBA
-python python/oracle.py --order-dependence
-
-./build/report_data 20000 > out/figures.json
-python tools/render_report.py out/figures.json out/report.html
+ctest --test-dir build -L fast     # ~35 s
+ctest --test-dir build -L pr       # adds the full 10x10 runs, tens of minutes
 ```
 
-## Results
+| | |
+| --- | --- |
+| `./build/omega0` | Hypothesis-space size and lattice statistics, both rulesets |
+| `./build/marginals` | Exact prior heatmap and the 15 dihedral orbit integers |
+| `./build/sample` | Uniform board generation by unranking |
+| `./build/bounds` | The lower-bound ladder, each rung labelled by how it is established |
+| `./build/optimal` | Exact optimal play and the price of each objective |
+| `./build/selfplay` | Paired self-play over a seeded pool |
+| `./build/weighted` | Opponent priors and noisy observation channels |
+| `./build/spectrum` | The sweep as a hard-rod transfer matrix |
+| `./build/m9` | Adversary, constraint density, adaptivity, Bimaru, salvo, noise |
+| `./build/dp_bench` | The optimisation ladder, pinned and ABBA |
+
+## Hypothesis space
 
 ```text
 Placements per length on 10x10 (2N(N-L+1)):  L=5:120  L=4:140  L=3:160  L=2:180
@@ -116,9 +54,8 @@ Distinct placement masks                     600
   largest accumulator 17*|Omega_0|                   255,798,792,056  (37.90 bits)
 ```
 
-Exact prior occupancy marginals, all 100 cells in one forward and one backward
-sweep (16.7 s), against 252 s for the same heatmap by repeated constrained
-counting:
+Exact prior occupancy marginals, all 100 cells from one forward and one backward
+sweep:
 
 ```text
         0      1      2      3      4      5      6      7      8      9
@@ -130,96 +67,80 @@ r4  0.1667 0.1842 0.1994 0.2084 0.2136 0.2136 0.2084 0.1994 0.1842 0.1667
    (rows 5-9 mirror rows 4-0)
 ```
 
-The 15 D4 orbit representatives as exact integers, which sum with their orbits
-to `17 * |Omega_0| = 255,798,792,056`:
+Corner 0.0800, centre 0.2136, ratio 2.670, mean exactly 0.17. The 15 dihedral
+orbit representatives are exact integers summing with their orbits to
+`17 * |Omega_0|`; `tools/marginals` prints them.
 
-```text
-(0,0) 1,203,741,932   (1,1) 2,146,161,986   (2,2) 2,769,717,852   (3,3) 3,060,754,006
-(0,1) 1,729,219,394   (1,2) 2,490,360,157   (2,3) 2,920,534,022   (3,4) 3,136,128,540
-(0,2) 2,158,897,172   (1,3) 2,674,167,548   (2,4) 3,000,859,368   (4,4) 3,214,027,020
-(0,3) 2,387,278,606   (1,4) 2,771,697,341
-(0,4) 2,508,505,461
-```
+Board-size scaling of the same fleet, by the same DP:
 
-Corner 0.0800, centre 0.2136, ratio 2.670, mean exactly 0.17.
+| board | 6x6 | 7x7 | 8x8 | 9x9 | 10x10 | 11x11 |
+| --- | --- | --- | --- | --- | --- | --- |
+| \|Omega\| | 3,343,568 | 62,378,548 | 571,126,760 | 3,394,196,128 | 15,046,987,768 | 54,083,238,912 |
 
-Board-size scaling of the same fleet, all by the same DP:
-
-| board | \|Omega\| |
-| --- | --- |
-| 6x6 | 3,343,568 |
-| 7x7 | 62,378,548 |
-| 8x8 | 571,126,760 |
-| 9x9 | 3,394,196,128 |
-| 10x10 | 15,046,987,768 |
-| 11x11 | 54,083,238,912 |
-
-Uniform board generation draws 19,767 boards/s after a 20 s build. Over 200,000
-draws the largest per-cell deviation from the exact marginal is 0.0022, which is
-sampling noise at that sample size.
+Boards are drawn by unranking, at 19,767 per second after a 20 s build. Over
+200,000 draws the largest per-cell deviation from the exact marginal is 0.0022,
+which is sampling noise at that size. A biased generator would poison every
+statistic below, so this is a gate rather than a diagnostic.
 
 ## Bounds
 
 ```text
-E1  coverage        17.0000 shots   exact: all 17 ship cells must be shot
-E2  entropy         13.0790 shots   exact: 33.8088 bits over an outcome alphabet of 6
-E4  water-filling   24.0876 shots   exact, by transcript counting
+E1  coverage        17.0000 shots   all 17 ship cells must be shot
+E2  entropy         13.0790 shots   33.8088 bits over an outcome alphabet of 6
+E4  water-filling   24.0876 shots   by transcript counting
 ```
 
-E2 falls below E1, so counting ship cells is the stronger constraint and the
-entropy bound is vacuous. Identifying the board is cheap; hitting all of it is
-what costs.
+E2 falls below E1, so the entropy bound is vacuous and counting ship cells is the
+stronger constraint.
 
-The water-filling rung is the binding one. Against a deterministic policy the map
-from configuration to transcript is injective, since the transcript replays the
-policy and so reveals which cells were shot and which of those were hits. A game
-ending on shot `t` has 17 hits with the last at `t`, so its transcript is fixed by
-choosing the positions of the other 16 among the first `t-1` and by one of `K`
-announcement strings. Hockey-stick then gives
+Water filling is the strongest rung established here. Against a deterministic
+policy the map from configuration to transcript is injective, since the
+transcript replays the policy and so reveals which cells were shot and which were
+hits. A game ending on shot `t` has 17 hits with the last at `t`, so its
+transcript is fixed by choosing the positions of the other 16 among the first
+`t-1` and by one of `K` announcement strings:
 
 ```text
 P(T <= t) <= K * C(t,17) / N        E[T] >= sum_t max(0, 1 - K*C(t,17)/N)
 ```
 
-`K = 28,560`, computed by determinising the automaton over per-ship hit counts
-(several hit-to-ship assignments collapse to one announcement string, so counting
-interleavings would over-count) and validated against brute force on eight
-fleets. The sum saturates at depth 25 and evaluates to 24.0876.
+`K = 28,560`, computed by determinising the automaton over per-ship hit counts,
+since several hit-to-ship assignments collapse to one announcement string and
+counting interleavings would over-count. The sum saturates at depth 25.
 
 Blocking numbers, the fewest shots guaranteeing contact with a lone length-L
-ship, computed exactly by a row-sweep DP and checked against brute force on
-eleven small boards:
+ship, exact by a row-sweep DP:
 
 ```text
-beta(2) = 50    largest 2-free set 50     (the checkerboard)
-beta(3) = 33    largest 3-free set 67
-beta(4) = 24    largest 4-free set 76
-beta(5) = 20    largest 5-free set 80
+beta(2) = 50    beta(3) = 33    beta(4) = 24    beta(5) = 20
 ```
 
-Greedy set cover reaches beta exactly for L=2 and L=5, and misses for L=3 (34
-against 33) and L=4 (26 against 24).
+A 20-cell blocking set for the 5-ship, fed to the counting DP as misses, drives
+the hypothesis space to exactly zero, and restoring any one of those cells revives
+it. That establishes that some 20-cell set meets every configuration. It does not
+establish that no 19-cell set does, so the adversarial bound
+`17 + beta(5) - 1 = 36` that would follow from the other direction is not claimed.
+`tools/m9 adversary` computes the worst case exactly on instances small enough to
+solve outright.
 
-Two independent components cross-check here: a 20-cell blocking set for the
-5-ship, fed to the counting DP as misses, drives the hypothesis space to exactly
-zero, and restoring any single one of those cells revives it.
+The obvious way to tighten the rung does not work. Replacing `C(t,17)` with
+`maxcov(t)`, the largest number of configurations fitting inside any `t`-cell set,
+substitutes a count of configurations for a count of cell subsets, and recovering
+a bound that way needs the number of distinct shot-sets a policy can reach by time
+`t`, which is the number of length-`t` transcripts and vastly exceeds `K`.
+Computed anyway it exceeds the true optimum on every instance small enough to
+check. What it does obey there is the **non-adaptive** optimum, and an adaptive
+searcher has a tree of shot-sets where the non-adaptive one has a single set.
+`tools/maxcover selftest` holds this as a negative regression.
 
-That establishes that some 20-cell set meets every configuration. It does not
-establish that no 19-cell set does, so the adversarial worst-case bound of
-`17 + beta(5) - 1 = 36` that would follow from the other direction is not
-claimed. On instances small enough to solve outright, `tools/m9 adversary`
-computes the worst case exactly instead of bounding it. The max-coverage rung
-was investigated and withdrawn: it is not a lower bound on the adaptive optimum,
-and it exceeds the true optimum on every instance small enough to check. See
-below.
+Unresolved interval `[24.088, 44.369]`, a gap of 20.3 shots. Water filling closes
+25.9% of the distance from the coverage bound to the best measured policy.
 
-Unresolved interval: `[24.088, 44.369]`, a gap of 20.3 shots. Water-filling
-closes 25.9% of the distance from the coverage bound to the best measured policy.
+## Optimal play
 
-## Exact optimal play on small instances
-
-Where the whole configuration space is enumerable, the optimum and each policy's
-expectation are both exact, so the optimality gap is measured and not estimated.
+Where the configuration space is enumerable, the optimum and each policy's
+expectation are both exact, so the optimality gap is measured rather than
+estimated.
 
 ```text
 instance       cfgs   optimal   density     gap    parity     gap
@@ -232,15 +153,12 @@ instance       cfgs   optimal   density     gap    parity     gap
 4x4 {3,2}       264    8.7538    8.8902   0.136    9.7955   1.042
 ```
 
-The density heuristic is exactly optimal on four of the seven instances and
-within 0.14 shots on the rest. Parity hunt/target gives up between 0.5 and 1.9
-shots. The optimal first shot is an off-corner cell in every case.
+The density heuristic is exactly optimal on four of seven instances and within
+0.14 shots on the rest. The optimal first shot is an off-corner cell in every
+case.
 
-### Which objective, measured exactly
-
-The same machinery prices the three shot-selection objectives against the true
-optimum. Totals are integers over the enumerated space, so these gaps are exact
-and contain no sampling error.
+The same machinery prices the three shot-selection objectives. Totals are integers
+over the enumerated space, so these gaps carry no sampling error.
 
 ```text
 instance      cfgs    optimal   max-P(hit)     gap     max-info      gap
@@ -252,105 +170,17 @@ instance      cfgs    optimal   max-P(hit)     gap     max-info      gap
 5x4 {3}         22   6.227273     6.227273  0.0000    13.090909   6.8636
 ```
 
-On 4x4 {3,2} the totals are 2311 shots for optimal play and 2352 for greedy
-max-P(hit), a difference of exactly 41 over 264 configurations.
+Maximising hit probability is exactly optimal on three of six and never worse
+than 0.16 shots, so it is a strong heuristic and provably not the optimum.
+Maximising one-step information gain is worse by whole shots: on 5x4 {3} it takes
+13.09 against an optimum of 6.23.
 
-Two results fall out. Maximising hit probability is exactly optimal on three of
-six instances and never worse than 0.16 shots, so it is a strong heuristic but
-provably not optimal. Maximising one-step information gain is far worse, by whole
-shots: on 5x4 {3} it takes 13.09 against an optimum of 6.23, more than double.
+The belief MDP's memo key is a shot mask plus the surviving support, which is
+already the sufficient statistic, so no order-aware transposition table is needed.
+Pruning is star1's chance-node bound with move ordering by descending hit
+probability, worth a factor of 158 on the fleet instances.
 
-That is the coverage-limited thesis, now measured and no longer just argued. Identifying the
-board is cheap, and shots spent identifying it instead of covering it are wasted.
-
-The solver's own check is that the optimum can never exceed what a concrete
-policy achieves. That invariant caught a real measurement bug: seeding a
-stochastic policy from the board's identity gives each board its own policy
-randomisation, which measures a family of policies each paired with its own board
-and duly scored below the single-policy optimum. Policy seeds are now drawn from
-a stream independent of the board pool.
-
-## The transfer matrix
-
-The counting DP carries a fleet counter, which ties it to one fixed fleet and
-makes the column operator depend on how much of the fleet is spent. Drop the
-counter, give each rod a fugacity, and the operator becomes the same at every
-column. That is a transfer matrix, and Battleships turns out to be the
-fixed-fleet corner of a hard-rod lattice gas.
-
-`lambda_max` comes from power iteration where applying the operator is one column
-sweep of the same DP, so no matrix is ever formed. The subdominant eigenvalue
-falls out of the convergence rate, at a lag of two, because for these strips it
-is negative and the correction alternates sign.
-
-Three checks, none of which the code was given:
-
-```text
-1-row dimer strip counts Fibonacci
-  lambda      1.618033988750
-  golden      1.618033988750
-
-eigenvalue against a finite patch, k=4 H=4
-  lambda      3.7545140595
-  Z(49)/Z(48) 3.7545140612
-
-entropy per site extrapolated to two dimensions, f(H) = f - a/H
-  extrapolated 0.6627990
-  published    0.6627989727      difference 2.4e-10
-```
-
-That last one is the monomer-dimer entropy of the square lattice, reached from
-strip widths 2 to 12 with no input beyond the sweep itself.
-
-The strip results also separate by rod length: for dimers and trimers the
-subdominant eigenvalue is negative, so correlations alternate column to column,
-while for 4-mers and 5-mers it is not. Correlation lengths run from 0.6 columns
-for dimers to about 4 for 5-mers.
-
-For reference, the Battleship instance is 0.2343 nats per site, well below the
-free gas, because fixing the rod count is exactly what turns a thermodynamic
-problem into a counting one.
-
-## Is the boundary state minimal?
-
-The sweep is a matrix-product contraction, so the number of distinct boundary
-states is its bond dimension. Cutting the board between two columns and building
-the compatibility matrix `M[l][r]` over left and right parts gives three numbers
-that are easy to confuse:
-
-- `rank(M)`, the Schmidt rank, a floor for any linear representation. Reaching it
-  may need negative or fractional weights, which a counting sweep cannot use.
-- distinct rows of `M`, the Myhill-Nerode count. Two left parts with identical
-  rows admit the same completions, so a counting sweep may merge them and add
-  their counts. This is the true floor for a state-based sweep.
-- what the engine carries: the residual extension per row plus the fleet counter.
-
-```text
-instance         cut   rank(M)   nerode   engine   ratio
-5x5 {3,2,2}        1        38       60      113    1.88
-                   2        43       76      156    2.05
-                   3        36       67      156    2.33
-5x5 {4,3,2}        2        71      178      451    2.53
-                   3        48      101      258    2.55
-4x4 {3,2}          2        13       15       42    2.80
-```
-
-The engine's state runs 1.86 to 2.80 times larger than the Nerode minimum across
-every cut and instance tested, with no sign of the ratio growing. So the answer is
-no: the representation is sufficient and not minimal, and there is roughly a
-factor of two of algorithmic headroom that no amount of cache tuning would reach.
-
-What stops the engine claiming it is that its state is a sufficient statistic
-computable from the cells already swept, while a Nerode class is defined by the
-completions that follow. Turning the second into something computable locally is
-open.
-
-A hand-checkable case anchors the method: one length-4 ship on a 4x4 board, cut
-after the first column. Every left part that already holds the ship behaves the
-same way afterwards, so two classes suffice, and the script reports rank 2,
-nerode 2, engine 6.
-
-## Self-play baseline
+## Self-play
 
 One seeded pool of uniform boards, 20,000 games, every policy on the same boards.
 
@@ -365,83 +195,209 @@ The random shooter is the harness self-test: shooting uniformly, the game ends o
 the last of the 17 ship cells, so `E[T] = k(N+1)/(k+1) = 95.3889`. Measured
 95.3544, inside the interval.
 
-That replaces the 44-to-61 spread of unreconciled baselines with one number and a
-stated interval. The gap from the coverage bound to the density policy is 27.4
-shots.
+Correlation across the shared pool is bimodal, so sample sizes have to be derived
+per comparison. Within the density family it is 0.923, worth 12.9 times fewer
+games for the same precision. Against the stochastic hunt policy it is zero,
+because that policy's variance comes from its own draws rather than from board
+difficulty, so pairing buys nothing there.
 
-Correlation across the shared pool turns out to be bimodal, which changes how
-sample sizes must be planned:
+## Ships that may not touch
+
+The printed-puzzle ruleset is a different counting problem rather than a filter on
+this one. Sweeping column-major, the decided 8-neighbours of cell `(r,c)` are
+`(r-1,c-1)`, `(r,c-1)`, `(r+1,c-1)` and `(r-1,c)`, and the residual extensions
+determine none of them, so the boundary state carries the previous column's
+occupancy. It costs `H+1` bits rather than `2H`, because previous and current
+column share one `H`-bit word and only `prev[r-1]` needs a carry bit. The standard
+instance packs into 49 bits.
+
+Every 8-adjacent pair has one member decided strictly before the other, so
+checking a cell against its decided neighbours as it is placed catches every
+touching pair, and ship halos need no representation.
+
+| quantity | ships may touch | ships may not touch |
+| --- | --- | --- |
+| configurations | 15,046,987,768 | 1,925,751,392 |
+| entropy | 33.8088 bits | 30.8428 bits |
+| lattice edges | 28,743,172 | 18,322,562 |
+| peak states | 376,735 | 342,892 |
+
+Forbidding contact removes 87.20% of the space and 36.3% of the lattice, so the
+stricter rule counts faster: the adjacency rule kills more profiles than the extra
+bits create. The small-board ladder agrees across four implementations sharing no
+code.
+
+## Soft evidence and a non-uniform prior
+
+Weighting the sweep turns the count into a partition function. Two mechanisms
+compose multiplicatively:
+
+- **per placement**, applied when a ship starts. A log-linear opponent prior is a
+  set of these weights.
+- **per cell**, applied by whether the cell ends up occupied or empty. An
+  observation channel lives here, so one sweep returns the exact normaliser for a
+  noisy record.
+
+Integer exactness is gone, so the path carries three bridges. Every weight at 1
+returns 15,046,987,768 bit for bit. The log-linear prior at `theta = 0` reproduces
+the exact marginal table the integer path derives. At `eps = 0.5` every board has
+likelihood `2^-t` whatever it looks like, so the evidence must read exactly -20.00
+bits at 20 shots and -40.00 at 40, and it does, which prices the column at full
+10x10 scale without reference to any small board.
+
+Weighted results agree with an independently written enumerator to within a few
+ULP across six cases covering each mechanism alone and both together, at a stated
+tolerance of 1e-12 relative; only the unit-weight cases are bit-exact.
+
+Intermediate layers are not bounded by the final count, since a layer counts
+partial placements and a hard-constrained board can answer in the hundreds of
+thousands while its layers still carry billions. The honest bound is the number of
+partial placements, about 8.0e10 against 2^53, and it is instance-dependent, so
+every run reports its measured `maxLayerSum`; the standard instance measures
+1.583e10. `WeightedResult` carries an `exact` flag, true only when the weights
+were all 1, no layer sum reached that limit, no rescale intervened and nothing
+underflowed.
+
+Against an opponent who hugs the edges, `tools/opponent` prices the model exactly:
+every board is enumerated and weighted by how often the opponent produces it, so
+the only sampling is in the learning. On 5x5 {4,3,2} against a strong edge-hugger
+the oracle gain is 1.14 shots, and fitting the single parameter captures all of it
+in about ten games. Estimating placement frequencies with no parametric form costs
+forty to a hundred times more games for the same gain. Believing a strong bias
+against an opponent who has none costs 0.51 shots, but a mild permanent assumption
+dominates the uniform one in the worst case, by 0.14 shots on 5x5 {4,3,2}. All of
+it is small against the 20.3-shot gap between the bound and the best policy, which
+is why opponent modelling stays out of the headline engine.
+
+Full output in [docs/OPPONENT.txt](docs/OPPONENT.txt) and
+[docs/WEIGHTED_MARGINALS.txt](docs/WEIGHTED_MARGINALS.txt).
+
+## Variants
+
+`tools/m9` holds the results that reuse the engine rather than extend it. Full
+output in [docs/M9_RESULTS.txt](docs/M9_RESULTS.txt).
+
+**A hider who never commits.** Turning the chance node into a maximum gives a
+worst case with no distributional assumption in it. For a lone ship `W*` sits 2 or
+3 above `beta(L)`, the margin covering both finishing the ship and guessing its
+orientation.
+
+**The DP has no hard region.** Feed both the sweep and a backtracking search
+records that no board produced. The search shows the easy-hard-easy profile of
+random satisfiability, peaking at roughly 180 times either end. The sweep does
+not: its cost falls monotonically with constraint density, because a counting
+sweep never backtracks and the record only shrinks a lattice it already paid for.
+All 6,720 records were decided by both engines and agreed on every one.
+
+**What feedback buys.** A non-adaptive player fixes the cell order in advance, so
+clearing time depends on each prefix as a set and the best of `n!` orders is the
+best chain through the subset lattice, a `2^n` DP. Feedback is worth 2.09x against
+a lone ship and 1.44 to 1.50 against a fleet, since feedback buys the right to
+skip cells and a fleet covering more of the board leaves fewer worth skipping.
+Greedy stays within 3.2% of the optimal order. The 4-approximation quoted for
+min-sum set cover does not apply: that objective pays for a set at its first
+covered element, this one waits for the last.
+
+At full scale the best fixed order measured is row-major at 88.7342 shots, which
+column-major matches to every digit because the board is square and transposing
+is a bijection on configurations. Against a density policy at 44.369, both being
+achievable rather than optimal, the pair does not bound the adaptivity gap from
+below but does show it is not small.
+
+**Row sums.** Bimaru gives the occupied count of every row and column. A column
+sum lives and dies inside its column and costs a factor of `H+1`; a row sum
+accumulates across the whole sweep, so all `H` counters ride along. For 10x10 the
+half-board cut admits at most 5,044,260 row vectors, which against a peak of
+376,735 profile states is 1.9e12 states, past anything the sweep can carry.
+
+**Salvo.** Fire `k` cells, hear how many hit but not which. A turn answering `h`
+of `k` splits the record `C(k,h)` ways and the belief becomes a union of
+constraint sets, each needing its own sweep. `k=2` costs 2.6x and survives. Real
+salvo opens at one shot per surviving ship, so it starts at `k=5` and 56x.
+
+**Noise.** Flip every answer with probability `eps`. A board's likelihood is
+`(1-eps)^(t-m) eps^m` in its mismatch count, so the posterior is Boltzmann in that
+count and noise is a temperature, with the truthful game as the zero-temperature
+limit. Each shot is one use of a channel of capacity `1 - H(eps)`, and measured
+cost sits 2.8 to 4.3 times above that floor, with the ratio flattening once noise
+dominates.
+
+## The transfer matrix
+
+Drop the fleet counter, give each rod a fugacity, and the column operator becomes
+the same at every column. Battleships is the fixed-fleet corner of a hard-rod
+lattice gas. `lambda_max` comes from power iteration where applying the operator is
+one column sweep of the same DP, so no matrix is ever formed; the subdominant
+eigenvalue falls out of the convergence rate at a lag of two, because for these
+strips it is negative and the correction alternates sign.
+
+Three checks the code was not given:
 
 ```text
-                       random  parity-hunt  density(10)  density(50)
-random                  1.000       -0.013       -0.012       -0.011
-parity-hunt-target     -0.013        1.000       -0.012       -0.012
-density(b=10)          -0.012       -0.012        1.000        0.923
-density(b=50)          -0.011       -0.012        0.923        1.000
+1-row dimer strip counts Fibonacci      1.618033988750  against the golden ratio
+eigenvalue against a finite patch       3.7545140595    against Z(49)/Z(48)
+entropy per site, extrapolated to 2D    0.6627990       against 0.6627989727
 ```
 
-Within the density family the correlation is 0.923, which is worth 12.9 times
-fewer games for the same precision. The interval itself narrows by the square
-root of that, about 3.6 times; the harness prints the variance saving because
-that is what decides a sample size. Against the stochastic hunt policy the
-correlation is zero, because that policy's variance comes from its own draws
-and not from board difficulty, so pairing buys nothing there. Sample sizes
-have to be derived per comparison from the measured correlation.
+The last is the monomer-dimer entropy of the square lattice, reached from strip
+widths 2 to 12 with no input beyond the sweep. The Battleship instance sits at
+0.2343 nats per site, well below the free gas, because fixing the rod count turns
+a thermodynamic problem into a counting one.
 
-A side result: the density policy's hit bonus saturates. Bonus 50 and bonus 200
-produce byte-identical play, correlation exactly 1.000.
+## Bond dimension
+
+The sweep is a matrix-product contraction, so the number of distinct boundary
+states is its bond dimension. Cutting between two columns and building the
+compatibility matrix `M[l][r]` gives the Schmidt rank, a floor for any linear
+representation; the count of distinct rows of `M`, which is the Myhill-Nerode
+count and the true floor for a state-based sweep; and what the engine carries.
+
+The engine's state runs 1.86 to 2.80 times larger than the Nerode minimum across
+every cut and instance tested, with no sign of the ratio growing. The
+representation is sufficient and not minimal, and there is roughly a factor of two
+of algorithmic headroom that no amount of cache tuning would reach. What stops the
+engine claiming the minimum is that its state is a sufficient statistic computable
+from the cells already swept, while a Nerode class is defined by the completions
+that follow. Making the second computable locally is open.
 
 ## Optimisation ladder
 
-V0 is the original DP, frozen as the reference. V1 packs the state into one
-uint64 (30 bits of profile, 3 of vertical run, 5 of fleet index), tags slot
-liveness with an epoch in the spare high bits so one 64-bit compare settles both
-liveness and key equality and clearing a layer is an increment, pre-sizes the
-table, and stages successors so their probes prefetch and overlap.
+V0 is the original DP, frozen as the reference. V1 packs the state into one uint64
+and tags slot liveness with an epoch, so one 64-bit compare settles both liveness
+and key equality and clearing a layer is an increment, then stages successors so
+their probes prefetch and overlap. V2 replaces each cell with a radix-partitioned
+scatter into 64 buckets and a per-bucket merge sized to fit L2. V3 spreads that
+merge over a persistent thread pool.
 
-The last change is the one that matters. A table-size sweep puts the floor at
-about 76 ns/edge at 16 MB, rising at 8 MB (probe chains at load factor 0.72) and
-at 64 MB (address translation), which is one DRAM round trip per edge. The DP is
-memory-latency bound, so the lever is memory-level parallelism, with a faster
-hash being beside the point.
+A table-size sweep puts the floor at about 76 ns/edge at 16 MB, rising at 8 MB
+from probe chains at load factor 0.72 and at 64 MB from address translation. The
+DP is memory-latency bound, so the lever is memory-level parallelism and a faster
+hash is beside the point. V1 and V2 attack that bottleneck from opposite sides and
+land in the same place.
 
 ```text
-speedup     1.67x to 2.13x  (ratio of minima, across runs)
-noise floor 1.02x to 1.39x  (A/A control, same runs)
-counts and edge totals identical between rungs
+V0  baseline map, 12-byte key struct           1.00x
+V1  packed key, epoch tagging, prefetch        1.67x
+V2  radix-partitioned scatter and merge        1.69x     (1.01x against V1)
+V3  merge across 8 threads                     2.66x     (turns over at 10)
+noise floor, A/A control                       1.02x
 ```
 
-A single figure here would be false precision. Repeated runs on this machine put
-V1 between 1.67x and 2.13x, and the A/A control moves with it, so the speedup is
-only meaningful read against the noise floor of its own run. The tightest run
-measured 1.67x against a 1.02x floor. That spread is the reason the harness
-prints the control at all.
+Every rung is bit-identical to V0 across 965 checks covering the small-board
+ladder, the pinned order-dependence cases, 180 fuzzed ordered histories and thread
+counts of 1, 2, 4 and 7. The decomposition guarantees it: counts are integers,
+integer addition is associative, and the buckets partition the destination keys so
+no two merges touch one counter.
 
-`tests/test_ladder.cpp` holds every rung to bit-identical output across 965
-checks, including 180 fuzzed ordered histories, the pinned order-dependence
-cases, and thread counts of 1, 2, 4 and 7.
-
-### Measurement protocol
-
-Topology detection reports the machine as 4 logical processors in efficiency
-class 1 (2 P-cores with SMT) and 8 in class 0 (E-cores), which matches the part
-independently.
-
-A run pins to one logical processor of a stated class, warms up, interleaves the
-rungs ABBA, and runs an A/A control that measures the noise floor by comparing a
-rung against itself. The headline is the ratio of minima: the computation is
-deterministic, so every deviation above the fastest run is interference, and the
-fastest run is the closest estimate of true cost. Medians and the full spread
-ship alongside. A speedup smaller than the measured noise floor is refused, never
-reported, and the harness has already exercised that refusal.
-
-**Absolute throughput on this machine is not currently trustworthy.** The same
-workload has been observed between 2.45 s and 204 s, and pinning did not remove
-the spread, so this machine appears to carry persistent background load. Ratios
-between rungs reproduce; absolute ns/edge figures do not. An earlier revision of
-this file quoted 7.4 M edges/s and 135.7 ns/edge from an unpinned run; that
-number is withdrawn, and no absolute figure replaces it until the ladder is
-measured on a quiet machine.
+**Measurement protocol.** A run pins to one logical processor of a stated class,
+warms up, interleaves the rungs ABBA, and runs an A/A control that measures the
+noise floor by comparing a rung against itself. The headline is the ratio of
+minima: the computation is deterministic, so every deviation above the fastest run
+is interference. A speedup smaller than the measured noise floor is refused rather
+than reported. Absolute throughput on this machine is not trustworthy, since the
+same workload has been observed between 2.45 s and 204 s and pinning did not
+remove the spread; ratios between rungs reproduce, absolute ns/edge figures do
+not.
 
 ## Report
 
@@ -450,59 +406,47 @@ measured on a quiet machine.
 python tools/render_report.py out/figures.json out/report.html
 ```
 
-The engine writes data; the renderer reads it. Nothing downstream recomputes an
-engine number, so a figure cannot disagree with the engine that produced it. The
-JSON carries its own check: the occupancy counts sum to `17 * |Omega|` exactly.
+The engine writes data and the renderer reads it. Nothing downstream recomputes an
+engine number, so a figure cannot disagree with the engine that produced it, and
+the JSON carries its own check: the occupancy counts sum to `17 * |Omega|`
+exactly.
 
-Volume is tiered. Anything measured over many games ships as an aggregate: a
-shot-count histogram and a per-cell mean shot turn, 200 numbers per policy for
-any number of games. Full per-shot traces exist only for the three showcase games
-that need one, because a 100-cell posterior per turn per game across tens of
-thousands of games is not storable.
+Volume is tiered. Anything measured over many games ships as an aggregate, 200
+numbers per policy for any number of games. Full per-shot traces exist only for
+the three showcase games that need one.
 
-The page is one file of about 105 KB. Every figure is complete inline SVG emitted
-at build time, so the report is correct with JavaScript disabled; JavaScript only
-adds hover readouts. The only external request is the webfont. Colours come from
-a palette validated for colour-vision deficiency in both light and dark themes,
-and the sequential ramp is re-stepped for the dark surface instead of inverted.
+Every figure is complete inline SVG emitted at build time, so the page is correct
+with JavaScript disabled and JavaScript only adds hover readouts. Colours come
+from a palette validated for colour-vision deficiency in both themes, with the
+sequential ramp re-stepped for the dark surface rather than inverted.
 
-Twelve figures: the exact prior heatmap, board-size scaling, the lattice layer
-profile, the bound ladder, the objective comparison, two shot-order maps,
-survival curves, posterior collapse, and three that draw the structures the
-engine runs on. The page opens with a live engine.
+Twelve figures, three of which draw the structures the engine runs on: the 15
+dihedral orbits, which fold a per-cell computation from 100 evaluations to 15; the
+blocking sets, drawn at minimum size as the covering that makes `beta(L)` a
+measured number; and the order-dependence counterexample, two boards carrying the
+same seven shots with the same seven outcomes in different orders, leaving 41 and
+53 configurations standing.
 
-Those last three exist because a report full of statistics about games never
-shows the objects the engine actually manipulates. They are the 15 dihedral
-orbits, which fold a per-cell computation from 100 evaluations to 15; the
-blocking sets, drawn as the covering that makes beta(L) a measured number and
-not an assertion; and the order-dependence counterexample, two boards carrying the same
-seven shots with the same seven outcomes in different orders, leaving 41 and 53
-configurations standing.
+**The live engine.** `web/engine.js` is the same DP in JavaScript, reproducing the
+C++ exactly. It is too slow to drive the opening on its own, taking about 27 s at
+turn 0 and under 1 s from shot 14, so the widget runs two regimes. While the
+posterior spans billions of boards it filters a uniform sample of 200,000
+configurations, drawn by the verified unranker and shipped as five bytes per
+board. Once fewer than 400 survive the exact sweep takes over. The handoff keys on
+the survivor count alone, which makes the two regimes complementary: the sample
+runs out only once the record is constraining, and a constraining record is a
+cheap sweep. Verified headlessly over ten games: they finish in 29 to 65 shots,
+mean 45.0 against the C++ density policy's 44.37, and the true board survives in
+the posterior at every turn of every game.
 
-### The live engine
+**The belief scrubber** replays one recorded game a turn at a time, showing the
+exact posterior on the board. Frames are precomputed and quantised to a byte per
+cell, so scrubbing is a lookup. Colour limits are fixed across the whole game,
+since a per-frame rescale would hide the collapse the figure exists to show, and
+shot cells carry the glyph rather than the colour so the posterior and the record
+never compete for one channel.
 
-`web/engine.js` is the same broken-profile DP in JavaScript. It reproduces the
-C++ exactly: 15,046,987,768 for the prior, occupancy summing to 17.000000, and
-the same corner and centre marginals to six places.
-
-It is also far too slow to drive the opening on its own. Measured through a real
-game: 30 s at shot 4, 9 s at shot 8, 4 s at shot 10, then under 1 s from shot 14.
-The cost tracks the size of the surviving space.
-
-So the widget runs two regimes with opposite cost curves. While the posterior
-spans billions of boards it reads a uniform sample of 200,000 configurations,
-drawn by the verified unranker and shipped as five bytes per board; filtering the
-whole pool against the ordered history costs a few tens of milliseconds. Once
-fewer than 400 survive, the sample is spent and the exact sweep takes over, which
-is precisely when it has become cheap. The crossover is self-tuning, because the
-survivor count is a proxy for the size of the space, and the readout says which
-regime is answering.
-
-Verified headlessly over ten games: they finish in 29 to 65 shots, mean 45.0
-against the C++ density policy's 44.37, the handoff lands at shot 6 to 12, and
-the true board survives in the posterior in every game at every turn.
-
-## Validation
+## Correctness
 
 The DP agrees exactly with brute-force enumeration on nine reduced instances,
 including repeated ship lengths and non-square boards:
@@ -517,825 +461,89 @@ Sunk semantics are checked against the oracle's ordered simulator on 300 random
 histories. Marginals from `occupancyMap` are checked cell by cell against
 constrained counting. `unrank` is checked exhaustively on four instances: it
 enumerates the configuration set exactly once per rank, which proves uniformity
-outright and leaves nothing to a statistical argument. The invariant
+outright. Degenerate fleets are checked against arithmetic rather than against
+another sweep, since `k` indistinguishable single cells on `n` free cells is
+`C(n,k)`. The JavaScript engine is checked against `python/oracle.py`, which
+shares no code with it or the C++. The invariant
 `sum over cells of P(cell occupied) = shipCells` holds in exact integers
 throughout.
 
-## Two things to know before contributing
+Two things to know before changing the engine:
 
-**Indistinguishable ships need no correction.** The fleet counter records how
-many ships of each length have been started, never which, so the DP counts
-unordered physical boards. There is no division by `2!`.
+**Indistinguishable ships need no correction.** The fleet counter records how many
+ships of each length have been started, never which, so the DP counts unordered
+physical boards. There is no division by `2!`.
 
-**The posterior depends on shot order.** `SUNK(x,L)` means the shot at `x` sank
-the ship, so the rest of it was already hit. A predicate requiring only
-`cells(ship) subset-of HIT` over-counts: 26 against a true 22 on a reproduced 5x5
+**The posterior depends on shot order.** `SUNK(x,L)` means the shot at `x` sank the
+ship, so the rest of it was already hit. A predicate requiring only
+`cells(ship) subset-of HIT` over-counts, 26 against a true 22 on a reproduced 5x5
 case, and two orderings of one shot multiset give 41 and 53. Memo keys must be
 order-aware. See [docs/ORDER_DEPENDENCE.md](docs/ORDER_DEPENDENCE.md).
 
-## What feedback is worth, and where the engine stops
-
-`tools/m9` holds the results that reuse the engine rather than extend it. Run a
-section by name (`adversary`, `density`, `adaptivity`, `bimaru`, `salvo`,
-`noisy`) or all of them with no argument. Full output in
-[docs/M9_RESULTS.txt](docs/M9_RESULTS.txt).
-
-### A hider who never commits
-
-Expected shots assume the board was fixed before play. Against a hider who
-answers each shot to hurt most while staying consistent, the chance node becomes
-a maximum and the answer is a worst case with no distributional assumption in it.
-
-```text
-instance      boards  E[T] committed  W* adaptive     gap  beta(L)
-3x3 {2}           12          4.5000           7     2.50        4
-4x3 {2}           17          5.1176           8     2.88        6
-4x4 {2}           24          6.0833          10     3.92        8
-4x4 {3}           16          5.6250           8     2.38        5
-5x4 {3}           22          6.2273           9     2.77        6
-4x4 {2,2}        224          8.6696          12     3.33        -
-4x4 {3,2}        264          8.7538          12     3.25        -
-```
-
-`W*` is an integer, as a worst case over a finite tree must be. For a lone ship
-it sits 2 or 3 above `beta(L)`, the shots that guarantee first contact, and the
-margin is not a fixed offset because the adversary also picks the orientation.
-
-### The DP has no hard region
-
-Feed both the sweep and a backtracking search records that no board produced,
-then vary how constrained they are. The search shows the easy-hard-easy profile
-of random satisfiability; the sweep does not.
-
-```text
-8x8 {5,4,3,3,2}, 34 cells shot, 40 records per point
-  hits  feasible  DP mean us  search nodes
-     0     37.5%        4695             3
-     4     25.0%        4525           339
-     8      5.0%        2057           548
-    12      0.0%        1848           188
-    20      0.0%        1105             0
-```
-
-Search cost peaks in the middle at roughly 180 times either end. DP cost falls
-monotonically, because a counting sweep never backtracks: it pays for the whole
-lattice up front and the record only shrinks it. The worst record costs less
-than the empty one, which is the argument for exact inference in one measurement.
-
-All 6,720 records were decided by both engines and the answers agreed on every
-one, which cross-checks the DP against an independent implementation on records
-no board generated.
-
-### What feedback buys
-
-A non-adaptive player fixes the cell order in advance. The clearing time then
-depends on each prefix as a set, so
-
-```text
-E[T] = n - (1/N) sum_t c(S_t)
-```
-
-and the best of the `n!` orders is the best chain through the subset lattice, a
-`2^n` DP. Both optima are exact.
-
-```text
-instance      boards  adaptive  fixed order  greedy order     gap   ratio
-3x3 {2}           12    4.5000       5.9167        6.0000  1.4167  1.3148
-4x4 {3}           16    5.6250      10.8750       11.0000  5.2500  1.9333
-5x4 {3}           22    6.2273      13.0455       13.3636  6.8182  2.0949
-4x4 {2,2}        224    8.6696      12.4866       12.5312  3.8170  1.4403
-4x4 {3,2}        264    8.7538      13.1098       13.3182  4.3561  1.4976
-5x4 {3,2}        510         -      15.8902       16.1765       -       -
-5x4 {4,3,2}     2520         -      18.1437       18.5147       -       -
-```
-
-Feedback is worth most against a lone ship, 2.09x on 5x4 {3}. Fleets score
-lower, 1.44 and 1.50, because what feedback buys is the right to skip cells and a
-fleet covering more of the board leaves fewer worth skipping. On 5x4 the
-fixed-order cost runs 13.05, 15.89 and 18.14 of 20 cells as the fleet grows.
-
-Greedy stays within 3.2% of the optimal order everywhere here. The 4-approximation
-people quote belongs to min-sum set cover, where a set is paid for at its first
-covered element; this objective waits for the last one, which is the `K(S) = |S|`
-case and carries no such guarantee. See [docs/COMPLEXITY.md](docs/COMPLEXITY.md).
-
-### Where the approach stops
-
-Three ways, all measured rather than asserted.
-
-**Row sums.** Bimaru gives the occupied count of every row and column. Sweeping
-column-major, a column sum lives and dies inside its column and multiplies the
-state by `H+1`. A row sum accumulates across the whole sweep, so all `H` counters
-ride along:
-
-```text
-instance        boards   cut  row vectors  column sums
-4x4 {3,2}          264     3           82            5
-5x5 {4,3,2}       9024     4          882            6
-6x6 {4,3,2}      53624     4         2338            7
-6x6 {4,3,3,2}   633432     5         8675            7
-```
-
-For 10x10 the half-board cut admits at most 5,044,260 row vectors. Times a peak
-of 376,735 profile states that is 1.9e12, and the sweep is finished. The two
-halves of Bimaru's input split cleanly, and transposing only swaps which half is
-free.
-
-**Salvo.** Fire `k` cells, hear how many hit, not which. A turn answering `h` of
-`k` splits the record `C(k,h)` ways and the belief becomes a union of constraint
-sets, each needing its own sweep.
-
-```text
-5x5 {4,3,2}, 9024 boards, 60 games per row
-    k    turns     split  peak union  sweeps/game  vs classic
-    1     23.6       0.0           1         23.6         1.0
-    2     11.5       5.8          19         59.8         2.6
-    3      7.9       5.8          63        190.7         8.1
-    4      5.9       4.9         124        479.8        20.3
-    5      4.8       4.5         260       1363.1        56.2
-```
-
-`k=2` costs 2.6x and survives. Real salvo opens at one shot per surviving ship,
-so it starts at `k=5` and 56x. The union stays far under the product of the
-fan-outs because most assignments contradict the fleet within a turn or two, and
-nothing in the profile state merges branches: two of them disagree about cells
-the sweep has already passed.
-
-**Noise.** Flip every answer with probability `eps`. A board's likelihood after
-`t` shots is `(1-eps)^(t-m) eps^m` in its mismatch count, so
-
-```text
-P(B | O)  proportional to  exp(-beta m),   beta = ln((1-eps)/eps)
-```
-
-The posterior is Boltzmann in the mismatch count and noise is a temperature, with
-the truthful game as the zero-temperature limit. Verified against the likelihood
-product to 1.7e-15.
-
-```text
-5x5 {4,3,2}, H0 = 13.1396 bits
-    eps     beta  capacity  shots used   bound  ratio
- 0.0005     7.60    0.9938        36.4    13.2   2.76
- 0.0500     2.94    0.7136        67.4    18.4   3.66
- 0.1000     2.20    0.5310        98.4    24.7   3.98
- 0.3000     0.85    0.1187       472.2   110.7   4.27
-```
-
-Each shot is one use of a channel of capacity `1 - H(eps)`, so `H0 / (1 - H(eps))`
-is a floor. Measured cost sits 2.8 to 4.3 times above it, and the ratio flattens
-once noise dominates: the capacity term captures the noise scaling correctly, and
-the leftover constant is the price of shooting at a uniform random cell instead
-of an informative one.
-
-Scaling any of this to 10x10 needs a weighted sweep. The counting path carries
-exact `uint64` counts throughout and a noisy posterior needs floating-point
-weights on the transitions, so it is a second pass rather than a flag. Everything
-above is exact by enumeration and stops where enumeration stops.
-
-## The printed-puzzle ruleset
-
-Ships that may not touch, not even at a corner, is a different counting problem
-rather than a filter on this one.
-
-The profile the standard sweep carries cannot express it. Sweeping column-major,
-the decided 8-neighbours of cell `(r,c)` are
-
-```text
-(r-1, c-1)   (r, c-1)   (r+1, c-1)   (r-1, c)
-```
-
-and the residual extensions determine none of them: a horizontal ship ending at
-column `c-1` leaves `ext[r] == 0` while `(r,c-1)` is occupied. So the boundary
-state carries the previous column's occupancy.
-
-It costs `H+1` bits rather than `2H`. Previous and current column share one
-`H`-bit word, because the slot `prev[r]` vacates is exactly the slot `cur[r]`
-wants; only `prev[r-1]` needs saving, in a single carry bit reset at each column
-start. The standard instance packs into 49 bits.
-
-Every 8-adjacent pair has one member decided strictly before the other, so
-checking a cell against its decided neighbours as it is placed catches every
-touching pair, and ship halos need no representation at all. The transitions
-differ only in which neighbour belongs to the same ship:
-
-```text
-horizontal continuation   check (r-1,c-1), (r+1,c-1), (r-1,c)   [(r,c-1) is ours]
-vertical continuation     check (r-1,c-1), (r,c-1), (r+1,c-1)   [(r-1,c) is ours]
-either start              check all four
-empty                     check nothing
-```
-
-| quantity | ships may touch | ships may not touch |
-| --- | --- | --- |
-| configurations | 15,046,987,768 | 1,925,751,392 |
-| entropy | 33.8088 bits | 30.8428 bits |
-| lattice edges | 28,743,172 | 18,322,562 |
-| peak states | 376,735 | 342,892 |
-| wall time | 7.78 s | 2.03 s |
-
-Forbidding contact removes 87.20% of the space and 36.3% of the lattice. The
-boundary state gained `H+1` bits and the sweep still got faster, because the
-adjacency rule kills more profiles than the extra bits create.
-
-The twelve-case small-board ladder agrees across four implementations sharing no
-code: this sweep, its brute-force oracle, an independently written row-major
-transfer matrix that decides a whole row at a time, and that author's own
-enumerator. The 10x10 constant itself is past enumeration and rests on the two
-DPs, which were written from the rules alone and agree exactly.
-`tests/test_notouch` also checks 240 random constraint patterns against
-enumeration, so the constrained counts are covered and not only the prior.
-
-## Soft evidence and a non-uniform prior
-
-Weighting the sweep turns the count into a partition function. Two mechanisms
-compose multiplicatively and are independent of each other:
-
-- **per placement**, applied when a ship starts. An opponent model lives here: a
-  log-linear prior over placements is just a set of these weights.
-- **per cell**, applied to every cell by whether it ends up occupied or empty. An
-  observation channel lives here, so a noisy answer contributes its likelihood
-  under each hypothesis and one sweep returns the exact normaliser.
-
-Integer exactness is gone, so the path carries its own validation regime.
-
-### Three bridges
-
-Setting every weight to 1 must return the count bit for bit, and does:
-15,046,987,768 exactly, with no rescaling. The exactness is the claim; the wall
-clock varies by run and is not one.
-
-The run certifies itself rather than relying on the argument. `WeightedResult`
-carries an `exact` flag, true only when the weights were all 1, no layer sum
-reached 2^53, and no rescale intervened. The bound behind that argument is
-instance-dependent, so an instance large enough to break it reports `exact`
-false instead of quietly returning an approximation. The log-linear prior at
-`theta = 0` gives the same number, and a sharper check besides: its marginals are
-0.0800 at the corner, 0.2136 at the centre and 0.1667 at the edge midpoint, which
-is the exact prior table the *integer* path derives. Two routes, same numbers.
-
-The third bridge is at the other end. At `eps = 0.5` every weight is exactly 0.5,
-so every board has likelihood `2^-t` whatever it looks like and the evidence must
-be `|Omega| * 2^-t`:
-
-```text
-   eps   shots   log evidence   vs prior
-  0.02      20      12.050395    -16.42b
-  0.05      20       9.901802    -19.52b
-  0.10      20       9.899525    -19.53b
-  0.20      20      10.302840    -18.94b
-  0.35      20      10.800053    -18.23b
-  0.50      20       9.571500    -20.00b     <- must be exactly -20
-  0.50      40      -4.291444    -40.00b     <- must be exactly -40
-```
-
-It reads exactly -20.00 and -40.00, which prices the rest of the column at full
-10x10 scale without reference to any small board.
-
-Bits against the prior is `log2` of the average likelihood over all
-15,046,987,768 boards. It falls with the shot count. In `eps` it is not monotone:
-it bottoms out near 0.1 and climbs back, because a channel that noisy stops
-punishing disagreement.
-
-### What noise does to the posterior
-
-All hundred marginals come from one forward and one backward pass. The empty
-transition maps a state to itself, so the weight that passes through a cell
-without occupying it is a single sum and the occupied weight is the total minus
-it. Two passes replace a hundred constrained sweeps, which is the structural
-claim. The measured saving was 23.8 s against 280 on an idle machine and roughly
-half that under load, so read the ratio as an order of magnitude rather than a
-constant. The heatmaps are unchanged and still sum to exactly 17.000000.
-
-The two routes share no code, so `weightedMarginalsByRecount` is kept and the
-test asserts they agree to 1e-12 under both uniform and tilted weights.
-
-Thirty shots at a fixed hidden board, then the exact marginals. At `eps = 0.05`
-the fleet is legible; the 2-ship at the bottom left is invisible only because no
-shot landed near it.
-
-```text
-         0      1      2      3      4      5      6      7      8      9
- r0   0.379  0.889  0.866  0.904  0.392  0.018  0.041  0.055  0.045  0.332
- r5   0.251  0.568  0.937  0.942  0.573  0.261  0.024  0.027  0.028  0.278
-```
-
-At `eps = 0.20` it does something more interesting than blur. Column 6 reads
-0.769, 0.795, 0.733 at rows 4 to 6, while the ship actually sits at rows 6 to 8.
-The posterior has not lost the ship, it has moved it, which is what a coherent
-model does with corrupted evidence rather than simply widening.
-
-Both heatmaps sum to exactly 17.000000, which is the same invariant the integer
-path satisfies and a real check on the weighted marginals. 13 of the top 17 cells
-are ships at `eps = 0.05`, and 11 at `eps = 0.20`. Full output in
-[docs/WEIGHTED_MARGINALS.txt](docs/WEIGHTED_MARGINALS.txt).
-
-### An opponent who hugs the edge
-
-```text
-     edge   vertical          log Z     corner     centre     m(0,4)     m(4,0)
-      0.0        0.0      23.434444     0.0800     0.2136     0.1667     0.1667
-      1.0        0.0      22.136198     0.0968     0.1531     0.1998     0.1998
-      2.0        0.0      21.092172     0.1126     0.1075     0.2301     0.2301
-      0.0        1.0      26.599001     0.0780     0.2175     0.1232     0.2021
-      2.0        1.0      24.229125     0.1111     0.1080     0.1789     0.2747
-```
-
-By `edge = 2` the ordering has inverted: the corner reads 0.1126 against the
-centre's 0.1075, where the uniform prior had the centre ahead 2.67 to 1.
-
-The last two columns are a symmetry test rather than a pair of numbers. Cells
-(0,4) and (4,0) are reflections of one another, so they must agree whenever the
-prior treats the orientations alike, and must part once it does not. They do
-both, to every digit printed.
-
-### Numerics
-
-Weighted results agree with an independently written enumerator to within a few
-ULP across six cases covering each mechanism alone and both together; the
-tolerance is 1e-12 relative, and only the unit-weight cases are bit-exact.
-
-Three numerical audits were run against the first version and all three found
-real defects, since fixed. Rescaling divides by a power of two, so it edits
-exponents and leaves mantissas untouched and costs no precision. The result is
-rebuilt with `ldexp` rather than by multiplying by `exp(logScale)`, which
-overflowed once the scale passed 709 even where the product was representable.
-And the exactness argument was wrong as first written: intermediate layers are
-**not** bounded by the final count, since a layer counts partial placements and a
-hard-constrained board can answer in the hundreds of thousands while its layers
-still carry billions. The honest bound is the number of partial placements, about
-8.0e10 against 2^53, and it is instance-dependent, so `weightedCount` reports the
-measured `maxLayerSum` and the tests assert on that rather than on the argument.
-The standard instance measures 1.583e10, or 2^33.88.
-
-## The rung that was not one
-
-The bound ladder stops at water filling, 24.088. The plan carried a further rung,
-a max-coverage relaxation estimated near 35, which would have closed most of the
-remaining interval. It is withdrawn, and `tools/maxcover` is the reason.
-
-Water filling bounds the boards a searcher can have finished by time `t`:
-
-```text
-#finished(t)  <=  K * C(t, 17)
-```
-
-with `K = 28,560` the feasible hit-transcripts. The argument is an injection.
-Under a deterministic policy a finished board is determined by its transcript, and
-a transcript is a hit-transcript (`K` ways) interleaved with misses (`C(t,17)`
-ways). The proposed improvement replaced the second factor with
-
-```text
-maxcov(t) = max over |S| = t of |{ B in Omega : B subset of S }|
-```
-
-on the grounds that almost no 17-subset of the shot cells is a legal fleet.
-
-### It fails twice
-
-**It is not even smaller.** `C(t,17)` counts cell subsets; `maxcov` counts
-configurations, and several ship decompositions can occupy one cell set. Seventeen
-cells shaped as a full row of ten plus seven of the next hold the fleet **20**
-different ways against `C(17,17) = 1`. The two cross over near `t = 22`, and only
-above that does `C(t,17)` run away.
-
-**It is not substitutable at any `t`.** The factors count different objects.
-`K * C(t,17)` works because a finished board is determined by its transcript.
-Recovering a bound from `maxcov` instead needs the number of distinct shot-sets a
-policy can reach by time `t`, which is the number of length-`t` transcripts and
-vastly exceeds `K`.
-
-### Measured, not just argued
-
-On every instance where the optimum is computable, the sketched rung exceeds it:
-
-```text
-instance      boards     K  E4 water  adaptive  non-adapt     maxcov   K*maxcov
-4x3 {2}           17     1    4.9412    5.1176     7.4706     7.4706     7.4706
-4x4 {2}           24     1    5.6667    6.0833     9.5833     9.5833     9.5833
-4x4 {3}           16     1    5.0625    5.6250    10.8750    10.7500    10.7500
-5x4 {3}           22     1    5.4091    6.2273    13.0455    12.8636    12.8636
-4x4 {2,2}        224     2    7.8750    8.6696    12.4866    12.4777     9.9732
-4x4 {3,2}        264     5    7.4697    8.7538    13.1098    13.1023     8.7841
-```
-
-E4 sits at or below the adaptive optimum on every row, as a bound must. The last
-column clears it on every row, so it bounds nothing.
-
-What `maxcov` does obey is the **non-adaptive** optimum, on every row, exactly on
-the two single-ship cases and within 0.07% elsewhere. That is the correct reading:
-one shot-set of size `t` is precisely the non-adaptive assumption, and an adaptive
-searcher has a tree of them. The rung was measuring the wrong problem, and it
-overshoots by the adaptivity gap, which `tools/m9` measures at up to 2.09x.
-
-`tools/maxcover selftest` pins this as a negative regression, so the rung cannot
-be reintroduced quietly.
-
-### What survives
-
-Two things. First, a measurement of where E4's slack lives: at `t = 90` the
-`C(t,17)` factor sits about 1.3e8 above an achievable `c(S)`. That gap is real but
-unreachable, since closing it needs a bound on `maxcov` from above and even a
-perfect one bounds the non-adaptive problem.
-
-Second, since `maxcov` turned out to be a non-adaptive quantity, the non-adaptive
-optimum is worth a number here:
-
-```text
-order                        E[T]
-row-major                 88.7342
-column-major              88.7342
-alternating rows          90.2512
-diagonal lattice          95.7404
-```
-
-Row-major and column-major agree to every digit, which they must: the board is
-square and transposing is a bijection on configurations. Compactness is what
-matters, and the spread-out diagonal lattice is worst, because a compact prefix is
-what contains whole fleets.
-
-So the non-adaptive optimum is at most 88.7342, against a density policy that
-measures 44.369. Both are achievable numbers rather than optima, so the pair does
-not bound the adaptivity gap from below, but it does show the gap is not small.
-
-## Pruning the search, and two more rungs
-
-### The search
-
-The belief MDP's memo key is a shot mask plus the surviving support, which is
-already the sufficient statistic: two histories that leave the same
-configurations alive are the same problem whatever order they arrived in. So the
-transposition table was never the thing to fix. Pruning was.
-
-Three levels, each adding one mechanism, so the change is attributable:
-
-- **None** rejects a cell whose optimistic value already reaches the incumbent,
-  then sums branches and stops when the partial sum does. The reference.
-- **Bounds** is star1's chance-node bound. A branch not yet evaluated is charged
-  at its admissible floor rather than at zero, so the running value is a valid
-  lower bound throughout and cuts earlier.
-- **Star1** adds move ordering: cells in descending hit probability, branches in
-  descending floor.
-
-Three runs each on an idle machine, seconds:
-
-```text
-instance      boards       E[T]         none         bounds          star1
-3x3 {2}           12   4.500000  .003 .002 .004  .005 .003 .003  .004 .003 .004
-4x3 {2}           17   5.117647  .056 .030 .029  .046 .026 .027  .039 .034 .034
-4x4 {2}           24   6.083333  3.08 3.94 3.71  2.49 2.66 1.68  2.03 1.85 1.75
-4x4 {3}           16   5.625000  1.49 1.98 1.46  1.27 1.68 1.76  0.98 1.48 1.37
-```
-
-Each level is at least as fast as the one before, and on these instances the
-margins between Bounds and Star1 sit inside the run-to-run spread.
-
-The fleet instances are where it stops being a margin. They are absent from the
-table because the weaker levels take hours there rather than seconds:
-
-```text
-m9 self-test, which includes 4x4 {3,2}
-  Star1        66 s
-  Bounds   10,490 s
-```
-
-A factor of 158. The default is Star1.
-
-Two lessons, and the second cost more than the first. A tie-break that only
-matters when the search is expensive has to be chosen on the expensive case.
-And an earlier version of this table, measured while the machine was busy,
-showed `none` at 36.6 s where it now shows 3.1, and on that reading I concluded
-Bounds beat Star1 on the cheap instances and made it the default. It does not,
-and the reversal survived until a three-hour test run made it impossible to
-ignore. A single timing run is not a measurement.
-
-Every level returns the same expected shots to the last digit, which they must:
-the bound charged to an unevaluated branch is admissible, so a cell is abandoned
-only when it provably cannot beat the incumbent.
-
-### The sweep
-
-V1 attacks memory latency with a cheaper probe and a batched prefetch. V2
-attacks the same bottleneck from the other side, by making the access pattern
-local instead of hiding its cost. Each cell becomes two passes:
-
-- **scatter** walks the live states, computes each destination key, and appends
-  `(key, count)` to one of 64 buckets chosen by a radix of the hashed key. Writes
-  are sequential per bucket, so this pass streams.
-- **merge** takes one bucket at a time and aggregates it with a table sized for
-  that bucket alone, small enough to sit in L2.
-
-V3 is V2 with the merge pass spread over threads.
-
-```text
-V0  baseline map, 12-byte key struct           1.00x
-V1  packed key, epoch tagging, prefetch        1.67x
-V2  radix-partitioned scatter and merge        1.69x     (1.01x against V1)
-noise floor, A/A control                       1.02x
-```
-
-Two different attacks on the same bottleneck arrive at the same place, which is
-the useful part: the win was never the probe or the partition specifically, it
-was the memory system either way.
-
-```text
-  threads     min (s)        vs 1
-        1       5.918       1.00x
-        2       3.285       1.80x
-        3       2.933       2.02x
-        4       2.629       2.25x
-        6       2.522       2.35x
-        8       2.222       2.66x
-       10       2.400       2.47x
-```
-
-Sublinear, and it turns over at ten. This machine has two performance cores and
-eight efficiency cores, so threads past the first few land on slower cores and
-the curve bends for that reason as much as for any scaling limit. The parallel
-section is measured unpinned, because pinning to one core is exactly wrong for
-it, and it is therefore not comparable with the table above.
-
-That table is the second one. The first version of V3 created a thread per
-bucket range **per cell**, and thread creation measured several milliseconds
-here against a merge measured in microseconds. It was reliably slower than doing
-nothing: 0.56x at ten threads on this instance, and 4.5 s on 6x6 {4,3,2} where
-one thread took 0.008. The work was never the problem, and no amount of tuning
-the bucket count would have found it.
-
-It surfaced as a test timeout rather than a benchmark result. `test_ladder` runs
-V3 at three thread counts over every case, so it absorbed the cost 540 times and
-went from 19 s to over 900. A persistent pool, created once per sweep with one
-barrier per cell, is what the table above measures.
-
-**Both rungs are bit-identical to V0**, across 965 checks covering the
-small-board ladder, the pinned order-dependence cases, 180 fuzzed ordered
-histories, and thread counts of 1, 2, 4 and 7. That is a property of the
-decomposition rather than a tolerance: counts are integers, integer addition is
-associative, and the buckets partition the destination keys so no two merges ever
-touch one counter.
-
-### The belief scrubber
-
-The collapse curve says how much of the space disappeared at each shot. The
-scrubber says *where*. It replays one recorded game a turn at a time, showing the
-exact posterior on the board itself.
-
-Frames are precomputed by `report_data` and quantised to a byte per cell, so the
-browser recounts nothing: scrubbing is a lookup and stays smooth under the
-keyboard. One game is 44 frames of 100 bytes, about 18 KB in the page, which is
-the T4 telemetry tier and the one that cannot scale.
-
-Colour limits are fixed across the whole game. A per-frame rescale would keep
-every frame looking equally informative and hide the collapse the figure exists
-to show. Shot cells carry the glyph rather than the colour, so the posterior and
-the record never compete for the same channel.
-
-Two things become visible that the curve cannot carry: probability mass sliding
-off a miss into the cells that remain, and a sinking announcement flattening a
-whole region at once, because the ship that accounted for it is now placed.
-
-The widget has a range input, play and pause, arrow-key and Home/End control, a
-reveal toggle for the hidden fleet, `role="grid"` with a per-cell `aria-label`,
-and a visually hidden table mirror carrying the same numbers. Autoplay disables
-itself under `prefers-reduced-motion`.
-
-It is checked rather than assumed: the corner cell reads 7.8% at turn 0, which
-is the exact prior marginal of 0.0800 surviving the round trip through byte
-quantisation, and the final frame reads a single surviving configuration at 0.00
-bits.
-
-## Is the opponent worth modelling?
-
-The weighted sweep can carry an opponent prior, so a player who hugs the edges is
-exploitable in principle. Whether that helps in practice depends on learning the
-prior from games already played, and `tools/opponent` prices it.
-
-Everything is exact. Every board is enumerated, so a prior is a vector of exact
-weights and a policy's expected shots is a weighted sum over all boards rather
-than a sample mean. The only sampling is in the learning, which is the thing
-under audit. The opponent is `exp(-theta * border)` per ship, so `theta = 0` is
-uniform and larger values push ships toward the edges.
-
-### It is worth about a shot
-
-On 5x5 `{4,3,2}`, against a strong edge-hugger at `theta = 3`, a policy assuming
-a uniform prior takes 14.8952 shots and one handed the true prior takes 13.7547.
-That 1.14 shots is the most any amount of learning could be worth.
-
-### And it is learnable, which was the surprise
-
-The milestone was written as an *unlearnability* audit. It is not one. Fitting
-the single parameter by matching the mean border score converges almost at once:
-
-```text
-games N   fitted theta      shots   of oracle
-      5          2.931    13.7758        98%
-     10          3.470    13.7580       100%
-     25          2.775    13.7635        99%
-    100          3.306    13.7570       100%
-```
-
-Ten games is a single evening. The gain is real and it arrives immediately.
-
-### What is expensive is not assuming the shape
-
-Estimate the placement frequencies instead, with no parametric form, and the same
-gain costs forty to a hundred times more games:
-
-```text
-games N          shots   of oracle   slots seen
-     25        14.5348         37%           47
-    100        14.3426         65%           83
-    400        14.1925         86%           89
-   1600        14.1565         91%           90
-   6400        14.1448         93%           90
-```
-
-Note the last column. Of 150 placement slots the opponent ever uses only about
-90, even in 6400 games. The rest are unidentifiable, which is harmless: an
-opponent who never plays a placement cannot be exploited there.
-
-The 4x4 board reaches 102% at 6400 games, which is not an error. The oracle is
-the policy that believes the true prior, and that is not the optimal policy: the
-shot rule is greedy, so a belief slightly off the truth can score marginally
-better. The column measures progress toward a reference, not toward a ceiling.
-
-### The bet has a losing side
-
-Rows are the opponent, columns what the engine believes, on 5x5 `{4,3,2}`:
-
-```text
-    actual         0.0         1.0         2.0         3.0
-       0.0     14.4873     14.7560     14.9346     14.9982
-       1.0     14.6604     14.4280     14.4852     14.5114
-       2.0     14.7958     14.1524     14.0950     14.0889
-       3.0     14.8952     13.9377     13.7857     13.7547
-```
-
-Believing `theta = 3` against an opponent who is actually uniform costs 0.51
-shots. Opponent modelling is a bet, and reading down the first column against the
-diagonal is what the bet pays and costs.
-
-The interesting row is the worst case over opponents:
-
-```text
-believes     worst case   against always-uniform
-     0.0        14.8952                  +0.0000
-     1.0        14.7560                  -0.1392
-     2.0        14.9346                  +0.0395
-     3.0        14.9982                  +0.1031
-```
-
-A permanent mild assumption dominates. Believing `theta = 1` has a better worst
-case than assuming uniform, by 0.14 shots here and 0.21 on 4x4 `{3,2}`, without
-knowing anything about who is playing. Assuming a slight edge preference is not a
-read on the opponent, it is a better default.
-
-### What this settles
-
-Opponent modelling is worth roughly a shot against a player with a real bias, it
-is learnable in ten games if the shape is known and several hundred if it is not,
-and it costs half a shot when the bias is not there. Against the 20.3-shot gap
-between the certified bound and the best measured policy, that is a small effect,
-which is the honest reason it stays out of the headline engine.
-
-Full output in [docs/OPPONENT.txt](docs/OPPONENT.txt).
-
-## The discipline layer
-
-Numbers are easy to produce and hard to trust. This is what stands between the
-two.
-
-### Folds that cannot drift
+## Experimental discipline
 
 Every board id belongs to exactly one of TRAIN, VAL or TEST, decided by hashing
-the id and thresholding: 60 / 20 / 20. Nothing about a run, a policy or a date
-enters, so a board keeps its fold forever.
-
-Thresholding rather than a modulus is deliberate. Moving a boundary later moves
+the id and thresholding 60 / 20 / 20, so a board keeps its fold forever.
+Thresholding rather than a modulus is deliberate: moving a boundary later moves
 only the boards that boundary crosses, where a modulus would reshuffle the whole
-space, and a fold that cannot survive its own maintenance is not a fold.
-
-The rule lives in two places, `include/mayflower/folds.hpp` and
-`python/stats.py`, because the harness selects boards in C++ and the analysis
-reads them in Python. Both assert the same pinned vector and the same
-`foldFraction(0)` to the last digit, so drift fails the build on both sides
-rather than letting an experiment quietly read data it believes is sealed.
-
-`tools/selfplay` takes the fold as an argument, defaults to TRAIN because an
-unqualified run is exploratory, and refuses TEST outright.
-
-### A seal that leaves a mark, and what it cannot do
+space. The rule lives in `include/mayflower/folds.hpp` and `python/stats.py`, and
+both assert the same pinned vector, so drift fails the build on either side.
+`tools/selfplay` defaults to TRAIN and refuses TEST.
 
 TEST is sealed. Reading it requires an unseal entry in
-[`experiments/audit.log`](experiments/audit.log), recorded before the number is
-read rather than after. `require_unseal()` raises unless it is already there, so
-reading TEST is an event with a timestamp rather than a decision someone
-remembers making.
+[`experiments/audit.log`](experiments/audit.log) recorded before the number is
+read, and `audit.log.head` records how many entries there should be and what the
+last hash is, which catches an edit, an interior deletion, a truncated tail, and
+an entry commented out so it stays visible while leaving the chain. It is not
+tamper-proof: the digest takes only public inputs, so anyone with write access can
+recompute the history. What the chain buys is that tampering costs a rewrite of
+the log, the head and the version history containing them, rather than an edit to
+one line. Git is the anchor.
 
-The log is a hash chain, and `audit.log.head` records how many entries there
-should be and what the last hash is. That pair catches an edit, an interior
-deletion, a truncated tail, and an entry commented out so it stays visible while
-leaving the chain.
+Every interval `stats.py` produces is calibrated by simulating from a known ground
+truth and counting how often the interval covers it. Coverage of a binomial
+interval is a finite sum, so it is computed rather than sampled. Wilson lands
+closer to 95% than the normal approximation at every `p` at or below 0.10, by a
+factor of fifty at `p = 0.01`, and the two coincide at `p = 0.5`.
 
-**It is not tamper-proof, and an earlier version of this section claimed it was.**
-An adversarial review broke that claim in minutes, twice:
+Sample sizes, both columns paired designs, at alpha 0.05 and power 0.80:
 
-- The chain verified forward from genesis with nothing anchoring the tail, so
-  peek-then-erase went undetected. Record the unseal, read TEST, dislike the
-  number, delete the line: the log still verified and reported the experiment as
-  never unsealed. Prefixing the line with `#` did the same while leaving it in
-  plain sight.
-- The digest takes only public inputs, so anyone with write access can recompute
-  the entire history.
-
-The head file closes the first. The second cannot be closed without a key or an
-external witness, and neither exists here. The honest claim is that the chain
-reduces tampering from editing one line to rewriting the log, the head, and the
-version history containing them. Git is the anchor; the cryptography only makes
-the rewrite total rather than local.
-
-### Intervals that were checked rather than believed
-
-Interval code is code. Every interval `stats.py` produces is calibrated by
-simulating from a known ground truth and counting how often the interval covers
-it. A 95% interval that covers 91% of the time is a bug, and this is where it is
-caught.
-
-That check found two bugs in this repository's own Wilson implementation: it
-emitted `-0.0000` at `k = 0` and could emit slightly more than 1 at `k = n`,
-which defeats the one property Wilson is chosen for. Both are fixed and pinned.
-
-It also caught a claim I had put there myself and got backwards. The comparison
-between Wilson and the normal approximation was originally simulated, and at 400
-replicates the noise was large enough to reverse the ordering at `p = 0.02`. I
-wrote that reversal up as a correction. It was not one.
-
-Coverage of a binomial interval is a finite sum, so it is now computed rather
-than sampled, at `n = 200`:
-
-```text
-     p     Wilson       Wald    |W-.95|    |N-.95|
-  0.01     0.9483     0.8650     0.0017     0.0850
-  0.02     0.9331     0.9081     0.0169     0.0419
-  0.05     0.9672     0.9256     0.0172     0.0244
-  0.10     0.9561     0.9271     0.0061     0.0229
-  0.50     0.9440     0.9440     0.0060     0.0060
-```
-
-Wilson is closer to 95% at every `p` at or below 0.10, by a factor of fifty at
-`p = 0.01`, and the two coincide exactly at `p = 0.5` where the normal
-approximation is at its best. Mean deviation across the grid is 0.0088 against
-0.0276. There was never a point where the normal approximation was better; there
-was a simulation too small to see it.
-
-The general lesson is the one worth keeping: do not estimate a quantity that can
-be summed.
-
-### Sample sizes, re-derived
-
-The old table was internally inconsistent, and the calibration found that too.
-
-| effect | paired, rho = 0.923 | paired, rho = 0.00 |
+| effect | rho = 0.923 | rho = 0.00 |
 | --- | --- | --- |
 | 0.10 shots | 9,510 | 123,506 |
 | 0.25 shots | 1,522 | 19,761 |
 | 0.50 shots | 381 | 4,941 |
 | 1.00 shots | 96 | 1,236 |
 
-The paired figures agree with the superseded table exactly, 9,510 at 0.10 shots.
-The independent ones do not: 47,000 was quoted where the formula and the measured
-sigma of 8.87 give 123,506. The old independent column implies sigma = 5.47, so
-the two halves of that table were derived from different spreads and the
-independent half understated the cost by a factor of 2.63.
-
-Both columns above are paired designs. At rho = 0 pairing buys nothing and the
-requirement equals the independent per-arm figure, so the second column serves as
-both. The correlation here is bimodal, 0.923 inside the density family and 0.00
-against the stochastic hunt policy, so the same comparison against two opponents
-differs by a factor of thirteen and no single number covers both.
-
-The formula is checked by simulating at exactly the prescribed n and confirming
-the promised 80% power actually arrives, measured at 0.807 over 2,000 replicates.
-That one is a genuine simulation, since the power of a t-test against a
-correlated alternative has no comparably cheap closed form here.
+At rho = 0 pairing buys nothing and the requirement equals the independent
+per-arm figure, so the second column serves as both. Because the correlation is
+bimodal, the same comparison against two opponents differs by a factor of
+thirteen and no single number covers both. The formula is checked by simulating at
+exactly the prescribed `n` and confirming the promised 80% power arrives, measured
+at 0.807.
 
 ## Known limitations
 
 - The `Sampler` holds backward counts for every layer, about 397 MB on the
-  standard instance. Batch generation, walking many ranks through one replayed
-  column at a time, would remove that; it is not needed until board banks get
-  large.
-- The no-touching sweep packs its state into one uint64, so it stops at about
-  13 rows. `noTouchSupports()` reports whether an instance fits.
-- The report page is about 1.5 MB, over the 0.7 to 1.0 MB budget. Nearly all of
-  it is the base64 board pool the live widget needs; the scrubber adds about
-  18 KB.
-- The weighted forward-backward does not rescale, because the backward pass has
-  to combine f and b from the same layer and a per-layer scale would not cancel
-  the way a global one does. Weights extreme enough to overflow a double need
-  `weightedMarginalsByRecount`, which does rescale.
-- The belief MDP caps near 300 configurations, which is what stops the adaptive
-  column of the adaptivity table well before the subset lattice runs out.
+  standard instance. Batch generation would remove that; it is not needed until
+  board banks get large.
+- The no-touching sweep packs its state into one uint64, so it stops at about 13
+  rows. `noTouchSupports()` reports whether an instance fits.
+- The report page is about 1.5 MB, over the 0.7 to 1.0 MB budget. Nearly all of it
+  is the base64 board pool the live widget needs.
+- The weighted forward-backward does not rescale, because the backward pass has to
+  combine `f` and `b` from the same layer and a per-layer scale would not cancel
+  the way a global one does. Weights extreme enough to leave a double need
+  `weightedMarginalsByRecount`, which divides two equally scaled counts; the
+  forward-backward detects the case and throws rather than returning marginals
+  that are inside [0, 1] and wrong.
+- The belief MDP caps near 300 configurations, which stops the adaptive column of
+  the adaptivity table well before the subset lattice runs out.
+- The `pr` suite does not complete reliably on the development machine. Two
+  consecutive runs each hit one 900 s timeout, on a different test each time, and
+  both of those tests finish in 34 and 48 seconds when run alone. The cause is
+  background load rather than a tight limit, and it is the same interference that
+  makes absolute timings here untrustworthy.
 
 ## Layout
 
@@ -1361,4 +569,4 @@ docs/                correctness hazards, complexity notes, captured results
 
 ## Licence
 
-[Apache-2.0.](LICENSE.md)
+Apache-2.0. See [LICENSE](LICENSE.md).
