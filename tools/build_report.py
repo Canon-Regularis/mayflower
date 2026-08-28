@@ -40,8 +40,13 @@ def fmt(n, decimals=0):
 # --------------------------------------------------------------------------- #
 
 def svg_open(w, h, label):
+    """Open a figure at its design size.
+
+    The style caps the rendered width at the width the figure was drawn for, so
+    no figure is upscaled and every label on the page keeps the size it was set
+    in. Below that width the svg still scales down with its container."""
     return (f'<svg viewBox="0 0 {w} {h}" role="img" aria-label="{esc(label)}" '
-            f'preserveAspectRatio="xMidYMid meet">')
+            f'preserveAspectRatio="xMidYMid meet" style="max-width:{w}px">')
 
 
 def axis_line(x1, y1, x2, y2, cls="axis"):
@@ -139,16 +144,18 @@ def bound_ladder(bounds, policies):
         x = sx(v)
         out.append(f'<line class="rung" x1="{x:.1f}" y1="{y}" x2="{x:.1f}" '
                    f'y2="{base}" stroke="var({col})"/>')
-        # Anchor away from whichever edge is close, so a long label never runs
-        # off the plate.
-        if x < 150:
-            anchor, lx = "start", x + 9
-        elif x > w - 150:
+        # To the right of the rung it names, at that rung's own height. The
+        # rungs are drawn in ascending order and each label sits on its own row,
+        # so a label can only meet a rung standing further right than its own,
+        # and there is none. Flip to the left only when the note would leave the
+        # plate.
+        note_w = 6.1 * len(note)
+        if x + 9 + note_w > w - pad_r:
             anchor, lx = "end", x - 9
         else:
-            anchor, lx = "middle", x
-        out.append(text(lx, y - 6, f"{name}  {v:.2f}", "runglbl", anchor))
-        out.append(text(lx, y + 12, note, "tick", anchor))
+            anchor, lx = "start", x + 9
+        out.append(text(lx, y + 4, f"{name}  {v:.2f}", "runglbl", anchor))
+        out.append(text(lx, y + 20, note, "tick", anchor))
         y += 44
 
     # Measured policies as points with confidence whiskers.
@@ -171,7 +178,7 @@ def bound_ladder(bounds, policies):
 def objective_bars(rows):
     w = 760
     row_h, pad_t, pad_l = 62, 30, 108
-    h = pad_t + row_h * len(rows) + 52
+    h = pad_t + row_h * len(rows) + 66
     hi = max(max(r["maxInfo"], r["density"], r["maxProb"]) for r in rows)
     span = w - pad_l - 128
 
@@ -190,15 +197,18 @@ def objective_bars(rows):
                        f'rx="3" fill="var({col})" data-tip="{esc(r["instance"])} '
                        f'{esc(series[j][0])}: {r[key]:.4f} shots"/>')
             out.append(text(pad_l + bw + 6, by + 9, f"{r[key]:.2f}", "barval", "start"))
-    out.append(legend(pad_l, h - 24, [(n, c) for n, _, c in series], 168))
-    out.append(text(pad_l + span / 2, h - 6, "expected shots (lower is better)", "axtitle"))
+    out.append(legend(pad_l, h - 38, [(n, c) for n, _, c in series], 168))
+    out.append(text(pad_l + span / 2, h - 8, "expected shots (lower is better)", "axtitle"))
     out.append("</svg>")
     return "".join(out)
 
 
 def survival(policies):
-    w, h = 760, 330
-    pad_l, pad_r, pad_t, pad_b = 52, 128, 22, 46
+    # The bottom padding carries the shot ticks, the axis title and the key. The
+    # key sits under the graph, so the right margin no longer has to reserve room
+    # for labels drawn along the curves and the plot gets that width back.
+    w, h = 760, 300
+    pad_l, pad_r, pad_t, pad_b = 52, 196, 22, 52
     xmax = 100
     def sx(v):
         return pad_l + v / xmax * (w - pad_l - pad_r)
@@ -213,9 +223,7 @@ def survival(policies):
     for v in range(0, 101, 20):
         out.append(text(sx(v), h - pad_b + 18, str(v), "tick"))
     out.append(axis_line(pad_l, sy(0), w - pad_r, sy(0)))
-    out.append(text((pad_l + w - pad_r) / 2, h - 8, "shots taken", "axtitle"))
-    out.append(legend(pad_l + 4, pad_t + 8,
-                      [(p["name"], SERIES[i]) for i, p in enumerate(policies)], 148))
+    out.append(text((pad_l + w - pad_r) / 2, h - 10, "shots taken", "axtitle"))
 
     for i, p in enumerate(policies):
         hist = p["histogram"]
@@ -226,20 +234,35 @@ def survival(policies):
             running -= hist[n]
         d = " ".join(("M" if k == 0 else "L") + f"{x:.1f},{y:.1f}" for k, (x, y) in enumerate(pts))
         out.append(f'<path class="line" d="{d}" stroke="var({SERIES[i]})"/>')
-        # Direct label at the curve's own median, so identity is never colour alone.
-        mx = next(n for n in range(len(hist)) if sum(hist[:n + 1]) >= total / 2)
-        out.append(text(sx(mx) + 6, sy(0.5) - 8 + i * 15, p["name"], "serieslbl", "start",
+
+    # One key, in the right margin, carrying both the colour and the two
+    # crossings a survival curve is read for. Off the plot entirely, so nothing
+    # sits on a curve and no name is printed twice.
+    kx = w - pad_r + 16
+    for i, p in enumerate(policies):
+        hist = p["histogram"]
+        total = sum(hist) or 1
+        med = next(n for n in range(len(hist)) if sum(hist[:n + 1]) >= total / 2)
+        p95 = next(n for n in range(len(hist)) if sum(hist[:n + 1]) >= 0.95 * total)
+        ky = pad_t + 16 + i * 40
+        out.append(f'<rect x="{kx:.1f}" y="{ky - 9:.1f}" width="10" height="10" rx="2" '
+                   f'fill="var({SERIES[i]})"/>')
+        out.append(text(kx + 16, ky, p["name"], "serieslbl", "start",
                         f'fill="var({SERIES[i]})"'))
+        out.append(text(kx + 16, ky + 15, f"median {med}, 95% by {p95}", "tick", "start"))
     # 17 is a hard floor for every policy.
     out.append(f'<line class="floor" x1="{sx(17):.1f}" y1="{sy(0)}" x2="{sx(17):.1f}" y2="{sy(1)}"/>')
-    out.append(text(sx(17) + 5, sy(1) + 12, "17, the coverage bound", "tick", "start"))
+    out.append(text(sx(17) + 5, sy(0.06), "17, the coverage bound", "tick", "start"))
     out.append("</svg>")
     return "".join(out)
 
 
 def collapse(games, omega0):
-    w, h = 760, 300
-    pad_l, pad_r, pad_t, pad_b = 56, 24, 22, 46
+    # The bottom padding carries three stacked rows below the plot: the shot
+    # ticks, the axis title, and the key. The key sits under the graph rather
+    # than inside it, where it used to overlap the opening of every curve.
+    w, h = 760, 340
+    pad_l, pad_r, pad_t, pad_b = 56, 24, 22, 86
     xmax = max(len(g["omega"]) for g in games)
     top = math.log10(omega0)
     def sx(v):
@@ -255,9 +278,14 @@ def collapse(games, omega0):
     for v in range(0, xmax + 1, 10):
         out.append(text(sx(v), h - pad_b + 18, str(v), "tick"))
     out.append(axis_line(pad_l, sy(1), w - pad_r, sy(1)))
-    out.append(text((pad_l + w - pad_r) / 2, h - 8, "shots taken", "axtitle"))
-    out.append(legend(pad_l + 4, pad_t + 8,
-                      [(f'game {g["game"]}', SERIES[i]) for i, g in enumerate(games)], 96))
+    out.append(text((pad_l + w - pad_r) / 2, h - pad_b + 40, "shots taken", "axtitle"))
+
+    # Centred under the axis title. legend() lays entries out from its x at a
+    # fixed gap, so the span is the gaps plus room for the last label.
+    gap = 96
+    span = (len(games) - 1) * gap + 62
+    out.append(legend((w - span) / 2, h - 14,
+                      [(f'game {g["game"]}', SERIES[i]) for i, g in enumerate(games)], gap))
 
     for i, g in enumerate(games):
         pts = [(sx(n), sy(v)) for n, v in enumerate(g["omega"])]
@@ -268,7 +296,12 @@ def collapse(games, omega0):
             if o == 2:
                 out.append(f'<circle class="sink" cx="{sx(n + 1):.1f}" cy="{sy(g["omega"][n + 1]):.1f}" '
                            f'r="3.5" fill="var({SERIES[i]})" data-tip="ship sunk at shot {n + 1}"/>')
-        out.append(text(sx(len(g["omega"]) - 1) - 4, sy(1) - 10 - i * 15,
+    # Stacked in the top right, which every curve has left empty by the time it
+    # gets there: the counts fall monotonically, so the right of the plot is its
+    # floor. Printing these along the lines put three labels into the busiest
+    # part of the figure.
+    for i, g in enumerate(games):
+        out.append(text(w - pad_r - 4, pad_t + 12 + i * 16,
                         f'game {g["game"]}, {g["shots"]} shots', "serieslbl", "end",
                         f'fill="var({SERIES[i]})"'))
     out.append("</svg>")
@@ -276,8 +309,8 @@ def collapse(games, omega0):
 
 
 def layer_profile(sizes, peak):
-    w, h = 760, 210
-    pad_l, pad_r, pad_t, pad_b = 56, 20, 20, 44
+    w, h = 760, 228
+    pad_l, pad_r, pad_t, pad_b = 56, 20, 20, 56
     n = len(sizes)
     def sx(i):
         return pad_l + i / (n - 1) * (w - pad_l - pad_r)
@@ -292,11 +325,17 @@ def layer_profile(sizes, peak):
     d = " ".join(("M" if k == 0 else "L") + f"{sx(k):.1f},{sy(v):.1f}" for k, v in enumerate(sizes))
     out.append(f'<path class="area" d="{d} L{sx(n - 1):.1f},{sy(0):.1f} L{sx(0):.1f},{sy(0):.1f} Z"/>')
     out.append(f'<path class="line" d="{d}" stroke="var(--series-1)"/>')
-    for col in range(0, 10):
-        x = sx(col * 10)
+    # Every column boundary, drawn. The profile drops at each one because a
+    # vertical ship has to fit inside its column, so the run counter is
+    # necessarily zero on the first cell of the next: that layer is a strict
+    # subset of its neighbours. Without the boundaries the drops read as noise.
+    for col in range(0, 11):
+        x = sx(min(col * 10, n - 1))
+        if 0 < col < 10:
+            out.append(axis_line(x, sy(0), x, pad_t, "grid"))
         out.append(axis_line(x, sy(0), x, sy(0) + 4, "tick-mark"))
-        if col % 2 == 0:
-            out.append(text(x, h - pad_b + 18, f"col {col}" if col else "0", "tick"))
+        if col < 10:
+            out.append(text(x, h - pad_b + 18, str(col), "tick"))
     out.append(axis_line(pad_l, sy(0), w - pad_r, sy(0)))
     out.append(text((pad_l + w - pad_r) / 2, h - 6, "cell layer, swept column by column", "axtitle"))
     out.append("</svg>")
@@ -377,6 +416,48 @@ def blocking_boards(witnesses, width, height, cell=26):
     return "".join(out)
 
 
+def opening_book(steps, width, height, cell=46):
+    """The greedy line down the all-miss branch, drawn as a ranking.
+
+    Ranked cells carry their position in the order and are shaded by it, earliest
+    darkest, using the same blue ramp and the same ink rule as every other board
+    on the page. Cells the line never reaches keep the base tint."""
+    pad_l, pad_t = 34, 26
+    w = pad_l + width * cell + 12
+    h = pad_t + height * cell + 34
+
+    rank = {st["cell"]: i + 1 for i, st in enumerate(steps)}
+    last = max(1, len(steps) - 1)
+
+    out = [svg_open(w, h, "Order to attack in while every answer is a miss")]
+    for c in range(width):
+        out.append(text(pad_l + c * cell + cell / 2, pad_t - 9, chr(ord("A") + c), "tick"))
+    for r in range(height):
+        out.append(text(pad_l - 9, pad_t + r * cell + cell / 2 + 4, str(r + 1), "tick", "end"))
+
+    for r in range(height):
+        for c in range(width):
+            i = r * width + c
+            x, y = pad_l + c * cell, pad_t + r * cell
+            if i in rank:
+                k = rank[i]
+                b = BUCKETS - int((k - 1) / last * (BUCKETS - 1))
+                tip = f"{chr(ord('A') + c)}{r + 1}: shot {k} of the line"
+            else:
+                b = 0
+                tip = f"{chr(ord('A') + c)}{r + 1}: not reached before the line ends"
+            out.append(f'<rect class="cellmark" x="{x + 1}" y="{y + 1}" '
+                       f'width="{cell - 2}" height="{cell - 2}" rx="3" '
+                       f'fill="var(--ramp-{b})" data-tip="{tip}"/>')
+            if i in rank:
+                out.append(text(x + cell / 2, y + cell / 2 + 4, str(rank[i]),
+                                "cellval hi" if b >= 7 else "cellval"))
+    out.append(text(pad_l + width * cell / 2, h - 10,
+                    "rank in the all-miss line", "axtitle"))
+    out.append("</svg>")
+    return "".join(out)
+
+
 def order_dependence(payload, cell=40):
     """The same shots in two orders, with the posterior each one implies."""
     width, height = payload["width"], payload["height"]
@@ -416,15 +497,22 @@ def order_dependence(payload, cell=40):
 
 
 def scaling(rows):
-    w, h = 380, 250
-    pad_l, pad_r, pad_t, pad_b = 54, 18, 20, 44
+    # Both scales are inset by a marker's width, so the extreme points sit inside
+    # the frame instead of straddling the axes they are measured against.
+    w, h = 400, 258
+    pad_l, pad_r, pad_t, pad_b = 62, 20, 20, 48
+    inset = 14
     lo = math.log10(min(r["omega"] for r in rows))
     hi = math.log10(max(r["omega"] for r in rows))
     ns = [r["n"] for r in rows]
+    x_lo, x_hi = pad_l + inset, w - pad_r - inset
+    y_lo, y_hi = h - pad_b - inset, pad_t + inset
+
     def sx(n):
-        return pad_l + (n - min(ns)) / (max(ns) - min(ns)) * (w - pad_l - pad_r)
+        return x_lo + (n - min(ns)) / (max(ns) - min(ns)) * (x_hi - x_lo)
+
     def sy(v):
-        return pad_t + (1 - (math.log10(v) - lo) / (hi - lo)) * (h - pad_t - pad_b)
+        return y_lo + (math.log10(v) - lo) / (hi - lo) * (y_hi - y_lo)
 
     out = [svg_open(w, h, "Configuration count against board size")]
     for e in range(int(lo), int(hi) + 2):
@@ -440,8 +528,11 @@ def scaling(rows):
         out.append(f'<circle class="pt" cx="{sx(r["n"]):.1f}" cy="{sy(r["omega"]):.1f}" r="4.5" '
                    f'fill="var(--series-1)" data-tip="{r["n"]}x{r["n"]}: {r["omega"]:,}"/>')
         out.append(text(sx(r["n"]), h - pad_b + 18, f'{r["n"]}', "tick"))
-    out.append(axis_line(pad_l, sy(min(r["omega"] for r in rows)), w - pad_r,
-                         sy(min(r["omega"] for r in rows))))
-    out.append(text((pad_l + w - pad_r) / 2, h - 6, "board side length", "axtitle"))
+    # Both axes, drawn, so the reader can see what the points are measured from.
+    out.append(axis_line(pad_l, h - pad_b, w - pad_r, h - pad_b))
+    out.append(axis_line(pad_l, pad_t, pad_l, h - pad_b))
+    out.append(text((pad_l + w - pad_r) / 2, h - 8, "board side N, for an NxN board", "axtitle"))
+    out.append(text(16, (pad_t + h - pad_b) / 2, "legal configurations", "axtitle", "middle",
+                    f'transform="rotate(-90 16 {(pad_t + h - pad_b) / 2:.1f})"'))
     out.append("</svg>")
     return "".join(out)
