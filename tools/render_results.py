@@ -46,10 +46,22 @@ def group(n, places=0):
 
 # --- marks ----------------------------------------------------------------
 
+def svg_open(w, h, label, title):
+    """Open a figure at its design size.
+
+    The cap stops the page stretching a figure past the width it was drawn for.
+    Without it the two 520-wide figures rendered 1.75 times oversized while the
+    760-wide ladder rendered at 1.19, so the same 11px label came out at three
+    different sizes down one page."""
+    return ('<svg viewBox="0 0 {w} {h}" role="img" aria-label="{label}" class="fig" '
+            'preserveAspectRatio="xMidYMid meet" style="max-width:{w}px">'
+            "<title>{title}</title>").format(w=w, h=h, label=esc(label), title=esc(title))
+
+
 def ladder(bounds, best):
     """The bound ladder as one number line.
 
-    A single axis in shots. The certified floor, the vacuous rung drawn where it
+    A single axis in shots. The certified floor, the dominated rung drawn where it
     actually falls, and the best measured policy, with the unresolved interval
     shaded between the binding floor and the ceiling.
     """
@@ -58,9 +70,8 @@ def ladder(bounds, best):
     x = lambda v: pad + (w - 2 * pad) * v / span
     y = 96
 
-    out = ['<svg viewBox="0 0 {} {}" role="img" aria-label="The bound ladder on a '
-           'single axis in shots" class="fig">'.format(w, h)]
-    out.append('<title>Lower bounds and the best measured policy, in shots</title>')
+    out = [svg_open(w, h, "The bound ladder on a single axis in shots",
+                    "Lower bounds and the best measured policy, in shots")]
 
     # Unresolved interval, floor to ceiling.
     out.append('<rect x="{:.1f}" y="{}" width="{:.1f}" height="18" class="gapfill"/>'
@@ -79,13 +90,13 @@ def ladder(bounds, best):
                .format(x(25), y + 40))
 
     marks = [
-        (bounds["entropy"], "entropy", "13.08", "vacuous", -58),
+        (bounds["entropy"], "entropy", "13.08", "dominated", -58),
         (bounds["coverage"], "coverage", "17", "exact", -34),
         (bounds["waterfilling"], "water filling", "24.088", "binding floor", -58),
         (best, "density policy", "44.369", "best measured", -34),
     ]
     for v, label, value, kind, dy in marks:
-        cls = "mk-open" if kind == "vacuous" else (
+        cls = "mk-open" if kind == "dominated" else (
             "mk-meas" if kind == "best measured" else "mk-exact")
         out.append('<line x1="{0:.1f}" y1="{1}" x2="{0:.1f}" y2="{2}" class="stem"/>'
                    .format(x(v), y - 9, y + dy + 20))
@@ -114,9 +125,8 @@ def scaling(points):
     x = lambda v: l + (w - l - r) * (v - min(xs)) / (max(xs) - min(xs))
     y = lambda v: t + (h - t - b) * (1 - (v - 6) / (11.5 - 6))
 
-    out = ['<svg viewBox="0 0 {} {}" role="img" aria-label="Configuration count '
-           'against board side, log scale" class="fig">'.format(w, h)]
-    out.append("<title>Configurations by board side, log scale</title>")
+    out = [svg_open(w, h, "Configuration count against board side, log scale",
+                    "Configurations by board side, log scale")]
     for e in range(6, 12):
         out.append('<line x1="{}" y1="{:.1f}" x2="{}" y2="{:.1f}" class="grid"/>'
                    .format(l, y(e), w - r, y(e)))
@@ -143,9 +153,8 @@ def policies(rows):
     lo, hi = 40, 100
     x = lambda v: l + (w - l - r) * (v - lo) / (hi - lo)
 
-    out = ['<svg viewBox="0 0 {} {}" role="img" aria-label="Mean shots per policy '
-           'with 95 percent intervals" class="fig">'.format(w, h)]
-    out.append("<title>Mean shots to clear, with 95% intervals</title>")
+    out = [svg_open(w, h, "Mean shots per policy with 95 percent intervals",
+                    "Mean shots to clear, with 95% intervals")]
     for tick in range(40, 101, 20):
         out.append('<line x1="{0:.1f}" y1="{1}" x2="{0:.1f}" y2="{2}" class="grid"/>'
                    .format(x(tick), t - 8, t + 84))
@@ -228,10 +237,11 @@ def build(d):
     w('<header class="mast">')
     w('<div class="eyebrow">Mayflower &middot; exact inference over Battleships</div>')
     w("<h1>Every result, and how far each one is trusted</h1>")
-    w('<p class="stand">Eighty-six measured quantities, collected from the tools '
-      "that produced them. Nothing on this page was typed in: it is generated from "
-      "<code>experiments/results.json</code>, which is itself parsed from what each "
-      "tool printed.</p>")
+    w('<p class="stand">{} recorded quantities, {} of them exact and {} measured, '
+      "collected from the tools that produced them. Nothing on this page is typed in: "
+      "it is generated from <code>experiments/results.json</code>, which is itself "
+      "parsed from what each tool printed.</p>".format(
+          d["counts"]["results"], d["counts"]["exact"], d["counts"]["measured"]))
     w('<div class="hero">')
     w('<div class="hero-n">{}</div>'.format(group(idx["omega0"]["value"])))
     w('<div class="hero-c">legal fleet configurations on a 10&times;10 board, '
@@ -253,10 +263,11 @@ def build(d):
       "shot, so 17 is a floor that needs no argument. Identifying the board takes "
       "33.81 bits, which over a six-outcome channel is only 13.08 shots, so the "
       "entropy bound falls <em>below</em> the trivial one and is drawn where it "
-      "actually lands. Coverage binds, not information.</p>")
+      "actually lands. What binds is coverage, and the interval below starts from "
+      "it.</p>")
     w(ladder(b, best))
-    w('<p class="cap">Filled marks are exact; the hollow mark is the vacuous rung; '
-      "the open square is a measured policy. The shaded span is what remains "
+    w('<p class="cap">Filled marks are exact; the hollow mark is the rung dominated '
+      "by E1; the open square is a measured policy. The shaded span is what remains "
       "unproven.</p>")
     w(rows_table(["rung", "shots", "status", "what it rests on"], [
         ["E1 coverage", fmt(b["coverage"], 0), chip(True),
@@ -358,8 +369,9 @@ def build(d):
                    fmt(r["adaptive"]), fmt(r["value"]), fmt(r["greedy"]),
                    "{:.4f}".format(r["value"] / r["adaptive"])
                    if r["adaptive"] else "&ndash;"] for r in adapt]))
-    w('<p class="cap">The adaptive column stops at 264 boards, which is the belief '
-      "MDP and not the subset lattice.</p>")
+    w('<p class="cap">The adaptive column stops at 264 boards. The limit is the '
+      "belief MDP; the fixed-order column runs further because the subset lattice "
+      "does.</p>")
     w("</section>")
 
     # Adversary.
@@ -367,8 +379,7 @@ def build(d):
     w('<section><h2>Against a hider who never commits</h2>')
     w('<p class="lede">Expected shots assume the board was fixed before play. '
       "Turn the chance node into a maximum and the answer is a worst case with no "
-      "distributional assumption in it. It comes out an integer, as a worst case "
-      "over a finite tree must.</p>")
+      "distributional assumption in it, and it comes out an integer.</p>")
     w(rows_table(["instance", "boards", "E[T] committed", "W* adaptive", "gap"],
                  [[r["instance"], group(r["configurations"]),
                    fmt(r["committed"]), fmt(r["value"], 0),
@@ -391,8 +402,8 @@ def build(d):
     # Retractions.
     w('<section class="retract"><h2>Results that contradicted the plan</h2>')
     w('<p class="lede">Four investigations ended by refuting the thing that asked '
-      "for them. They are kept here because a project that only reports its "
-      "confirmations is not reporting.</p>")
+      "for them. Each is recorded with the measurement that settled it, so the "
+      "retraction can be checked the same way the confirmations can.</p>")
     w(rows_table(["expected", "found", "evidence"], [
         ["A max-coverage bound near 35 shots would nearly close the interval",
          "It is not a lower bound at all",
@@ -481,7 +492,14 @@ section { display:flex; flex-direction:column; }
 .meta span { font:400 11px/1 var(--mono); letter-spacing:.1em;
              text-transform:uppercase; color:var(--muted); }
 .meta b { font:500 17px/1.2 var(--mono); font-variant-numeric:tabular-nums; }
-.fig { width:100%; height:auto; display:block; margin:4px 0 2px; }
+/* Capped at its design width by the figure's own style, so nothing is
+   upscaled and every label keeps the size it was set in. The floor keeps a
+   wide figure legible on a narrow screen. */
+.fig { width:100%; height:auto; display:block; margin:4px auto 2px;
+       min-width:320px; }
+p { margin:0 0 15px; }
+h3 { font-family:var(--serif); font-weight:600; font-size:18px; line-height:1.3;
+     margin:30px 0 9px; letter-spacing:-0.005em; }
 .pair { display:flex; flex-wrap:wrap; gap:26px; align-items:flex-start; }
 .pair > div { flex:1 1 300px; min-width:0; }
 .axis { stroke:var(--axis); stroke-width:1.5; }
