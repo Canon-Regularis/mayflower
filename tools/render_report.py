@@ -8,12 +8,14 @@ and the order of the argument. Run it as:
 
 import io
 import json
+import math
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from build_report import (RAMP, blocking_boards, board_heatmap, bound_ladder, collapse,
+                          opening_book,
                           esc, layer_profile, objective_bars, orbit_map, order_dependence,
                           scaling, survival)
 
@@ -112,6 +114,11 @@ h2 {
   font-weight: 600; font-size: 27px; line-height: 1.22; margin: 0 0 6px;
   letter-spacing: -0.01em; text-wrap: balance;
 }
+h3 {
+  font-family: "IBM Plex Serif", Georgia, serif;
+  font-weight: 600; font-size: 19px; line-height: 1.3;
+  margin: 34px 0 10px; letter-spacing: -0.005em; text-wrap: balance;
+}
 .act {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
@@ -130,7 +137,13 @@ figure { margin: 26px 0 0; }
   background: var(--surface); border: 1px solid var(--grid); border-radius: 6px;
   padding: 18px 20px 14px; overflow-x: auto;
 }
-.plate svg { display: block; width: 100%; height: auto; min-width: 340px; }
+/* Capped at its design width by the svg's own style, so no figure is ever
+   upscaled and 11px stays 11px on every plate. The floor keeps a wide chart
+   legible on a narrow screen, where the plate scrolls instead of shrinking
+   the type to nothing. */
+.plate svg { display: block; width: 100%; height: auto; margin: 0 auto;
+             min-width: 340px; }
+@media (max-width: 420px) { .plate { padding: 12px 10px 10px; } }
 figcaption { font-size: 14px; color: var(--ink-2); margin-top: 12px; max-width: 68ch; }
 figcaption b { color: var(--ink); }
 .pair { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
@@ -194,6 +207,24 @@ footer { margin-top: 72px; padding-top: 22px; border-top: 1px solid var(--grid);
   border: 1px solid var(--grid); background: var(--panel); color: var(--ink);
   cursor: pointer;
 }
+ul.summary { margin: 2px 0 20px; padding-left: 22px; }
+ul.summary li { margin-bottom: 11px; line-height: 1.6; color: var(--ink-2); }
+ul.summary li::marker { color: var(--rule); }
+ul.summary b { color: var(--ink); font-weight: 600; }
+.thanks {
+  margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--grid);
+  color: var(--muted-ink); font-size: 14px;
+}
+.scrubnum {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font: 400 12px/1 var(--mono); color: var(--muted-ink);
+}
+.scrubnum input {
+  width: 4.2em; font: 400 12px/1 var(--mono); padding: 6px 6px; border-radius: 6px;
+  border: 1px solid var(--grid); background: var(--panel); color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.scrubnum input:focus-visible { outline: 2px solid var(--series-2); outline-offset: 1px; }
 .scrubbtn:hover { border-color: var(--ink); }
 .scrubbtn:disabled { opacity: .5; cursor: default; }
 #scrub:focus-visible { outline: 2px solid var(--series-2); outline-offset: 4px; }
@@ -210,7 +241,7 @@ footer { margin-top: 72px; padding-top: 22px; border-top: 1px solid var(--grid);
 .lc.miss { background: var(--grid); color: var(--muted-ink); }
 .lc.hit  { background: var(--series-2); color: #fff; font-size: 13px; }
 .lc.sunk { background: var(--series-2); color: #fff; font-size: 15px; opacity: .72; }
-.lc.ghost { outline: 2px dashed var(--series-3); outline-offset: -3px; }
+.lc.ghost { outline: 2px solid var(--series-3); outline-offset: -3px; }
 .lc.last { box-shadow: 0 0 0 2px var(--ink); }
 .livestats { min-width: 260px; flex: 1 1 260px; }
 .livestats > div { display: flex; justify-content: space-between; gap: 14px;
@@ -288,6 +319,83 @@ def load_pool():
         return base64.b64encode(fh.read()).decode("ascii")
 
 
+def _pearson(a, b):
+    n = len(a)
+    ma, mb = sum(a) / n, sum(b) / n
+    num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+    da = math.sqrt(sum((x - ma) ** 2 for x in a))
+    db = math.sqrt(sum((y - mb) ** 2 for y in b))
+    return num / (da * db) if da and db else 0.0
+
+
+def _ranks(v):
+    """Midranks. The prior takes 15 distinct values over 100 cells, one per
+    dihedral orbit, so ordinal ranks would break 85 ties by board index and make
+    the coefficient depend on that order."""
+    order = sorted(range(len(v)), key=lambda i: v[i])
+    out = [0.0] * len(v)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and v[order[j + 1]] == v[order[i]]:
+            j += 1
+        for k in range(i, j + 1):
+            out[order[k]] = (i + j) / 2.0
+        i = j + 1
+    return out
+
+
+def _spearman(a, b):
+    return _pearson(_ranks(a), _ranks(b))
+
+
+def _parity_split(values, width):
+    """Mean over the two diagonal colour classes of the board."""
+    ev = [v for i, v in enumerate(values) if ((i // width) + (i % width)) % 2 == 0]
+    od = [v for i, v in enumerate(values) if ((i // width) + (i % width)) % 2 == 1]
+    return sum(ev) / len(ev), sum(od) / len(od)
+
+
+def _survival(hist):
+    total = sum(hist) or 1
+    run, out = total, []
+    for n in range(len(hist)):
+        out.append(run / total)
+        run -= hist[n]
+    return out
+
+
+# Placed independently, each ship of length L has 2N(N-L+1) positions on an NxN
+# board; the two 3-ships are interchangeable, hence the 2!. The gap between this
+# and the true count is what the no-overlap rule costs.
+FREE_PRODUCT = 120 * 140 * 160 * 160 // 2 * 180
+
+# The profile carries ten row extensions in 0..4, a vertical run in 0..4, and 24
+# fleet-usage states, so 5^10 x 5 x 24.
+CRUDE_PROFILES = 5 ** 11 * 24
+
+
+def _loglog_slope(points):
+    """Empirical exponent of |Omega| against board side, with its R^2."""
+    xs = [math.log(p["n"]) for p in points]
+    ys = [math.log(p["omega"]) for p in points]
+    n = len(xs)
+    mx, my = sum(xs) / n, sum(ys) / n
+    b1 = sum((a - mx) * (c - my) for a, c in zip(xs, ys)) / sum((a - mx) ** 2 for a in xs)
+    b0 = my - b1 * mx
+    ss = sum((c - (b0 + b1 * a)) ** 2 for a, c in zip(xs, ys))
+    tt = sum((c - my) ** 2 for c in ys)
+    return b1, (1 - ss / tt if tt else 0.0)
+
+
+# The answer alphabet is {MISS, HIT, SUNK(2), ..., SUNK(5)}.
+LOG2_6 = math.log2(6)
+
+# Binary entropy at p = 0.9, the worked example of a shot the information
+# objective declines.
+BIN_H_09 = -(0.9 * math.log2(0.9) + 0.1 * math.log2(0.1))
+
+
 def build(data, out_path):
     m = data["meta"]
     prior = data["prior"]
@@ -322,9 +430,9 @@ def build(data, out_path):
     w('<header class="mast"><div class="col">')
     w('<div class="eyebrow">Mayflower / exact inference engine</div>')
     w("<h1>The Battleship Posterior</h1>")
-    w('<p class="standfirst">Every legal fleet, counted exactly, without enumerating '
-      "one. What that buys, what it proves, and where the remaining gap actually "
-      "lives.</p></div>")
+    w('<p class="standfirst">Every legal fleet counted exactly, without enumerating one, '
+      "and the shot-selection objectives that follow priced against a proved "
+      "floor.</p></div>")
     w('<div class="figures">')
     for v, k in [("{:,}".format(omega), "legal configurations, counted exactly"),
                  ("{:.2f} bits".format(m["entropyBits"]), "to identify the board"),
@@ -340,12 +448,15 @@ def build(data, out_path):
     w('<p class="lede">A hidden fleet, drawn uniformly from all {:,} legal arrangements. '
       "The engine sees only what it has shot. Each cell shows the current probability that "
       "a ship covers it, and the engine fires at the highest one.</p>".format(omega))
-    w("<p>Two regimes run underneath, because the costs are opposite. At turn 0 the "
-      "posterior spans all {:,} boards and an exact sweep takes about 27 seconds in a "
-      "browser, while a 200,000-board sample answers at once. The handoff keys on the "
-      "surviving sample alone, which is what makes the two complementary: the sample runs "
-      "out only once the record is constraining, and a constraining record is a cheap "
-      "sweep. The readout says which one is answering.</p></div>".format(omega))
+    w("<p>Two estimators answer the same query, with opposite cost profiles. Filtering a "
+      "fixed uniform sample of 200,000 boards against the record costs the same at every "
+      "turn, and its survivors are a uniform sample of the posterior, so a cell marginal "
+      "estimated from k of them carries a standard error of at most 1/(2&#8730;k). The "
+      "exact sweep has no error and a cost that falls as the record shrinks the lattice: "
+      "27 seconds at turn 0, under a second by shot 14. The handoff is at k = 400, where "
+      "the sampled marginal is good to 0.025 and the sweep has become cheap enough to run "
+      "between clicks. The readout names the estimator in "
+      "use.</p></div>")
     w('<div class="livewrap" id="live" data-pool="' + POOL_B64 + '">')
     w('<div class="livegrid"><div class="liveboard"></div>')
     w('<div><div class="livestats"></div><div class="livebtns">'
@@ -355,30 +466,36 @@ def build(data, out_path):
       '<button data-act="reveal">Reveal fleet</button>'
       "</div></div></div></div>")
     w('<div class="col"><figcaption>Filled cells are shots: a dot is a miss, a disc a hit, '
-      "a cross a sunk ship. Unshot cells carry the posterior as a percentage, on the same "
-      "blue ramp used everywhere else on this page.</figcaption></div>")
+      "a cross a sunk ship. Unshot cells carry the posterior as a "
+      "percentage.</figcaption></div>")
     w("</section>\n")
+
+    SCALE_SLOPE, SCALE_R2 = _loglog_slope(data["scaling"])
 
     # 1 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">One / the space</div>')
-    w("<h2>Fifteen billion boards, and they are not interchangeable</h2>")
+    w("<h2>Fifteen billion boards, and a prior that is 2.67 to 1</h2>")
     w('<p class="lede">A 10x10 board holding the fleet <code>{{5,4,3,3,2}}</code> admits '
       "exactly <b>{:,}</b> arrangements. A transfer-matrix sweep counts them without "
       "writing one down, and the same sweep returns the exact chance that each cell is "
       "occupied.</p>".format(omega))
-    w("<p>Corners are the loneliest cells on the board and the centre the busiest, by a "
-      "factor of <b>{:.2f}</b>. These are exact rationals, not estimates: they sum to "
-      "17.000, the number of cells the fleet occupies.</p></div>".format(
-          max(prior_p) / min(prior_p)))
+    w("<p>The marginal is far from flat: <b>{:.4f}</b> at a corner against <b>{:.4f}</b> "
+      "at a centre cell, a ratio of <b>{:.2f}</b>. These are exact rationals, and they sum "
+      "over the board to 17, the number of cells the fleet occupies.</p>".format(
+          min(prior_p), max(prior_p), max(prior_p) / min(prior_p)))
+    w("<p>The count does not factor over ships. Placed independently the fleet admits "
+      "120 x 140 x 160&sup2;/2! x 180 = <b>{:,}</b> arrangements; requiring them to be "
+      "disjoint removes <b>{:.1%}</b>, and the remainder is the number above. Disjointness "
+      "is what the sweep is for, and it is why no closed product gives the "
+      "answer.</p></div>".format(FREE_PRODUCT, 1 - omega / FREE_PRODUCT))
     w('<figure><div class="plate">')
     w(board_heatmap(prior_p, prior["width"], prior["height"],
                     "Exact probability that each cell holds a ship",
                     lambda v: "{:.3f}".format(v), "probability a ship covers this cell"))
     w("</div><figcaption><b>Where the ships actually are.</b> Exact occupancy probability "
-      "per cell under a uniform prior over all {:,} configurations. The corner reads "
-      "{:.4f} and the centre {:.4f}. The four centre cells tie exactly, which is why an "
-      "optimal opening shot has a four-way choice.</figcaption></figure>".format(
-          omega, min(prior_p), max(prior_p)))
+      "per cell under the uniform prior. The corner reads {:.4f} and the centre {:.4f}. "
+      "The four centre cells tie exactly, which is why an optimal opening shot has a "
+      "four-way choice.</figcaption></figure>".format(min(prior_p), max(prior_p)))
 
     w('<div class="pair">')
     w('<figure><div class="plate">')
@@ -390,68 +507,98 @@ def build(data, out_path):
       "<th>configurations</th></tr></thead><tbody>")
     for r in data["scaling"]:
         w('<tr><td>{n}x{n}</td><td class="num">{v:,}</td></tr>'.format(n=r["n"], v=r["omega"]))
-    w("</tbody></table></div><figcaption>The counts behind the curve. Every figure here "
-      "has its table.</figcaption></figure></div></section>\n")
+    w("</tbody></table></div><figcaption>The counts behind the curve. Each ship has "
+      "2N(N-L+1) placements, so a fixed fleet of five is O(N<sup>10</sup>) once the board "
+      "is roomy. Over this range it is steeper, an empirical <b>N<sup>{:.1f}</sup></b> "
+      "(R&sup2; {:.3f}), because at these sizes the ships are still crowded and every "
+      "extra row of water relieves more crowding than it adds "
+      "room.</figcaption></figure></div></section>\n".format(SCALE_SLOPE, SCALE_R2))
 
     # 2 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">Two / the machine</div>')
-    w("<h2>Counting without enumerating</h2>")
+    w("<h2>Counting without enumerating, at 523 boards an edge</h2>")
     w('<p class="lede">The sweep carries a boundary profile across the board one cell at '
       "a time. Its whole lattice is <b>{:,}</b> edges and <b>{:,}</b> state visits, "
-      "against {:,} configurations. That ratio, better than <b>{:,.0f} to one</b>, is the "
-      "entire trick.</p>".format(lat["edges"], lat["stateVisits"], omega,
-                                 omega / lat["edges"]))
+      "against {:,} configurations: <b>{:,.0f}</b> boards accounted for per edge "
+      "relaxed.</p>".format(lat["edges"], lat["stateVisits"], omega, omega / lat["edges"]))
     w("<p>The profile remembers, for each row, how far a horizontal ship still extends, "
       "how far a vertical ship in the current column still runs, and how much of the "
-      "fleet has been spent. Nothing else. The live state count swells through the middle "
-      "of the board and collapses as the fleet runs out.</p></div>")
+      "fleet has been spent. Those fields admit 5<sup>11</sup> x 24 = "
+      "<b>{:,}</b> distinct profiles, and the sweep never holds more than <b>{:,}</b> of "
+      "them at once, a factor of <b>{:,.0f}</b>. The rest are unreachable: no legal partial "
+      "placement produces them, so they never enter a layer and are never "
+      "paid for.</p></div>".format(
+          CRUDE_PROFILES, lat["peakStates"], CRUDE_PROFILES / lat["peakStates"]))
     w('<figure><div class="plate">')
     w(layer_profile(lat["layerSizes"], lat["peakStates"]))
     w("</div><figcaption><b>The shape of the computation.</b> Live states entering each of "
-      "the 100 cell layers, peaking at {:,}. The collapse over the last two columns is the "
-      "fleet counter running out of ships: by then most partial boards cannot be "
-      "completed.</figcaption></figure></section>\n".format(lat["peakStates"]))
+      "the 100 cell layers, peaking at {:,}. Every column boundary after the first drops, "
+      "because a vertical ship must fit inside its own column: the run counter is "
+      "necessarily zero on a column's first cell, so those layers are confined to the "
+      "fifth of the profile space where it vanishes. Within a column the count falls again "
+      "over the last three cells, as successively shorter ships lose the rows beneath them "
+      "to start in. The collapse over the last "
+      "two columns is the fleet counter running out of "
+      "ships.</figcaption></figure></section>\n".format(lat["peakStates"]))
 
     # 3 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">Three / the bound</div>')
-    w("<h2>Information is the abundant resource</h2>")
-    w('<p class="lede">Identifying the board takes {:.2f} bits. A game lasting forty-odd '
-      "shots carries far more than that, so information is never what runs short. Every "
-      "one of the 17 ship cells has to be hit, and that is what costs.</p>".format(
-          m["entropyBits"]))
-    w("<p>The entropy bound lands at <b>{:.2f}</b> shots, <em>below</em> the trivial "
-      "coverage bound of {}. It is vacuous, and saying so is the point. The bound that "
-      "binds comes from counting transcripts: with <b>{:,}</b> distinct ways the 17 hits "
-      "can be announced, no policy can average under <b>{:.4f}</b> "
-      "shots.</p></div>".format(b["entropy"], b["coverage"], b["transcripts"],
-                                b["waterfilling"]))
+    w("<h2>The entropy bound is vacuous, and coverage is what binds</h2>")
+    w('<p class="lede">Identifying the board takes {:.2f} bits. Each shot answers over an '
+      "alphabet of six, {{MISS, HIT, SUNK(2..5)}}, worth at most log&#8322;6 = {:.4f} bits, "
+      "so a game of {:.2f} shots has a channel capacity of <b>{:.1f}</b> bits against the "
+      "{:.2f} identification requires, a surplus of {:.1f} to 1. All 17 ship cells must "
+      "still be hit, and that is the binding resource.</p>".format(
+          m["entropyBits"], LOG2_6, best["mean"], best["mean"] * LOG2_6, m["entropyBits"],
+          best["mean"] * LOG2_6 / m["entropyBits"]))
+    w("<p>Dividing the two gives an entropy floor of <b>{:.2f}</b> shots, <em>below</em> "
+      "the trivial coverage bound of {}. A floor dominated by the count of ship cells adds "
+      "nothing to it. The rung that binds counts finished games instead. Against a "
+      "deterministic policy the transcript replays the policy, so a board finished on shot "
+      "t is fixed by which of the first t-1 shots carried the other 16 hits and by one of "
+      "<b>{:,}</b> announcement strings, giving at most K&#183;C(t,17) of the {:,} boards "
+      "finished by shot t. Then E[T] = &#931;<sub>t</sub> P(T &gt; t) "
+      "&#8805; &#931;<sub>t</sub> max(0, 1 &#8722; K&#183;C(t,17)/N) = <b>{:.4f}</b>, the "
+      "sum saturating at t = 25.</p></div>".format(
+          b["entropy"], b["coverage"], b["transcripts"], omega, b["waterfilling"]))
     w('<figure><div class="plate">')
     w(bound_ladder(b, policies))
     w("</div><figcaption><b>The unresolved interval.</b> Proved floors as vertical rungs, "
       "measured policies as points with 95% intervals over {:,} seeded boards. The shaded "
-      "band from {:.3f} to {:.2f} is what nobody has closed. The entropy rung sitting "
-      "left of the coverage rung is the whole argument in one "
-      "picture.</figcaption></figure></section>\n".format(m["games"], b["waterfilling"],
-                                                          best["mean"]))
+      "band from {:.3f} to {:.2f} is {:.1f} shots nobody has closed, and water filling "
+      "accounts for {:.1%} of the distance from the coverage floor to the best measured "
+      "policy.</figcaption></figure></section>\n".format(
+          m["games"], b["waterfilling"], best["mean"], best["mean"] - b["waterfilling"],
+          (b["waterfilling"] - b["coverage"]) / (best["mean"] - b["coverage"])))
 
     # 4 -----------------------------------------------------------------
     worst = max(obj, key=lambda r: r["maxInfo"] - r["optimal"])
     w('<section><div class="col"><div class="act">Four / the objective</div>')
-    w("<h2>Chasing information loses the game</h2>")
+    w("<h2>Maximising information is provably the wrong objective</h2>")
     w('<p class="lede">On boards small enough to solve exactly, every policy can be '
       "priced against the true optimum with no sampling error at all. The totals are "
       "integers over the whole space.</p>")
-    w("<p>Maximising hit probability is a strong heuristic: exactly optimal on several "
-      "instances and never far off. Maximising one-step information gain is a disaster, "
-      "losing <b>{:.2f} shots</b> on {}, more than double the optimum. Shots spent "
-      "learning where the ships are, instead of hitting them, are "
-      "wasted.</p></div>".format(worst["maxInfo"] - worst["optimal"],
-                                 esc(worst["instance"])))
+    w("<p>Maximising hit probability is a strong heuristic: exactly optimal on {} of the "
+      "{} instances here and never worse than {:.2f} shots. Maximising one-step "
+      "information gain loses <b>{:.2f} shots</b> on {}, more than double the "
+      "optimum.</p>".format(
+          sum(1 for r in obj if abs(r["maxProb"] - r["optimal"]) < 1e-9), len(obj),
+          max(r["maxProb"] - r["optimal"] for r in obj),
+          worst["maxInfo"] - worst["optimal"], esc(worst["instance"])))
+    w("<p>The mechanism is visible in the objective itself. For a cell that cannot sink a "
+      "ship the answer is binary, so the information a shot yields is H(p) in the cell's "
+      "occupancy probability, and H peaks at p = 1/2. Below a half the two objectives "
+      "agree, which is why they tie at turn 0, where the largest marginal is {:.4f}. They "
+      "part in target mode. A cell beside a hit can pass a half, and past it H falls: at "
+      "p = 0.9 a shot is worth {:.2f} bits against 1.00 for a coin flip. The information "
+      "objective then declines the cell it is most sure of, which is the one coverage "
+      "most wants.</p></div>".format(max(prior_p), BIN_H_09))
     w('<figure><div class="plate">')
     w(objective_bars(obj))
     w("</div><figcaption><b>Exact price of each objective.</b> Expected shots on instances "
-      "where the optimum is computable. Bars are direct-labelled, so identity never rests "
-      "on colour alone.</figcaption></figure>")
+      "where the optimum is computable. Totals are integers over the enumerated space, so "
+      "every gap here is exact and carries no sampling "
+      "error.</figcaption></figure>".format())
     w('<figure><div class="tablewrap"><table><thead><tr><th>instance</th><th>boards</th>'
       "<th>optimal</th><th>max-P(hit)</th><th>gap</th><th>max-info</th><th>gap</th>"
       "</tr></thead><tbody>")
@@ -466,40 +613,103 @@ def build(data, out_path):
       "difference of exactly 41.</figcaption></figure></section>\n")
 
     # 5 -----------------------------------------------------------------
+    W = prior["width"]
+    marg = [c / prior["total"] for c in prior["counts"]]
+    rho = _spearman(marg, dens["meanTurn"])
+    centre_turn = dens["meanTurn"][4 * W + 4]
+    corner_turn = dens["meanTurn"][9 * W + 9]
+    par_ev, par_od = _parity_split(par["shotRate"], W)
+    den_ev, den_od = _parity_split(dens["shotRate"], W)
+    den_t_ev, den_t_od = _parity_split(dens["meanTurn"], W)
+    par_t_ev, par_t_od = _parity_split(par["meanTurn"], W)
+
     w('<section><div class="col"><div class="act">Five / the play</div>')
-    w("<h2>Parity nobody programmed</h2>")
-    w('<p class="lede">Averaged over {:,} games, the turn at which each cell gets shot '
-      "reveals the search pattern a policy invents for itself. Neither policy mentions a "
-      "lattice or a checkerboard anywhere in its code.</p></div>".format(m["games"]))
+    w("<h2>A policy that reconstructs the prior it was never given</h2>")
+    w('<p class="lede">Two maps of the same {:,} games. The first is the mean turn at '
+      "which each cell is shot, which is the order a policy searches in. The second is the "
+      "fraction of games in which a cell is ever shot at all, which is the coverage it "
+      "achieves before the game ends. A policy finishing in {:.1f} shots visits fewer than "
+      "half the cells, so the two maps carry different "
+      "information.</p></div>".format(m["games"], dens["mean"]))
+
     w('<div class="pair">')
     for p, name in ((dens, "density"), (par, "parity hunt/target")):
         w('<figure><div class="plate">')
         w(board_heatmap(p["meanTurn"], prior["width"], prior["height"],
                         "Mean turn at which each cell is shot, " + name,
                         lambda v: "{:.0f}".format(v), "mean turn shot", cell=40))
-        w("</div><figcaption><b>" + esc(name) + ".</b> Mean turn index at which each cell "
-          "is shot. Lighter cells are visited earlier.</figcaption></figure>")
+        w("</div><figcaption><b>" + esc(name) + ", search order.</b> Mean turn index, "
+          "lighter earlier.</figcaption></figure>")
     w("</div>")
+
+    w("<p>The density policy hard-codes no geometry. It scores a cell by how many "
+      "placements of the remaining fleet still cover it, and shoots the highest. That is "
+      "enough to recover the prior: its mean shot turn against the exact prior marginals "
+      "runs to a rank correlation of {:+.3f}, and it opens on the centre cell at mean turn "
+      "{:.2f} while reaching the far corner at {:.2f}. The 2.67-to-1 centre-to-corner ratio "
+      "of the marginal table in section one is the same ordering, arrived at without the "
+      "table.</p>".format(rho, centre_turn, corner_turn))
+
+    w('<div class="pair">')
+    for p, name in ((dens, "density"), (par, "parity hunt/target")):
+        w('<figure><div class="plate">')
+        w(board_heatmap(p["shotRate"], prior["width"], prior["height"],
+                        "Fraction of games in which each cell is shot, " + name,
+                        lambda v: "{:.0f}".format(v * 100), "games shot in, %", cell=40))
+        w("</div><figcaption><b>" + esc(name) + ", coverage.</b> Percentage of games in "
+          "which the cell is ever shot. These sum to {:.1f}, the mean shots per "
+          "game.</figcaption></figure>".format(sum(p["shotRate"])))
+    w("</div>")
+
+    w("<p>Both policies play the same boards, so the maps compare their rules directly. "
+      "Parity hunt/target confines its hunt to one diagonal colour class and leaves that "
+      "class only to finish a wounded ship. The restriction is exact rather than "
+      "heuristic: a ship of length two or more covers a cell of each class, so half the "
+      "board can be skipped without risking a miss. Its coverage is that restriction, "
+      "{:.1%} of games on even cells against {:.1%} on odd, a ratio of {:.2f}.</p>".format(
+          par_ev, par_od, par_ev / par_od))
+    w("<p>The density policy encodes no geometry. It scores each cell by the number of "
+      "remaining-fleet placements covering it and shoots the maximum. Its colour classes "
+      "separate by a factor of {:.2f} in coverage and by {:+.2f} turns in order, against "
+      "{:.2f} and {:+.2f} for the parity policy. What the density map shows instead is the "
+      "centre gradient of the marginal above it: every game at the middle cell, {:.1%} at "
+      "the opposite corner.</p>".format(
+          den_ev / den_od, den_t_od - den_t_ev, par_ev / par_od,
+          par_t_od - par_t_ev, dens["shotRate"][9 * W + 9]))
+
     w('<figure><div class="plate">')
     w(survival(policies))
-    w("</div><figcaption><b>Fraction of games still running.</b> Survival curves over the "
-      "same {:,} boards, so the comparison is paired. Survival is used instead of a "
-      "histogram because it needs no bin choice and makes crossings visible; a crossing "
-      "would mean neither policy dominates.</figcaption></figure></section>\n".format(
-          m["games"]))
+    cross = None
+    sa, sb = _survival(dens["histogram"]), _survival(par["histogram"])
+    for n in range(min(len(sa), len(sb))):
+        if sa[n] > sb[n] + 1e-12:
+            cross = n
+            break
+    w("</div><figcaption><b>Fraction of games still running after n shots.</b> The same "
+      "{:,} boards for every policy, so the comparison is paired. Survival needs no bin "
+      "choice and makes crossings visible, and there is one: density sits below parity "
+      "hunt/target everywhere up to shot {}, then rises above it in the tail. Density is "
+      "better on average by {:.2f} shots and does not stochastically dominate, so a reader "
+      "who cares about the worst case rather than the mean cannot read the ranking off the "
+      "means alone. The spreads differ as much as the centres: {}."
+      "</figcaption></figure></section>\n".format(
+          m["games"], cross, par["mean"] - dens["mean"],
+          "; ".join("{} {:.2f} with sd {:.2f}".format(p["name"], p["mean"], p["sd"])
+                    for p in policies)))
 
     # objects -----------------------------------------------------------
     w('<section><div class="col"><div class="act">Interlude / the objects</div>')
-    w("<h2>Drawing the things themselves</h2>")
-    w('<p class="lede">Three structures the engine relies on, drawn instead of '
-      "described.</p></div>")
+    w("<h2>Three objects the arguments stand on</h2>")
+    w('<p class="lede">The engine runs on three structures that are easier to look at '
+      "than to describe.</p></div>")
 
     w('<figure><div class="plate">')
     w(orbit_map(prior["counts"], prior["total"], prior["width"], prior["height"]))
     w("</div><figcaption><b>The 15 dihedral orbits.</b> Reflections and the diagonal fold "
-      "the 100 cells into 15 classes, so any quantity that respects the board's symmetry "
-      "needs 15 evaluations and not 100. Hovering gives each orbit's exact configuration "
-      "count. The prior heatmap earlier in this page is this pattern, "
+      "the 100 cells into 15 classes, so a quantity respecting the board's symmetry is "
+      "settled by 15 evaluations. Hovering gives each orbit's exact configuration count; "
+      "weighted by orbit size they sum to 17|&#937;|, since every board occupies 17 cells. "
+      "The prior heatmap earlier in this page is this pattern, "
       "shaded.</figcaption></figure>")
 
     w('<figure><div class="plate">')
@@ -507,9 +717,12 @@ def build(data, out_path):
     w("</div><figcaption><b>Blocking sets.</b> Shoot the marked cells and no placement of "
       "that length survives untouched, which is what makes beta(L) the number of shots "
       "guaranteeing first contact with a lone ship of that length. Each set is drawn at "
-      "its minimum size, so the marks can be counted. A greedy cover reaches that size "
-      "for lengths 2 and 5 and misses by one and two for 3 and 4, where the set shown is "
-      "rebuilt by deciding each cell against the exact DP.</figcaption></figure>")
+      "its minimum size, so the marks can be counted. The DP computes the complement: the "
+      "largest set holding no L cells in a line runs {}, and 100 minus that is beta(L). A "
+      "greedy cover reaches that size for lengths 2 and 5 and misses by one and two for 3 "
+      "and 4, where the set shown is rebuilt by deciding each cell against the exact "
+      "DP.</figcaption></figure>".format(
+          ", ".join(str(e["freeSet"]) for e in b["blocking"])))
 
     w('<figure><div class="plate">')
     w(order_dependence(data["orderDependence"]))
@@ -523,13 +736,16 @@ def build(data, out_path):
 
     # 6 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">Six / the collapse</div>')
-    w("<h2>From fifteen billion to one</h2>")
-    w('<p class="lede">Following single games, recounting the surviving configurations '
-      "exactly after every shot. Ten orders of magnitude disappear in about forty "
-      "moves.</p>")
-    w("<p>The drops are not smooth. A sinking announcement pins a whole ship at once and "
-      "can take two or three decades out of the space in one step; the marked points are "
-      "sinks.</p></div>")
+    w("<h2>From fifteen billion to one in about forty shots</h2>")
+    w('<p class="lede">Ten orders of magnitude disappear in about forty moves, and the '
+      "count is recounted from scratch after every shot rather than estimated.</p>")
+    biggest = max((math.log10(g["omega"][i] / g["omega"][i + 1]), g["game"], i + 1)
+                  for g in col for i in range(len(g["outcomes"]))
+                  if g["outcomes"][i] == 2 and g["omega"][i + 1] > 0)
+    w("<p>The decrease is not smooth. A sinking announcement fixes a whole ship at once, "
+      "and the largest single step here removes <b>{:.2f}</b> orders of magnitude, at shot "
+      "{} of game {}. The marked points are sinks.</p></div>".format(
+          biggest[0], biggest[2], biggest[1]))
     w('<figure><div class="plate">')
     w(collapse(col, omega))
     w("</div><figcaption><b>Posterior collapse.</b> Surviving configurations after each "
@@ -545,9 +761,8 @@ def build(data, out_path):
             "frames": scrub["frames"],
         }
         w('<div class="col"><h3>The same game, one turn at a time</h3>')
-        w("<p>The curve above says how much collapsed. This says <em>where</em>. Every "
-          "frame is the exact posterior after that shot, so the board shown is what the "
-          "engine actually believed, not a reconstruction. Drag, or use the arrow keys.</p>")
+        w("<p>The curve above says how much collapsed. This says <em>where</em>. Drag "
+          "the slider, or use the arrow keys.</p>")
         w("<p>Watch the two things the curve cannot show: probability mass sliding away "
           "from a miss into the cells that remain, and a sinking announcement flattening "
           "a whole region at once because the ship it accounted for is now placed.</p>")
@@ -555,14 +770,140 @@ def build(data, out_path):
         w('<figure><div class="plate"><div id="scrub" data-frames=\'' +
           json.dumps(payload, separators=(",", ":")).replace("'", "&#39;") + '\'></div>')
         w("</div><figcaption><b>Belief scrubber.</b> Exact cell marginals after every "
-          "shot of one game, quantised to a byte per cell. Colour limits are fixed across "
-          "the whole game so the frames are comparable; a per-frame rescale would hide "
-          "the collapse this figure exists to show. Shot cells carry the glyph, not the "
-          "colour.</figcaption></figure>")
+          "shot of one game, quantised to a byte per cell. One colour scale spans the "
+          "whole game, so a frame late in the collapse is legibly emptier than an early "
+          "one. Shot cells carry a glyph, leaving colour to the "
+          "posterior.</figcaption></figure>")
 
-    w('<div class="col"><div class="note">Everything here is generated from '
-      "<code>out/figures.json</code>, which the engine writes directly. No number was "
-      "transcribed by hand, and none was recomputed by the renderer.</div></div>")
+    w('<div class="col"><div class="note">Every figure and every number on this page '
+      "reads from <code>out/figures.json</code>, which the engine writes directly. The "
+      "renderer derives summaries from it and recomputes nothing, so no figure can "
+      "disagree with the engine that produced it.</div></div>")
+    w("</section>\n")
+
+    # 7, the conclusion --------------------------------------------------
+    zero_prob = sum(1 for r in obj if abs(r["maxProb"] - r["optimal"]) < 1e-9)
+    worst_prob = max(r["maxProb"] - r["optimal"] for r in obj)
+    worst_info = max(r["maxInfo"] - r["optimal"] for r in obj)
+    gap = best["mean"] - b["waterfilling"]
+
+    w('<section><div class="col"><div class="act">Seven / the strategy</div>')
+    w("<h2>Shoot the likeliest cell, and recompute after every answer</h2>")
+    w('<p class="lede">The optimum at 10x10 is not known. The exact solver runs to a few '
+      "hundred surviving configurations and this instance opens at {:,}, so what follows "
+      "is the best rule the measurements support, together with how far from optimal it "
+      "can be shown to be.</p>".format(omega))
+
+    w("<p><b>Take the cell of highest posterior occupancy.</b> On the six instances small "
+      "enough to solve outright, that rule is exactly optimal on {} of them and never more "
+      "than <b>{:.4f} shots</b> from optimal on the rest. No other rule tested comes "
+      "within an "
+      "order of magnitude of that margin, and the rule needs only the marginals, which one "
+      "forward and one backward pass return together.</p>".format(zero_prob, worst_prob))
+
+    w("<p><b>Do not select on information.</b> Maximising one-step information gain costs "
+      "up to <b>{:.4f} shots</b>, more than doubling the optimum on 5x4 {{3}}. The reason "
+      "is structural rather than incidental: the yield of a binary answer is H(p), which "
+      "peaks at p = 1/2, so an information rule turns away from a cell exactly when the "
+      "evidence starts to favour it. Identification is not the scarce resource here. A "
+      "game of {:.2f} shots carries {:.1f} bits against the {:.2f} needed to name the "
+      "board.</p>".format(worst_info, best["mean"], best["mean"] * LOG2_6, m["entropyBits"]))
+
+    w("<p><b>Recompute every turn.</b> Fixing the shot order in advance costs between "
+      "1.31 and 2.09 times the adaptive optimum on the instances where both are solved. "
+      "At full scale the best fixed order found is 88.73 shots against <b>{:.2f}</b> for "
+      "an adaptive policy. The two are different objects, but the separation dwarfs "
+      "every margin between the adaptive rules compared here.</p>".format(best["mean"]))
+
+    w("<p><b>If a posterior is out of budget, count placements instead.</b> Scoring a cell "
+      "by the number of remaining-fleet placements covering it needs no sweep, measures "
+      "<b>{:.3f}</b> shots over {:,} boards, and reproduces the prior's centre weighting "
+      "on its own. Restricting the hunt to one diagonal colour class is sound and cheaper "
+      "still, and costs <b>{:.2f} shots</b> against it.</p>".format(
+          best["mean"], m["games"], pol["parity hunt/target"]["mean"] - best["mean"]))
+
+    w("<p><b>Assume a slight edge bias rather than a flat prior.</b> Against an opponent "
+      "who places uniformly this costs almost nothing, and against one who does not it "
+      "recovers most of the difference. Believing a mild bias improves the worst case over "
+      "all opponents tested by 0.1392 shots on 5x5 {4,3,2} and 0.2057 on 4x4 {3,2}, "
+      "without knowing who is playing. The effect is real and small.</p>")
+
+    w("<p>What none of this settles is the size of what remains. The certified floor is "
+      "<b>{:.3f}</b> and the best rule measured here is <b>{:.2f}</b>, leaving "
+      "<b>{:.2f} shots</b> unaccounted for. That interval contains both the true optimum "
+      "and the loss of the rule against it, and nothing in these results separates the "
+      "two. A better policy and a better lower bound would look identical from "
+      "here.</p>".format(b["waterfilling"], best["mean"], gap))
+
+    w("<p>Two cautions on reading the ranking. The density and parity curves cross in the "
+      "tail, so the {:.2f}-shot difference between their means is not stochastic "
+      "dominance, and a reader who cares about the worst game rather than the average one "
+      "cannot take the ordering from the means. And the greedy rule recommended above is "
+      "provably suboptimal rather than merely unverified: on 4x4 {{3,2}} it spends 2352 "
+      "shots "
+      "across the space where optimal play spends 2311. It is the best rule available, "
+      "which is a different claim from the best rule.</p></div>\n".format(
+          pol["parity hunt/target"]["mean"] - best["mean"]))
+
+    # the opening book ---------------------------------------------------
+    book = data.get("openingBook") or []
+    if book:
+        bw = prior["width"]
+        forced = book[-1]
+        w('<div class="col"><h3>Where to shoot first</h3>')
+        w("<p>The rule is adaptive, so it has no fixed order, but it has a principal "
+          "variation: the line it takes while every answer is a miss. That is where the "
+          "opening spends most of its time, since the best first cell is a miss {:.1%} of "
+          "the time, and it is the nearest thing to a ranking of the board.</p>".format(
+              1 - book[0]["p"]))
+        w("<p>The line walks the long diagonal outward from the centre and then fills the "
+          "gaps between those cells. It also ends by itself, after <b>{}</b> shots: by then "
+          "only {:,} boards remain and every one of them occupies {}, so that cell has "
+          "marginal 1 and the miss branch is empty. Twenty-two shots into this order, "
+          "contact is not likely but certain.</p>".format(
+              len(book), forced["omega"],
+              chr(ord("A") + forced["cell"] % bw) + str(forced["cell"] // bw + 1)))
+        w("<p>The marginals rise as the line runs, from {:.4f} at the first cell to "
+          "{:.4f} at the last but one. Missing does not only remove boards, it concentrates "
+          "what is left, so each successive shot is a better bet than the one "
+          "before.</p></div>".format(book[0]["p"], book[-2]["p"] if len(book) > 1 else 0.0))
+        w('<figure><div class="plate">')
+        w(opening_book(book, prior["width"], prior["height"]))
+        w("</div><figcaption><b>The opening, ranked.</b> Shot order along the all-miss "
+          "branch of the recommended rule, earliest darkest. A hit at any point ends the "
+          "line and the rule recomputes; this is the order to fall back to while nothing "
+          "has been found. Unshaded cells are never reached, because the line terminates "
+          "in a forced hit first.</figcaption></figure>")
+
+    # the summary ----------------------------------------------------------
+    w('<div class="col"><h3>The short version</h3>')
+    w('<p class="lede">Everything above, in six lines.</p>')
+    w("<ul class=\"summary\">")
+    w("<li><b>Attack the highest posterior marginal, and recompute after every "
+      "answer.</b> Exactly optimal on {} of the {} instances small enough to check, and "
+      "never more than {:.4f} shots off on the others.</li>".format(
+          sum(1 for r in obj if abs(r["maxProb"] - r["optimal"]) < 1e-9), len(obj),
+          max(r["maxProb"] - r["optimal"] for r in obj)))
+    w("<li><b>Open on the centre and work outward along the diagonal.</b> That is the line "
+      "above, and the {} cells it names guarantee contact.</li>".format(len(book) or 22))
+    w("<li><b>Never pick a shot by information gain.</b> Up to {:.2f} shots worse, because "
+      "the yield of a binary answer peaks at probability one half and so falls exactly "
+      "where the evidence is strongest.</li>".format(
+          max(r["maxInfo"] - r["optimal"] for r in obj)))
+    w("<li><b>Counting placements is a good substitute if you cannot afford a "
+      "posterior.</b> {:.2f} shots against a certified floor of {:.2f}, with no sweep "
+      "required.</li>".format(best["mean"], b["waterfilling"]))
+    w("<li><b>Hiding: put ships where the attacker looks last, but not every "
+      "game.</b> A prior-assuming attacker shoots the middle cell in every game and the "
+      "far corner in {:.1%} of them, so the edges buy time against a stranger. Against "
+      "anyone who plays you repeatedly the same habit is worth about a shot to them, and "
+      "ten games is enough to read it.</li>".format(dens["shotRate"][9 * bw + 9]
+                                                    if book else 0.111))
+    w("<li><b>What is still open.</b> The optimum for this board is unknown. It lies "
+      "between {:.3f} and {:.2f}, and nothing here narrows which end.</li>".format(
+          b["waterfilling"], best["mean"]))
+    w("</ul>")
+    w('<p class="thanks">Thank you for reading.</p></div>')
     w("</section>\n")
 
     w('<footer><div class="col">Mayflower &middot; exact Bayesian inference over '
