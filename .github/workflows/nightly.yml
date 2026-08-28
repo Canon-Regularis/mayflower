@@ -165,7 +165,7 @@ jobs:
       # inspected rather than only described.
       - name: Keep the report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: report
           path: |
