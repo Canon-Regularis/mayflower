@@ -7,7 +7,7 @@
 //
 // The board is the same widget used everywhere else on the page, with the same
 // glyph vocabulary: open ring for a miss, filled disc for a hit, cross for the
-// shot that sank a ship, and a dashed outline for the hidden truth once it is
+// shot that sank a ship, and a solid green outline for the hidden truth once it is
 // revealed.
 
 (function () {
@@ -60,6 +60,32 @@
   slider.className = "scrubrange";
   slider.setAttribute("aria-label", "Turn");
 
+  // A labelled number box. Returning the input separately keeps the reads below
+  // free of DOM traversal.
+  function numberControl(labelText, value, min, step, suffix) {
+    const wrap = document.createElement("label");
+    wrap.className = "scrubnum";
+    const name = document.createElement("span");
+    name.textContent = labelText;
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = String(min);
+    input.step = String(step);
+    input.value = String(value);
+    input.inputMode = "decimal";
+    wrap.appendChild(name);
+    wrap.appendChild(input);
+    if (suffix) {
+      const unit = document.createElement("span");
+      unit.textContent = suffix;
+      wrap.appendChild(unit);
+    }
+    return { wrap: wrap, input: input };
+  }
+
+  const stepCtl = numberControl("step", 1, 0, 1, "");
+  const speedCtl = numberControl("every", 3, 0.25, 0.25, "s");
+
   const reveal = document.createElement("button");
   reveal.type = "button";
   reveal.className = "scrubbtn";
@@ -67,6 +93,8 @@
 
   controls.appendChild(play);
   controls.appendChild(slider);
+  controls.appendChild(stepCtl.wrap);
+  controls.appendChild(speedCtl.wrap);
   controls.appendChild(reveal);
 
   const readout = document.createElement("div");
@@ -111,7 +139,7 @@
         el.className = "lc" + (o === 0 ? " miss" : o === 1 ? " hit" : o === 2 ? " sunk" : "");
         el.textContent = o === 0 ? "o" : o === 1 ? "x" : o === 2 ? "+" : "";
         el.style.background = o >= 0 ? "" : colourFor(p);
-        el.style.outline = revealed && truth[i] ? "2px dashed var(--ink)" : "";
+        el.style.outline = revealed && truth[i] ? "2px solid var(--series-3)" : "";
         el.style.outlineOffset = revealed && truth[i] ? "-3px" : "";
         el.setAttribute("aria-label",
           String.fromCharCode(65 + c) + (r + 1) + ", " + (p * 100).toFixed(1) + " percent");
@@ -147,18 +175,58 @@
   slider.addEventListener("input", function () { goTo(parseInt(slider.value, 10)); });
 
   function stop() {
-    if (playing) { clearInterval(playing); playing = null; }
+    if (playing) { clearTimeout(playing); playing = null; }
     play.textContent = "Play";
   }
+
+  // Turns per tick. Never negative: a step of 0 holds the frame, which is what
+  // +0 means, and anything below that would run the game backwards past its own
+  // start. A number input's min attribute binds its spinner and not what can be
+  // typed into it, so the value is clamped on read as well.
+  function stepSize() {
+    const v = Math.floor(Number(stepCtl.input.value));
+    return isFinite(v) && v > 0 ? v : 0;
+  }
+
+  // Seconds per tick. Floored well above the frame rate so the frames cannot be
+  // driven past what the eye can follow.
+  function delaySeconds() {
+    const v = Number(speedCtl.input.value);
+    return isFinite(v) && v > 0.25 ? v : 0.25;
+  }
+
+  // A chain of timeouts rather than one interval, so a change to either control
+  // is picked up without restarting playback.
+  function tick() {
+    if (turn >= turns - 1) { stop(); return; }
+    goTo(turn + stepSize());
+    playing = setTimeout(tick, delaySeconds() * 1000);
+  }
+
+  // Shortening the period should not mean waiting out the period it replaced, so
+  // the pending tick is rescheduled against the new one.
+  function rearm() {
+    if (!playing) return;
+    clearTimeout(playing);
+    playing = setTimeout(tick, delaySeconds() * 1000);
+  }
+
+  // Written back on commit rather than on every keystroke, so typing "0.5" is
+  // not rewritten to "0.25" at the moment the "0." is read.
+  stepCtl.input.addEventListener("change", function () {
+    stepCtl.input.value = String(stepSize());
+  });
+  speedCtl.input.addEventListener("change", function () {
+    speedCtl.input.value = String(delaySeconds());
+    rearm();
+  });
+  speedCtl.input.addEventListener("input", rearm);
 
   play.addEventListener("click", function () {
     if (playing) { stop(); return; }
     if (turn >= turns - 1) goTo(0);
     play.textContent = "Pause";
-    playing = setInterval(function () {
-      if (turn >= turns - 1) { stop(); return; }
-      goTo(turn + 1);
-    }, 420);
+    playing = setTimeout(tick, delaySeconds() * 1000);
   });
 
   reveal.addEventListener("click", function () {
@@ -175,10 +243,11 @@
   });
   root.tabIndex = 0;
 
-  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    play.disabled = true;
-    play.title = "Autoplay is off because the system asks for reduced motion";
-  }
+  // An earlier version disabled Play under prefers-reduced-motion, which on a
+  // Windows default reads as a button that does nothing. The preference is about
+  // motion the reader did not ask for; pressing Play is asking for it. Nothing
+  // here animates on its own, and the default period is three seconds a frame,
+  // so there is nothing left to suppress.
 
   draw();
 })();

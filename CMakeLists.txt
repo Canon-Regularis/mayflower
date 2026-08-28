@@ -190,6 +190,13 @@ if(Python3_Interpreter_FOUND AND MF_NODE)
 add_test(NAME engine_js COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE}
          ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_engine_js.py)
 set_tests_properties(engine_js PROPERTIES LABELS "fast")
+
+# The belief scrubber is shipped inside the report and nothing ran it. Driven
+# against a minimal DOM and a clock the test advances by hand, so a three-second
+# period costs no wall time. Needs the recorded frames, so it skips without them.
+add_test(NAME scrubber_js COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE}
+         ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scrubber_js.py)
+set_tests_properties(scrubber_js PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
 endif()
 
 add_executable(test_weighted tests/test_weighted.cpp)
