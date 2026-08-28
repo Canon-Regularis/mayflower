@@ -237,14 +237,9 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "blocking witnesses done\n");
 
     // ---- opening book: the greedy line down the all-miss branch -----------
-    // The recommended rule is "shoot the highest posterior marginal". Its play is
-    // adaptive, so there is no fixed order, but there is a principal variation:
-    // the line it follows while every answer is a miss. That is the branch the
-    // opening spends most of its time on, since the best first cell is a miss
-    // 78.6% of the time, and it is the closest thing to a ranking of the cells.
-    //
-    // The line ends by itself. Once a cell has marginal 1 every surviving board
-    // occupies it, so the miss branch is empty and the next shot is a forced hit.
+    // Take the highest marginal, condition on a miss, repeat. The line stops
+    // itself: at marginal 1 every surviving board occupies the cell, so the miss
+    // branch is empty.
     out += "  \"openingBook\": [";
     {
         std::vector<CellConstraint> cells(static_cast<std::size_t>(inst.cellCount()),

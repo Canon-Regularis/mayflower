@@ -138,8 +138,8 @@ def exact_coverage(p_true, n, interval, alpha=0.05):
 
 
 def paired_interval(xs, ys, alpha=0.05):
-    """Interval for a paired difference. With common random numbers the pairing
-    is the whole point, so the difference is what carries the variance."""
+    """Interval for a paired difference. Under common random numbers the board
+    difficulty is shared, so the difference carries the variance."""
     return mean_interval([x - y for x, y in zip(xs, ys)], alpha)
 
 
@@ -190,10 +190,10 @@ def holm(pvalues, alpha=0.05):
 
 # --- the seal -------------------------------------------------------------
 #
-# TEST is sealed, and a seal is only worth something if breaking it leaves a
-# mark. What follows is the mechanism and, more importantly, its limits.
+# TEST is sealed, and a seal is worth something only if breaking it leaves a
+# mark. The mechanism, and then its limits.
 #
-# WHAT IT CATCHES
+# Caught:
 #   Editing an entry.        Every line carries the digest of everything before
 #                            it, so an edit invalidates every later line.
 #   Deleting an interior     Same reason.
@@ -204,7 +204,7 @@ def holm(pvalues, alpha=0.05):
 #                            is why the chain alone is not enough, and the head
 #                            file is what notices.
 #
-# WHAT IT DOES NOT CATCH
+# Not caught:
 #   Anyone with write access to both files can recompute the whole history:
 #   the digest takes only public inputs, so there is no key and no proof of
 #   authorship. A determined author can rewrite the log and the head together
@@ -216,10 +216,9 @@ def holm(pvalues, alpha=0.05):
 #   and the history that contains them", which is the honest claim. It is not
 #   append-only in the tamper-proof sense and this file does not claim to be.
 #
-# An earlier version of this comment did claim that, and an adversarial review
-# broke it in two ways within minutes: truncating the last line still verified,
-# and so did prefixing it with "#", which left the entry visible while removing
-# it from the chain.
+# Two attacks the chain alone admits, and the head file is what closes both:
+# truncating the last line leaves a prefix that still verifies, and prefixing it
+# with "#" does the same while leaving the entry visible in the file.
 
 AUDIT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "..", "experiments", "audit.log")
@@ -379,9 +378,9 @@ def test_audit():
     fails += check(not ok, "editing an entry breaks the chain",
                    "first bad entry at index {}".format(bad))
 
-    # Peek-then-erase. An adversarial review broke the first version of this
-    # seal exactly here: record the unseal, read TEST, then delete the line.
-    # The chain alone still verified, because nothing follows the tail.
+    # Peek-then-erase: record the unseal, read TEST, delete the line. The chain
+    # alone verifies afterwards, since nothing follows the tail to contradict it,
+    # so this is the case the head file has to catch.
     io.open(tmp, "w", encoding="utf-8", newline="\n").write(saved)
     kept = [l for l in saved.split("\n") if "unseal" not in l]
     io.open(tmp, "w", encoding="utf-8", newline="\n").write("\n".join(kept))
@@ -518,11 +517,10 @@ def test_calibration(replicates):
     fails += check(f_lo >= 0.0 and f_hi <= 1.0 and f_lo < 1.0,
                    "and stays inside [0, 1] when everything does")
 
-    # Coverage of a binomial interval is a finite sum, so it is computed here
-    # rather than simulated. An earlier version of this file sampled it, and at
-    # 400 replicates the noise was large enough to reverse the ordering at
-    # p = 0.02 and put a false claim in the documentation. There is no reason to
-    # estimate a quantity that can be summed exactly.
+    # Coverage of a binomial interval is a finite sum over k, so it is computed
+    # rather than sampled. Sampling it at 400 replicates carries enough noise to
+    # reverse the Wilson-against-Wald ordering at p = 0.02, which is a difference
+    # of 0.025 in coverage against a standard error near 0.011.
     grid = [0.01, 0.02, 0.05, 0.10, 0.20, 0.35, 0.50]
     cov_w = [exact_coverage(p, n_b, wilson_interval) for p in grid]
     cov_n = [exact_coverage(p, n_b, wald_interval) for p in grid]

@@ -243,11 +243,5 @@
   });
   root.tabIndex = 0;
 
-  // An earlier version disabled Play under prefers-reduced-motion, which on a
-  // Windows default reads as a button that does nothing. The preference is about
-  // motion the reader did not ask for; pressing Play is asking for it. Nothing
-  // here animates on its own, and the default period is three seconds a frame,
-  // so there is nothing left to suppress.
-
   draw();
 })();

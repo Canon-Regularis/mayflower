@@ -254,8 +254,8 @@ inline int popcount128(Mask m) {
 using BoardShips = std::vector<Mask>;
 
 // Every physical board under the no-touching rule, as its list of ship masks.
-// Same recursion as enumerateBoards with the halo test added, so the two stay
-// obviously parallel.
+// Same recursion as enumerateBoards with the halo test added, so a change to
+// one is visible as a divergence from the other.
 inline std::vector<std::vector<Mask>> enumerateBoardsNoTouch(int W, int H,
                                                              std::vector<int> fleet) {
     const std::vector<detail::HaloGroup> groups =

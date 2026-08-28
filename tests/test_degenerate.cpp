@@ -165,8 +165,8 @@ void testDegenerateShapes() {
                   agreed, trials);
     check(agreed == trials, buf);
 
-    // A ship with nowhere to go is a bad instance, not an instance with no
-    // configurations, and saying so at construction is the cheaper answer.
+    // A ship with nowhere to go is rejected at construction rather than counted
+    // as zero, so the caller finds out before paying for a sweep.
     int rejected = 0, offered = 0;
     for (const Case& c : std::vector<Case>{{2, 2, {4}}, {3, 3, {5}}, {3, 4, {5, 4}},
                                            {1, 5, {6}}, {5, 1, {6}}}) {

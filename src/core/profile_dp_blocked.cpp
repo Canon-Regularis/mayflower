@@ -402,8 +402,9 @@ CountResult countConfigurationsBlocked(const Instance& inst, const Constraints& 
             }
             result.edges += edges;
 
-            // Merge. Each bucket is independent, which is the whole point.
-            // A layer too small to be worth a barrier is merged in place.
+            // Buckets partition the destination keys, so merges never touch
+            // one counter and need no lock. Below the floor a barrier costs more
+            // than the merge, so the layer is done in place.
             if (!pool || edges < kParallelFloor) mergeRange(0, kRadix);
             else pool->runAll();
 

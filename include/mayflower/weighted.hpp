@@ -20,28 +20,31 @@
 // weighing cells alone conditions on soft evidence; both together give a
 // posterior under a non-uniform prior.
 //
-// EXACTNESS
+// Exactness, and where it stops.
 //
 // Setting every weight to 1 must reproduce the plain count bit for bit, and it
 // does, because every value a layer holds is a non-negative integer and every
 // one of them stays below 2^53, where double addition of integers is exact.
 //
-// Note what that argument is NOT. A layer counts PARTIAL placements, and those
-// are not bounded by the final count: constrain the standard board hard enough
-// and the answer drops to a few hundred thousand while intermediate layers still
-// carry billions. The real bound is the number of ways to place some subset of
-// the fleet, at most the product over lengths of (placements + 1), which is
-// about 8.0e10 for the standard instance against 9.0e15. That bound is
-// instance-dependent, so weightedCount reports maxLayerSum and callers who care
-// should check it rather than trust the argument. The standard instance measures
-// 1.583e10, or 2^33.88.
+// The bound is on layers, not on the answer. A layer counts partial placements,
+// which the final count does not bound: constrain the standard board hard enough
+// and it answers in the hundreds of thousands while intermediate layers still
+// carry billions. The bound is the number of ways to place some subset of the
+// fleet, at most the product over lengths of (placements + 1), about 8.0e10 for
+// the standard instance against 2^53. It is instance-dependent, so weightedCount
+// reports the measured maxLayerSum, 1.583e10 here, and the exact flag is derived
+// from that rather than from the argument.
 //
-// Away from that case the answer is floating point. A layer whose values
-// threaten the exponent range is divided by a power of two, which edits
-// exponents and leaves mantissas alone, so rescaling itself costs no precision.
-// The result is reconstructed with ldexp rather than by multiplying by an
-// exponential, so a scale beyond exp's range saturates correctly instead of
-// producing infinity from finite parts. logTotal stays usable throughout.
+// Away from unit weights the answer is floating point, and the failure is
+// one-sided. A layer whose maximum threatens the exponent range is divided by a
+// power of two, which is exact while the result stays normal. It cannot stay
+// normal indefinitely: the scale is one power of two for the whole layer, so a
+// value 1e308 behind the maximum reaches zero when the maximum is brought back
+// into range, and the guard watches only the maximum. Weights whose live range
+// exceeds a double therefore lose configurations silently, and underflowed is
+// set at the multiply and at the rescale to say so. weightedMarginals refuses
+// outright, since the forward and backward values are each representable where
+// their product is not.
 #pragma once
 
 #include <cstdint>
@@ -89,20 +92,9 @@ struct WeightedResult {
     bool rescaled = false;        // a layer was divided by a power of two
     double maxLayerSum = 0;       // largest sum over one layer, for the 2^53 argument
 
-    // A product of two non-zero factors came out zero, so a configuration this
-    // sweep was asked to weigh has been dropped and the total below is a lower
-    // bound rather than the answer.
-    //
-    // Rescaling cannot prevent it. The scale is one power of two for the whole
-    // layer, so it can centre one end of the layer's dynamic range and not both,
-    // and once that range passes what a double holds the low end goes to zero.
-    // Since the guard watches the layer maximum, a record whose heavy states stay
-    // near 1 while its light states decay away sets no other flag at all: the
-    // 8x8 fleet under a noisy channel with eps = 1e-25 reports the record as
-    // impossible, with rescaled false.
-    //
-    // The condition is detected at the multiply rather than inferred, so this is
-    // exact both ways.
+    // Two non-zero factors gave zero, so a configuration was dropped and total
+    // is a lower bound. Detected at the multiply and at the rescale, so it does
+    // not depend on rescaled, which a decaying record never trips.
     bool underflowed = false;
 
     // True when this particular run is exact rather than approximate: the

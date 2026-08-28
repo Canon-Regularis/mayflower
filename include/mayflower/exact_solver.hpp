@@ -55,9 +55,9 @@ struct ExactSolution {
 //         branches in descending floor. This is the default. On an idle machine
 //         it is at least as fast as Bounds on every instance measured, and on
 //         the fleet instances it is worth 158x: the m9 self-test runs in 66 s
-//         under Star1 and took 10,490 s under Bounds. An earlier reading taken
-//         while the machine was busy suggested Bounds won on the cheap cases;
-//         it does not, and a single timing run is not a measurement.
+//         under Star1 and took 10,490 s under Bounds. Pick this default on the
+//         expensive instances: on the cheap ones the margin sits inside the
+//         run-to-run spread, and one timing run does not resolve it.
 enum class Pruning { None, Bounds, Star1 };
 
 ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit = 60000,

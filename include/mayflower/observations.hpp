@@ -1,7 +1,8 @@
 // Ordered observation record and the placement predicate it induces.
 //
-// The record is a sequence, not a set. SUNK(x, L) means the shot at x sank the
-// ship, so every other cell of that ship was shot strictly before x.
+// Order is part of the record. SUNK(x, L) means the shot at x sank the ship, so
+// every other cell of that ship was shot strictly before x, and two orderings of
+// one shot multiset can leave different configurations standing.
 //
 // The whole observation model reduces to two things the DP can consume:
 //   1. a per-cell constraint (MISS forbids occupancy, HIT/SUNK requires it);

@@ -132,12 +132,9 @@ public:
         for (std::size_t slot : dense_) fn(keys_[slot], vals_[slot]);
     }
 
-    // ldexp edits the exponent and leaves the mantissa alone, which is exact
-    // while the result stays normal and not once it does not. The scale is one
-    // power of two for the whole layer, so bringing the maximum back into range
-    // pushes everything a factor of 1e308 behind it out of range, and those
-    // values reach zero. Returns whether any did, because a layer that lost a
-    // value has lost the configurations that ran through it.
+    // Exact while the result stays normal. One power of two serves the whole
+    // layer, so bringing the maximum into range sends anything 1e308 behind it
+    // to zero; returns whether that happened.
     [[nodiscard]] bool scaleByPowerOfTwo(int exponent) {
         bool lost = false;
         for (std::size_t slot : dense_) {
@@ -396,12 +393,9 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
         }
     }
 
-    // The last cell's output layer, which the loop above never sampled: it
-    // measures the layer entering each cell, so the layer the final cell
-    // produces is the one total is read out of and the one the certificate
-    // would otherwise skip. It matters only when a cell can emit more than one
-    // edge per state at the end of the sweep, which needs a length-1 ship, and
-    // the certificate has to hold for every instance the library accepts.
+    // The loop samples the layer entering each cell, so the layer the last cell
+    // produces, which total is read from, is not among them. Reachable only with
+    // a length-1 ship, where the final cell emits more than one edge per state.
     result.peakStates = std::max(result.peakStates, cur.size());
     result.maxLayerSum = std::max(result.maxLayerSum, cur.sum());
 
@@ -410,16 +404,17 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
         if (accepting(key, fc)) total += value;
     });
 
-    // Reconstructing through ldexp rounds once and saturates correctly, where
-    // total * exp(logScale) would overflow the intermediate whenever logScale
-    // passed 709 even if the product itself were representable.
-    // Self-certifying exactness. Integers below 2^53 add exactly in a double, so
-    // an unweighted run is bit-exact provided no layer reached that far and no
-    // rescale ran. Anything else is floating point and says so.
+    // Integers below 2^53 add exactly in a double, so a unit-weight run is
+    // bit-exact once no layer reached that far, no rescale ran and nothing
+    // underflowed. The run reports the condition rather than the argument,
+    // because the layer bound is instance-dependent.
     constexpr double kExactLimit = 9007199254740992.0;   // 2^53
     result.exact = weights.trivial() && !result.rescaled && !result.underflowed &&
                    result.maxLayerSum < kExactLimit;
 
+    // scale.apply is ldexp, which rounds once and saturates. Multiplying by
+    // exp(scale.exponent * ln 2) would overflow the intermediate past 709 even
+    // where the product itself is representable.
     result.total = total > 0 ? scale.apply(total) : 0.0;
     result.logTotal =
         total > 0 ? scale.log(total) : -std::numeric_limits<double>::infinity();
@@ -497,24 +492,13 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
 
     using Layer = std::vector<std::pair<Key, double>>;
 
-    // Forward, keeping only the column boundaries. Everything between them is
+    // Forward, keeping only the column boundaries; the cells between them are
     // replayed later, which is what keeps this inside memory.
     //
-    // Rescaling is deliberately absent here. The backward pass has to combine f
-    // and b from the same layer, and a per-layer scale would have to be undone
-    // consistently on both sides; the marginal is a ratio, so any global scale
-    // cancels, but a per-layer one does not. Callers whose weights leave a double
-    // should use the recount path, which divides two equally scaled counts and so
-    // survives weights this cannot hold.
-    //
-    // Overflow is loud. Underflow is not, and it is the direction this fails in:
-    // f and b are each representable while the product f * b is not, and the
-    // marginals come back inside [0, 1] with nothing wrong on the face of them.
-    // With a uniform weight of 1e-13 on a 5x5 {3,2,2} board, where the weight
-    // cancels in every ratio and the answer must not move at all, they move by
-    // 0.047; at 1e-14 they are all zero while the recount is still right to 2e-14.
-    // So the multiply is watched, and a sweep that has lost a configuration says
-    // so rather than returning the part it kept.
+    // No rescaling. A global scale cancels in the marginal, a per-layer one does
+    // not, and the backward pass combines f and b across layers. So the products
+    // are watched instead and a lossy sweep refuses; weights that need scaling
+    // belong on the recount path, which divides two equally scaled counts.
     std::vector<Layer> boundary(static_cast<std::size_t>(W) + 1);
     double total = 0;
     bool underflowed = false;
@@ -600,14 +584,10 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
                 });
                 if (completions != 0) bCur.add(e.first, completions);
             }
-            // Everything that did not leave the cell empty occupied it.
-            //
-            // A cell the constraints have already settled is written straight
-            // in. Deriving it from this subtraction is correct in exact
-            // arithmetic but leaves about one ulp of dust in floating point,
-            // because total and emptyFlow are the same sum accumulated in
-            // different orders. A cell known to be empty has posterior zero, not
-            // 1.6e-16, and saying so costs nothing.
+            // Whatever did not leave the cell empty occupied it. A settled
+            // cell is written directly: total and emptyFlow are one sum in two
+            // orders, so the subtraction leaves an ulp of dust where the answer
+            // is exactly 0 or 1.
             const CellConstraint settled = constraints.cells[cell];
             if (settled == CellConstraint::MustBeEmpty) {
                 out[cell] = 0.0;

@@ -78,7 +78,6 @@ def ladder(bounds, best):
                .format(x(bounds["waterfilling"]), y - 9,
                        x(best) - x(bounds["waterfilling"])))
 
-    # Axis.
     out.append('<line x1="{:.1f}" y1="{}" x2="{:.1f}" y2="{}" class="axis"/>'
                .format(pad, y, w - pad, y))
     for t in range(0, 51, 10):
@@ -188,9 +187,9 @@ def rows_table(head, rows):
     out = ['<div class="tw"><table><thead><tr>']
     out += ["<th>{}</th>".format(esc(h)) for h in head]
     out.append("</tr></thead><tbody>")
-    # A cell is either plain text this file wrote, or markup this file generated
-    # (a chip, or a number carrying &thinsp;). Nothing here comes from outside the
-    # repository, so the test is simply whether the cell already contains markup.
+    # A cell holds either plain text or markup this file generated, a chip or a
+    # number carrying &thinsp;. Nothing reaches here from outside the repository,
+    # so testing for markup is enough to decide whether to escape.
     def cell(c):
         raw = isinstance(c, str) and ("<" in c or "&" in c)
         return "<td>{}</td>".format(c if raw else esc(c))
@@ -284,7 +283,6 @@ def build(d):
     ]))
     w("</section>")
 
-    # Counting.
     w('<section><h2>Counting</h2>')
     w('<p class="lede">The same sweep, parameterised by board size and by ruleset. '
       "Every figure is an exact integer, cross-checked against literal enumeration "
@@ -306,7 +304,6 @@ def build(d):
     ]))
     w("</section>")
 
-    # Policies.
     w('<section><h2>What policies actually score</h2>')
     w('<p class="lede">Twenty thousand games on one seeded board pool, common '
       "random numbers throughout, TRAIN fold. These are the only estimates on the "
@@ -374,7 +371,6 @@ def build(d):
       "does.</p>")
     w("</section>")
 
-    # Adversary.
     adv = sorted(fam(R, "adversary"), key=lambda r: r["configurations"])
     w('<section><h2>Against a hider who never commits</h2>')
     w('<p class="lede">Expected shots assume the board was fixed before play. '
@@ -399,7 +395,6 @@ def build(d):
                   for c in d["crossChecks"]]))
     w("</section>")
 
-    # Retractions.
     w('<section class="retract"><h2>Results that contradicted the plan</h2>')
     w('<p class="lede">Four investigations ended by refuting the thing that asked '
       "for them. Each is recorded with the measurement that settled it, so the "
@@ -421,7 +416,6 @@ def build(d):
     ]))
     w("</section>")
 
-    # Provenance.
     w('<section><h2>Provenance</h2>')
     w('<p class="lede">{}</p>'.format(esc(d["note"])))
     srcs = {}
