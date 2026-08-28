@@ -17,6 +17,29 @@ hit. The entropy bound of 13.08 shots falls below the coverage bound of 17, so
 coverage is what binds, and playing for information is measurably worse than
 playing for coverage.
 
+## Quick start
+
+Everything, from a clean checkout to the report open in a browser.
+
+```sh
+git clone https://github.com/Canon-Regularis/mayflower && cd mayflower
+
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release  
+cmake --build build                                       
+ctest --test-dir build -L fast                            # 15 tests
+
+./build/omega0            # 15,046,987,768 and 1,925,751,392, plus the lattice
+./build/bounds            # the ladder, and the interval [24.088, 44.369]
+./build/optimal           # exact optimal play, and the price of each objective
+
+mkdir -p out
+./build/report_data 20000 > out/figures.json              
+python tools/render_report.py out/figures.json out/report.html
+python tools/collect_results.py && python tools/render_results.py
+```
+
+Then open `out/report.html`. It is one self-contained file and needs no server.
+
 ## Build
 
 C++20, CMake >= 3.24, Ninja. Developed against MinGW-w64 GCC 13.2 on Windows.
