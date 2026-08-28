@@ -236,6 +236,51 @@ int main(int argc, char** argv) {
     out += "\n  ],\n";
     std::fprintf(stderr, "blocking witnesses done\n");
 
+    // ---- opening book: the greedy line down the all-miss branch -----------
+    // The recommended rule is "shoot the highest posterior marginal". Its play is
+    // adaptive, so there is no fixed order, but there is a principal variation:
+    // the line it follows while every answer is a miss. That is the branch the
+    // opening spends most of its time on, since the best first cell is a miss
+    // 78.6% of the time, and it is the closest thing to a ranking of the cells.
+    //
+    // The line ends by itself. Once a cell has marginal 1 every surviving board
+    // occupies it, so the miss branch is empty and the next shot is a forced hit.
+    out += "  \"openingBook\": [";
+    {
+        std::vector<CellConstraint> cells(static_cast<std::size_t>(inst.cellCount()),
+                                          CellConstraint::Free);
+        bool firstStep = true;
+        for (int step = 0; step < inst.cellCount(); ++step) {
+            std::uint64_t bookTotal = 0;
+            Constraints c;
+            c.cells = cells;
+            const std::vector<std::uint64_t> bookOcc = occupancyMap(inst, c, bookTotal);
+            if (bookTotal == 0) break;
+
+            int best = -1;
+            double bestP = -1.0;
+            for (int i = 0; i < inst.cellCount(); ++i) {
+                if (cells[static_cast<std::size_t>(i)] != CellConstraint::Free) continue;
+                const double pr = static_cast<double>(bookOcc[static_cast<std::size_t>(i)]) /
+                                  static_cast<double>(bookTotal);
+                if (pr > bestP) { bestP = pr; best = i; }
+            }
+            if (best < 0) break;
+
+            if (!firstStep) out += ", ";
+            out += "\n    {\"cell\": " + std::to_string(best) +
+                   ", \"p\": " + num(bestP, 6) +
+                   ", \"omega\": " + std::to_string(bookTotal) + "}";
+            firstStep = false;
+
+            // A marginal of 1 means the miss branch is empty: the line stops here.
+            if (bestP >= 1.0) break;
+            cells[static_cast<std::size_t>(best)] = CellConstraint::MustBeEmpty;
+        }
+    }
+    out += "\n  ],\n";
+    std::fprintf(stderr, "opening book done\n");
+
     // ---- the order-dependence counterexample ------------------------------
     // Two histories over the same shots in a different order, each with the
     // posterior the engine actually computes for it.
