@@ -197,6 +197,13 @@ set_tests_properties(engine_js PROPERTIES LABELS "fast")
 add_test(NAME scrubber_js COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE}
          ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scrubber_js.py)
 set_tests_properties(scrubber_js PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+
+# The live widget runs the sweep in the page and nothing ran it either. Its
+# playback chained timeouts without keeping the handle, so a pause left one
+# scheduled and resuming inside the period ran two chains at once.
+add_test(NAME live_js COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE}
+         ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_live_js.py)
+set_tests_properties(live_js PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
 endif()
 
 add_executable(test_weighted tests/test_weighted.cpp)
