@@ -62,6 +62,10 @@
   // ---- state --------------------------------------------------------------
   let truth = 0, history = [], survivors = [], posterior = new Float64Array(CELLS);
   let omega = 0, exactMode = false, reveal = false, playing = false, finished = false;
+  // The pending tick, so a pause can cancel it. Without the handle a paused
+  // chain stays scheduled, and pressing Play again inside one period leaves it
+  // running beside the new one, each toggle adding another recompute per tick.
+  let playTimer = null;
 
   const MISSV = 0, HITV = 1, SUNKV = 2;
 
@@ -191,10 +195,12 @@
   btnPlay.addEventListener("click", () => {
     playing = !playing;
     render();
+    if (playTimer) { clearTimeout(playTimer); playTimer = null; }
     const tick = () => {
+      playTimer = null;
       if (!playing || finished) { playing = false; return render(); }
       step();
-      if (playing && !finished) setTimeout(tick, 260);
+      if (playing && !finished) playTimer = setTimeout(tick, 260);
       else render();
     };
     if (playing) tick();
