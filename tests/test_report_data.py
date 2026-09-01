@@ -122,6 +122,22 @@ def main():
     agrees = all((last[c] == 255) == (truth[c] == 1) for c in range(n))
     check(agrees, "the last frame is the hidden board")
 
+    # Misses fired once the record already names the board. The report reads
+    # this column as a property of the information objective, which holds only
+    # while the other two rules score a cell they are certain of highest. A
+    # tie-break change in either of them would break that reading silently.
+    obj = fig.get("objectives", [])
+    if obj and "maxInfoWaste" in obj[0]:
+        dirty = [r["instance"] for r in obj
+                 if r["densityWaste"] != 0.0 or r["maxProbWaste"] != 0.0]
+        check(not dirty, "density and max-P(hit) never shoot a determined board",
+              "waste on {}".format(dirty))
+
+        loose = [r["instance"] for r in obj
+                 if not 0.0 <= r["maxInfoWaste"] <= r["maxInfo"] - r["optimal"] + 1e-9]
+        check(not loose, "the information rule's waste fits inside its loss",
+              "outside on {}".format(loose))
+
     print("\n" + ("FAILED" if failures else "all checks passed"))
     return 1 if failures else 0
 

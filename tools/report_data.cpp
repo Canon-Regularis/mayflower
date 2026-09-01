@@ -210,7 +210,10 @@ int main(int argc, char** argv) {
                ", \"optimal\": " + num(opt.expectedShots) +
                ", \"density\": " + num(d.expectedShots) +
                ", \"maxProb\": " + num(a.expectedShots) +
-               ", \"maxInfo\": " + num(b.expectedShots) + "}";
+               ", \"maxInfo\": " + num(b.expectedShots) +
+               ", \"densityWaste\": " + num(d.missesAfterCertainty) +
+               ", \"maxProbWaste\": " + num(a.missesAfterCertainty) +
+               ", \"maxInfoWaste\": " + num(b.missesAfterCertainty) + "}";
         firstSmall = false;
         std::fprintf(stderr, "objectives %s done\n", si.describe().c_str());
     }

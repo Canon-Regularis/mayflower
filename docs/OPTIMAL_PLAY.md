@@ -44,6 +44,27 @@ than 0.16 shots, so it is a strong heuristic and provably not the optimum.
 Maximising one-step information gain is worse by whole shots: on 5x4 {3} it takes
 13.09 against an optimum of 6.23.
 
+Almost all of that is spent after the game is decided. A shot's information is
+the entropy of its answer, so a cell whose answer the record already fixes is
+worth zero bits. Once the sweep returns a single configuration every unshot cell
+scores alike, the tie in `ExactPolicy` falls to the lowest index, and the rule
+sweeps the board while the located ship sits unshot. `tools/optimal` measures the
+misses fired from that point on:
+
+```text
+instance      max-info gap   misses after the board is determined
+3x3 {2}             1.0000   1.0000
+4x3 {2}             1.4706   1.4706
+4x4 {2}             1.9167   1.9167
+4x4 {3}             4.8750   4.7500
+5x4 {3}             6.8636   6.6818
+4x4 {2,2}           2.7321   2.6384
+4x4 {3,2}           3.9091   3.6780
+```
+
+Density and max-P(hit) fire none on any of them, because a cell they are certain
+of still scores highest.
+
 The belief MDP's memo key is a shot mask plus the surviving support, which is
 already the sufficient statistic, so no order-aware transposition table is needed.
 Pruning is star1's chance-node bound with move ordering by descending hit
@@ -52,6 +73,8 @@ probability, worth a factor of 158 on the fleet instances.
 ## Self-play
 
 One seeded pool of uniform boards, 20,000 games, every policy on the same boards.
+`tools/selfplay` drew this pool; `out/figures.json` reports a second pool of the
+same size, so the two sets of means differ inside their intervals.
 
 ```text
 policy                   mean      sd     95% CI on mean  median    p95   best  worst

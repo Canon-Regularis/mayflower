@@ -91,6 +91,13 @@ void testUnconstrained() {
         {4, 4, {3, 2}},   {5, 5, {3, 2, 2}}, {5, 5, {4, 3, 2}}, {6, 6, {3, 3, 2}},
         {6, 6, {4, 3, 2}}, {5, 5, {3, 3, 2, 2}}, {4, 6, {3, 2}}, {7, 5, {4, 3, 2}},
         {8, 8, {5, 4, 3, 3, 2}},
+        // Length 1 is where the rungs can differ without any of them being
+        // obviously wrong: a single cell has one placement, and a rung that
+        // emits it from both the horizontal and the vertical branch returns
+        // 2^k times the truth. Every case above has L >= 2, so this test
+        // asserted bit-identical output over inputs that could not distinguish
+        // them.
+        {4, 4, {1, 1}}, {5, 4, {3, 1}}, {3, 3, {1, 1, 1}},
     };
     for (const Case& c : cases) {
         const Instance inst(c.w, c.h, c.fleet);

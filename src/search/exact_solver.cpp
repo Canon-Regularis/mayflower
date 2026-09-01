@@ -312,6 +312,28 @@ ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimi
     return out;
 }
 
+namespace {
+
+// Replay a finished record, counting the misses fired after the sweep first
+// returns 1. Prefixes are recounted rather than tracked incrementally: these
+// instances hold at most a few hundred configurations, and reusing the ordered
+// constraint path keeps the SUNK semantics identical to the ones under test.
+int missesAfterCertainty(const Instance& inst, const History& full) {
+    History prefix(inst);
+    int wasted = 0;
+    bool certain = false;
+    for (int cell : full.sequence()) {
+        if (certain && full.outcome(cell) == Outcome::Miss) ++wasted;
+        prefix.add(cell / inst.width, cell % inst.width, full.outcome(cell),
+                   full.sunkLength(cell));
+        if (!certain && countConfigurations(inst, constraintsFrom(inst, prefix)).count == 1)
+            certain = true;
+    }
+    return wasted;
+}
+
+}  // namespace
+
 PolicyExpectation exactPolicyExpectation(const Instance& inst, Policy& policy,
                                         std::uint64_t seed) {
     const auto t0 = std::chrono::steady_clock::now();
@@ -322,13 +344,17 @@ PolicyExpectation exactPolicyExpectation(const Instance& inst, Policy& policy,
     out.configurations = total;
     out.best = inst.cellCount() + 1;
     std::uint64_t sum = 0;
+    std::uint64_t wasted = 0;
     for (std::uint64_t r = 0; r < total; ++r) {
-        const int shots = playGame(inst, sampler.unrank(r), policy, seed).shots;
+        History record(inst);
+        const int shots = playGameTraced(inst, sampler.unrank(r), policy, seed, record).shots;
         sum += static_cast<std::uint64_t>(shots);
+        wasted += static_cast<std::uint64_t>(missesAfterCertainty(inst, record));
         out.worst = std::max(out.worst, shots);
         out.best = std::min(out.best, shots);
     }
     out.expectedShots = static_cast<double>(sum) / static_cast<double>(total);
+    out.missesAfterCertainty = static_cast<double>(wasted) / static_cast<double>(total);
     out.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     return out;
 }

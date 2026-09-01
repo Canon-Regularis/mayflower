@@ -129,6 +129,17 @@ def core(results):
                 instance=o["instance"], metric="E[T] under " + label,
                 value=o[key], unit="shots", exact=True, note=label,
                 configurations=o["configurations"])
+        # Where the loss goes. Exact, since every board is enumerated.
+        for key, label in (("maxInfoWaste", "max information gain"),
+                           ("maxProbWaste", "max hit probability"),
+                           ("densityWaste", "density")):
+            if key not in o:
+                continue
+            add(family="waste", id="waste-{}-{}".format(o["instance"], key),
+                instance=o["instance"],
+                metric="misses after the board is determined, " + label,
+                value=o[key], unit="shots", exact=True, note=label,
+                configurations=o["configurations"])
 
 
 def m9(results):

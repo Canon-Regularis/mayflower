@@ -135,7 +135,7 @@ def bound_ladder(bounds, policies):
     out.append(text(w / 2, h - 6, "expected shots to clear the board", "axtitle"))
 
     rows = [
-        ("entropy bound", bounds["entropy"], "--muted-ink", "vacuous: below the coverage bound"),
+        ("entropy bound", bounds["entropy"], "--muted-ink", "dominated: below the coverage bound"),
         ("coverage bound", float(bounds["coverage"]), "--ink-2", "all 17 ship cells must be shot"),
         ("water-filling bound", bounds["waterfilling"], "--series-1", "binding: proved by transcript counting"),
     ]

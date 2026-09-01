@@ -543,7 +543,7 @@ def build(data, out_path):
 
     # 3 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">Three / the bound</div>')
-    w("<h2>The entropy bound is vacuous, and coverage is what binds</h2>")
+    w("<h2>The entropy bound is dominated, and coverage is what binds</h2>")
     w('<p class="lede">Identifying the board takes {:.2f} bits. Each shot answers over an '
       "alphabet of six, {{MISS, HIT, SUNK(2..5)}}, worth at most log&#8322;6 = {:.4f} bits, "
       "so a game of {:.2f} shots has a channel capacity of <b>{:.1f}</b> bits against the "
@@ -585,14 +585,21 @@ def build(data, out_path):
           sum(1 for r in obj if abs(r["maxProb"] - r["optimal"]) < 1e-9), len(obj),
           max(r["maxProb"] - r["optimal"] for r in obj),
           worst["maxInfo"] - worst["optimal"], esc(worst["instance"])))
-    w("<p>The mechanism is visible in the objective itself. For a cell that cannot sink a "
-      "ship the answer is binary, so the information a shot yields is H(p) in the cell's "
-      "occupancy probability, and H peaks at p = 1/2. Below a half the two objectives "
-      "agree, which is why they tie at turn 0, where the largest marginal is {:.4f}. They "
-      "part in target mode. A cell beside a hit can pass a half, and past it H falls: at "
-      "p = 0.9 a shot is worth {:.2f} bits against 1.00 for a coin flip. The information "
-      "objective then declines the cell it is most sure of, which is the one coverage "
-      "most wants.</p></div>".format(max(prior_p), BIN_H_09))
+    w("<p>Where a cell cannot sink a ship its answer is binary, so a shot yields H(p) in "
+      "the cell's occupancy probability, and H peaks at p = 1/2. Below a half the two "
+      "objectives agree, which is why they tie at turn 0, where the largest marginal is "
+      "{:.4f}. They part in target mode: a cell beside a hit can pass a half, and past it "
+      "H falls, so at p = 0.9 a shot is worth {:.2f} bits against 1.00 for a coin "
+      "flip.</p>".format(max(prior_p), BIN_H_09))
+    w("<p>The loss sits somewhere else. Entropy is zero once the answer is settled, so "
+      "when the record has narrowed the board to one configuration every unshot cell "
+      "scores alike and the tie falls to the lowest index. On {} the information rule "
+      "fires <b>{:.2f} misses per game</b> at a board it has already determined, against "
+      "a total loss of {:.2f} shots. It locates the ship and then leaves it. The other "
+      "two rules fire none, on any instance here: a cell they are certain of still scores "
+      "highest.</p></div>".format(
+          esc(worst["instance"]), worst.get("maxInfoWaste", 0.0),
+          worst["maxInfo"] - worst["optimal"]))
     w('<figure><div class="plate">')
     w(objective_bars(obj))
     w("</div><figcaption><b>Exact price of each objective.</b> Expected shots on instances "
@@ -642,8 +649,9 @@ def build(data, out_path):
           "lighter earlier.</figcaption></figure>")
     w("</div>")
 
-    w("<p>The density policy hard-codes no geometry. It scores a cell by how many "
-      "placements of the remaining fleet still cover it, and shoots the highest. That is "
+    w("<p>The density policy hard-codes no geometry. It scores a cell by the placements "
+      "of the remaining fleet covering it, each weighted by the open hits it touches, "
+      "which while nothing is wounded is a plain count, and shoots the highest. That is "
       "enough to recover the prior: its mean shot turn against the exact prior marginals "
       "runs to a rank correlation of {:+.3f}, and it opens on the centre cell at mean turn "
       "{:.2f} while reaching the far corner at {:.2f}. The 2.67-to-1 centre-to-corner ratio "
@@ -668,8 +676,9 @@ def build(data, out_path):
       "board can be skipped without risking a miss. Its coverage is that restriction, "
       "{:.1%} of games on even cells against {:.1%} on odd, a ratio of {:.2f}.</p>".format(
           par_ev, par_od, par_ev / par_od))
-    w("<p>The density policy encodes no geometry. It scores each cell by the number of "
-      "remaining-fleet placements covering it and shoots the maximum. Its colour classes "
+    w("<p>The density policy encodes no geometry. It scores each cell by the "
+      "remaining-fleet placements covering it, weighted by the open hits each touches, "
+      "and shoots the maximum. Its colour classes "
       "separate by a factor of {:.2f} in coverage and by {:+.2f} turns in order, against "
       "{:.2f} and {:+.2f} for the parity policy. What the density map shows instead is the "
       "centre gradient of the marginal above it: every game at the middle cell, {:.1%} at "
@@ -743,7 +752,7 @@ def build(data, out_path):
                   for g in col for i in range(len(g["outcomes"]))
                   if g["outcomes"][i] == 2 and g["omega"][i + 1] > 0)
     w("<p>The decrease is not smooth. A sinking announcement fixes a whole ship at once, "
-      "and the largest single step here removes <b>{:.2f}</b> orders of magnitude, at shot "
+      "and the largest step at a sink removes <b>{:.2f}</b> orders of magnitude, at shot "
       "{} of game {}. The marked points are sinks.</p></div>".format(
           biggest[0], biggest[2], biggest[1]))
     w('<figure><div class="plate">')
@@ -784,7 +793,9 @@ def build(data, out_path):
     # 7, the conclusion --------------------------------------------------
     zero_prob = sum(1 for r in obj if abs(r["maxProb"] - r["optimal"]) < 1e-9)
     worst_prob = max(r["maxProb"] - r["optimal"] for r in obj)
-    worst_info = max(r["maxInfo"] - r["optimal"] for r in obj)
+    worst_row = max(obj, key=lambda r: r["maxInfo"] - r["optimal"])
+    worst_info = worst_row["maxInfo"] - worst_row["optimal"]
+    worst_waste = worst_row.get("maxInfoWaste", 0.0)
     gap = best["mean"] - b["waterfilling"]
 
     w('<section><div class="col"><div class="act">Seven / the strategy</div>')
@@ -802,12 +813,13 @@ def build(data, out_path):
       "forward and one backward pass return together.</p>".format(zero_prob, worst_prob))
 
     w("<p><b>Do not select on information.</b> Maximising one-step information gain costs "
-      "up to <b>{:.4f} shots</b>, more than doubling the optimum on 5x4 {{3}}. The reason "
-      "is structural rather than incidental: the yield of a binary answer is H(p), which "
-      "peaks at p = 1/2, so an information rule turns away from a cell exactly when the "
-      "evidence starts to favour it. Identification is not the scarce resource here. A "
-      "game of {:.2f} shots carries {:.1f} bits against the {:.2f} needed to name the "
-      "board.</p>".format(worst_info, best["mean"], best["mean"] * LOG2_6, m["entropyBits"]))
+      "up to <b>{:.4f} shots</b>, more than doubling the optimum on 5x4 {{3}}. A shot's "
+      "information is the entropy of its answer, and that is zero once the posterior "
+      "settles it, so a located ship scores nothing and the rule walks away from it: "
+      "{:.2f} of those lost shots are fired at a board the record already names. "
+      "Identification is not the scarce resource here. A game of {:.2f} shots carries "
+      "{:.1f} bits against the {:.2f} needed to name the board.</p>".format(
+          worst_info, worst_waste, best["mean"], best["mean"] * LOG2_6, m["entropyBits"]))
 
     w("<p><b>Recompute every turn.</b> Fixing the shot order in advance costs between "
       "1.31 and 2.09 times the adaptive optimum on the instances where both are solved. "
@@ -830,9 +842,9 @@ def build(data, out_path):
 
     w("<p>What none of this settles is the size of what remains. The certified floor is "
       "<b>{:.3f}</b> and the best rule measured here is <b>{:.2f}</b>, leaving "
-      "<b>{:.2f} shots</b> unaccounted for. That interval contains both the true optimum "
-      "and the loss of the rule against it, and nothing in these results separates the "
-      "two. A better policy and a better lower bound would look identical from "
+      "<b>{:.2f} shots</b> unaccounted for. That width is the slack in the bound plus "
+      "the loss of the rule against the true optimum, and nothing in these results says "
+      "how it divides. A better policy and a better lower bound would look identical from "
       "here.</p>".format(b["waterfilling"], best["mean"], gap))
 
     w("<p>Two cautions on reading the ranking. The density and parity curves cross in the "
@@ -887,9 +899,10 @@ def build(data, out_path):
     w("<li><b>Open on the centre and work outward along the diagonal.</b> That is the line "
       "above, and the {} cells it names guarantee contact.</li>".format(len(book) or 22))
     w("<li><b>Never pick a shot by information gain.</b> Up to {:.2f} shots worse, because "
-      "the yield of a binary answer peaks at probability one half and so falls exactly "
-      "where the evidence is strongest.</li>".format(
-          max(r["maxInfo"] - r["optimal"] for r in obj)))
+      "a settled answer is worth zero bits, so the rule locates a ship and then spends "
+      "{:.2f} misses a game on a board it has already solved.</li>".format(
+          max(r["maxInfo"] - r["optimal"] for r in obj),
+          max(r.get("maxInfoWaste", 0.0) for r in obj)))
     w("<li><b>Counting placements is a good substitute if you cannot afford a "
       "posterior.</b> {:.2f} shots against a certified floor of {:.2f}, with no sweep "
       "required.</li>".format(best["mean"], b["waterfilling"]))

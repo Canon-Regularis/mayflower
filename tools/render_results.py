@@ -409,10 +409,14 @@ def build(d):
          "Oracle gain 1.14 shots, captured in full by fitting one parameter"],
         ["Constraint density would show an easy-hard-easy cost profile",
          "The counting sweep has no hard region",
-         "Cost falls monotonically; only the backtracking search peaks"],
+         "Sweep cost peaks where the record is loosest; only the search peaks in the middle"],
         ["Move ordering would trade against the pruning bound",
          "It is worth 158x where the search is expensive",
          "m9 self-test: 66 s with it, 10,490 s without"],
+        ["The information rule loses by turning away from cells past p = 1/2",
+         "It loses by not shooting cells it is certain of",
+         "94% or more of the gap is misses fired after the record already "
+         "names the board; the other two rules fire none"],
     ]))
     w("</section>")
 

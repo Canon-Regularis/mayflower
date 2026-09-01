@@ -36,7 +36,7 @@ int main() {
     std::printf("E2  entropy            %6.2f shots   exact: H = %.4f bits over an alphabet of %d\n",
                 entropyBound, h0, k::kOutcomeAlphabetSize);
     std::printf("                                     E2 < E1, so counting ship cells is the\n");
-    std::printf("                                     stronger constraint and E2 is vacuous.\n\n");
+    std::printf("                                     stronger constraint, dominating E2.\n\n");
 
     const auto wf = waterFillingBound(inst.fleet, k::kOmega0, inst.cellCount());
     std::printf("E4  water-filling      %6.4f shots   exact, given the transcript-counting argument\n",

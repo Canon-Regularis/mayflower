@@ -208,7 +208,9 @@ CountResult countConfigurationsFast(const Instance& inst, const Constraints& con
             for (int li = 0; li < nL; ++li) {
                 const int L = lengths[static_cast<std::size_t>(li)];
                 const bool fitsH = col + L <= W;
-                const bool fitsV = row + L <= H;
+                // A length-1 ship starts horizontally only; both branches would
+                // emit the same single cell. See profile_dp.hpp.
+                const bool fitsV = L > 1 && row + L <= H;
                 useH[static_cast<std::size_t>(li)] =
                     (fitsH && (allowH == nullptr || allowH[li])) ? 1u : 0u;
                 useV[static_cast<std::size_t>(li)] =

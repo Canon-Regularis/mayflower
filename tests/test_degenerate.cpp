@@ -58,7 +58,7 @@ std::uint64_t binomial(int n, int k) {
 void testSingleCellFleets() {
     std::printf("[fleets of length-1 ships, against the closed form]\n");
     int agreed = 0, trials = 0;
-    bool weightedOk = true, blockedOk = true;
+    bool weightedOk = true, blockedOk = true, fastOk = true;
 
     struct Case { int w, h, ships; };
     for (const Case& c : std::vector<Case>{{2, 2, 1}, {3, 3, 1}, {3, 3, 2}, {3, 3, 3},
@@ -74,16 +74,20 @@ void testSingleCellFleets() {
                         static_cast<unsigned long long>(got), c.w * c.h, c.ships,
                         static_cast<unsigned long long>(want));
 
-        // The other two free-placement sweeps have to say the same thing.
+        // Every other free-placement sweep has to say the same thing. The fast
+        // rung is here because it was the one this test did not reach, and it
+        // kept the double count after the other four were fixed.
         const double wsum = weightedCount(inst, Weights::uniform()).total;
         if (wsum != static_cast<double>(want)) weightedOk = false;
         if (countConfigurationsBlocked(inst, 4).count != want) blockedOk = false;
+        if (countConfigurationsFast(inst).count != want) fastOk = false;
     }
     char buf[128];
     std::snprintf(buf, sizeof buf, "%d/%d single-cell fleets match C(n,k)", agreed, trials);
     check(agreed == trials, buf);
     check(weightedOk, "the weighted sweep agrees on every one");
     check(blockedOk, "the blocked sweep agrees on every one");
+    check(fastOk, "the fast rung agrees on every one");
 }
 
 // The no-touching count of k single cells is an independent set of size k in the
@@ -124,7 +128,8 @@ void testMixedFleets() {
         ++trials;
         if (got == want &&
             weightedCount(inst, Weights::uniform()).total == static_cast<double>(want) &&
-            countConfigurationsBlocked(inst, 3).count == want)
+            countConfigurationsBlocked(inst, 3).count == want &&
+            countConfigurationsFast(inst).count == want)
             ++agreed;
         else
             std::printf("      %s: %llu against %llu enumerated\n", inst.describe().c_str(),
@@ -132,7 +137,7 @@ void testMixedFleets() {
                         static_cast<unsigned long long>(want));
     }
     char buf[128];
-    std::snprintf(buf, sizeof buf, "%d/%d mixed fleets agree across all three sweeps",
+    std::snprintf(buf, sizeof buf, "%d/%d mixed fleets agree across all four sweeps",
                   agreed, trials);
     check(agreed == trials, buf);
 }

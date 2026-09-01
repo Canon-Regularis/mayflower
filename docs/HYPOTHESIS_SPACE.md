@@ -1,7 +1,8 @@
 # The hypothesis space
 
 The size of the configuration set, the exact prior it induces, and how both grow
-with the board. Every integer here is exact.
+with the board. Every count here is exact; the sampler figures at the end are
+measured.
 
 Part of [Mayflower](../README.md).
 
@@ -43,4 +44,4 @@ Board-size scaling of the same fleet, by the same DP:
 Boards are drawn by unranking, at 19,767 per second after a 20 s build. Over
 200,000 draws the largest per-cell deviation from the exact marginal is 0.0022,
 which is sampling noise at that size. A biased generator would poison every
-statistic below, so this is a gate rather than a diagnostic.
+statistic drawn from a board pool, so this is a gate rather than a diagnostic.

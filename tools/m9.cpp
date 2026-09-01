@@ -389,10 +389,13 @@ void phaseTransition() {
     sweepDensity(Instance(7, 7, {5, 4, 3, 2}), 24, 16, 2, 120);
     sweepDensity(Instance(8, 8, {5, 4, 3, 3, 2}), 34, 20, 2, 40);
 
-    std::printf("  Below the threshold nearly every record is satisfiable and the sweep\n");
-    std::printf("  carries a wide state set to the end. Above it nearly none are, and the\n");
-    std::printf("  sweep dies early. The expensive records sit at the edge, which is the\n");
-    std::printf("  easy-hard-easy shape random satisfiability shows.\n");
+    std::printf("  The two engines answer the same records and disagree about which are\n");
+    std::printf("  expensive. Search cost peaks in the middle, where a record is neither\n");
+    std::printf("  clearly satisfiable nor clearly not, which is the easy-hard-easy shape\n");
+    std::printf("  random satisfiability shows. Sweep cost is highest where the record is\n");
+    std::printf("  loosest and broadly falls as it tightens: a counting sweep never\n");
+    std::printf("  backtracks, so a constraint removes work rather than adding it, and the\n");
+    std::printf("  hardest record decides faster than the empty one.\n");
 }
 
 void bimaruCost() {

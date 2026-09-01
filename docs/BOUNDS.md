@@ -11,8 +11,8 @@ E2  entropy         13.0790 shots   33.8088 bits over an outcome alphabet of 6
 E4  water-filling   24.0876 shots   by transcript counting
 ```
 
-E2 falls below E1, so the entropy bound is vacuous and counting ship cells is the
-stronger constraint.
+E2 falls below E1, so the entropy bound is dominated and counting ship cells is
+the stronger constraint.
 
 Water filling is the strongest rung established here. Against a deterministic
 policy the map from configuration to transcript is injective, since the
@@ -23,9 +23,11 @@ transcript is fixed by choosing the positions of the other 16 among the first
 
 ```text
 P(T <= t) <= K * C(t,17) / N        E[T] >= sum_t max(0, 1 - K*C(t,17)/N)
+
+N = |Omega_0| = 15,046,987,768        K = 28,560 announcement strings
 ```
 
-`K = 28,560`, computed by determinising the automaton over per-ship hit counts,
+`K` is computed by determinising the automaton over per-ship hit counts,
 since several hit-to-ship assignments collapse to one announcement string and
 counting interleavings would over-count. The sum saturates at depth 25.
 
@@ -54,5 +56,6 @@ check. What it does obey there is the **non-adaptive** optimum, and an adaptive
 searcher has a tree of shot-sets where the non-adaptive one has a single set.
 `tools/maxcover selftest` holds this as a negative regression.
 
-Unresolved interval `[24.088, 44.369]`, a gap of 20.3 shots. Water filling closes
+Unresolved interval `[24.088, 44.369]`, water filling to the best measured
+policy, a gap of 20.3 shots. Water filling closes
 25.9% of the distance from the coverage bound to the best measured policy.

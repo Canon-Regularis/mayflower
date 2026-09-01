@@ -102,9 +102,9 @@ jobs:
               || { echo "$t is missing: CMake did not find its interpreter"; exit 1; }
           done
 
-      # out/ is generated and not in the repository, so the two tests that read
-      # out/figures.json report Skipped here. The nightly workflow generates it
-      # and runs them for real.
+      # out/ is generated and not in the repository, so report_data, results and
+      # scrubber_js report Skipped here. The nightly workflow generates it and
+      # runs them for real.
       - name: Test
         run: ctest --test-dir build -L fast --output-on-failure --no-tests=error
 

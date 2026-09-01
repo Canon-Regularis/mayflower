@@ -78,6 +78,15 @@ struct PolicyExpectation {
     int best = 0;
     std::uint64_t configurations = 0;
     double seconds = 0;
+
+    // Misses fired per game once the record already names the board, which is
+    // the point at which the sweep returns 1. Nothing is left to learn there,
+    // so these separate a rule that chooses badly under uncertainty from one
+    // that stops choosing at all. Information gain does the second: the score
+    // is the entropy of the answer, which is zero when the answer is known, so
+    // a located ship ties with every empty cell and the tie goes to the lowest
+    // index.
+    double missesAfterCertainty = 0;
 };
 
 PolicyExpectation exactPolicyExpectation(const Instance& inst, Policy& policy,

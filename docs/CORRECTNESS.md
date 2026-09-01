@@ -1,7 +1,6 @@
 # Correctness
 
-What is checked against what, and the two hazards that a change to the engine
-has to respect.
+What is checked against what, and what a change to the engine has to respect.
 
 Part of [Mayflower](../README.md).
 
@@ -25,7 +24,7 @@ shares no code with it or the C++. The invariant
 `sum over cells of P(cell occupied) = shipCells` holds in exact integers
 throughout.
 
-Two things to know before changing the engine:
+Three things to know before changing the engine:
 
 **Indistinguishable ships need no correction.** The fleet counter records how many
 ships of each length have been started, never which, so the DP counts unordered
@@ -35,4 +34,11 @@ physical boards. There is no division by `2!`.
 ship, so the rest of it was already hit. A predicate requiring only
 `cells(ship) subset-of HIT` over-counts, 26 against a true 22 on a reproduced 5x5
 case, and two orderings of one shot multiset give 41 and 53. Memo keys must be
-order-aware. See [docs/ORDER_DEPENDENCE.md](ORDER_DEPENDENCE.md).
+order-aware. See [ORDER_DEPENDENCE.md](ORDER_DEPENDENCE.md).
+
+**A length-1 ship starts horizontally only.** Both branches of the cell sweep
+would emit the same single cell, so a rung without the `L > 1` guard returns
+`2^k` times the truth on a fleet of `k` single cells. Five of the six sweeps
+shipped without it. The ladder compares the rungs against each other, and every
+case in its list had `L >= 2`, so it could not distinguish them; the list now
+carries single-cell fleets.

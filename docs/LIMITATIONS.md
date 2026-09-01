@@ -18,9 +18,10 @@ Part of [Mayflower](../README.md).
   forward-backward detects the case and throws rather than returning marginals
   that are inside [0, 1] and wrong.
 - The belief MDP caps near 300 configurations, which stops the adaptive column of
-  the adaptivity table well before the subset lattice runs out.
+  the adaptivity table in [M9_RESULTS.txt](M9_RESULTS.txt) well before the subset
+  lattice runs out.
 - The `pr` suite does not complete reliably on the development machine. Two
   consecutive runs each hit one 900 s timeout, on a different test each time, and
   both of those tests finish in 34 and 48 seconds when run alone. The cause is
   background load rather than a tight limit, and it is the same interference that
-  makes absolute timings here untrustworthy.
+  makes absolute timings on this machine untrustworthy.

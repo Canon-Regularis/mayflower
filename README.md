@@ -21,9 +21,9 @@ admits exactly **15,046,987,768** arrangements. The sweep counts them over
 from 0.0800 at a corner to 0.2136 at the centre and sums over the board to exactly
 17.
 
-**Coverage binds, information does not.** Identifying the board costs 33.81 bits.
+**Information is not the scarce resource.** Identifying the board costs 33.81 bits.
 Each shot answers over an alphabet of six, worth log2(6) = 2.585 bits, so a
-44-shot game supplies 114.7 bits against the 33.81 it needs, a surplus of
+44.37-shot game supplies 114.7 bits against the 33.81 it needs, a surplus of
 3.4 to 1. The entropy floor is therefore 13.08 shots, below the trivial coverage
 bound of 17 and dominated by it. The rung that binds counts finished games
 instead.
@@ -35,23 +35,29 @@ instead.
 | water filling | 24.088 | transcript counting, the binding rung |
 | best measured | 44.369 | density policy, 20,000 seeded boards |
 
-The interval `[24.088, 44.369]` is **20.28 shots** nobody has closed. It holds
-both the true optimum and the loss of the best rule against it, and nothing
-measured here separates the two. See [docs/BOUNDS.md](docs/BOUNDS.md).
+The interval `[24.088, 44.369]` is **20.28 shots** nobody has closed. Its width
+is the slack in the bound plus the loss of the policy against the true optimum,
+and nothing measured here says how it divides between them. See
+[docs/BOUNDS.md](docs/BOUNDS.md).
 
 **Playing for information is provably wrong.** On instances small enough to solve
 outright, every policy is priced against the true optimum with no sampling error.
 Maximising hit probability is exactly optimal on three of six and never more than
 0.1553 shots off. Maximising one-step information gain loses up to **6.8636
 shots**, more than doubling the optimum on 5x4 {3}. The mechanism is in the
-objective: a binary answer yields H(p), which peaks at p = 1/2, so the rule turns
-away from a cell exactly as the evidence starts to favour it. See
+objective: a shot's information is the entropy of its answer, and that is zero
+once the posterior settles it, so a located ship scores nothing and the rule
+leaves it unshot. On 5x4 {3}, **6.68 of the 6.86 lost shots** are fired at a
+board the record already names. The other two rules waste none, on any instance
+measured. See
 [docs/OPTIMAL_PLAY.md](docs/OPTIMAL_PLAY.md).
 
 **A policy that reconstructs its own prior.** The density policy hard-codes no
-geometry; it counts placements of the remaining fleet covering each cell. Its mean
-shot turn against the exact prior marginals gives a rank correlation of
-**-0.878**, opening on the centre at mean turn 1.00 and reaching the far corner at
+geometry. It scores a cell by the placements of the remaining fleet covering it,
+each weighted by how many open hits it already touches, which in hunt mode is a
+plain count. Its mean shot turn against the exact prior marginals gives a rank
+correlation of **-0.878**: it opens on the centre at turn 1.00, and on the games
+where it reaches the far corner at all, 11.1% of them, it gets there at turn
 43.39.
 
 ## Why it is interesting
@@ -105,15 +111,17 @@ C++20, CMake >= 3.24, Ninja, Python 3 and Node. Python is standard library only,
 so there is nothing to install. Developed against MinGW-w64 GCC 13.2 on Windows;
 CI also builds Linux GCC and Clang.
 
-Two tests report `Skipped` until `report_data` has run, because they read the
+Three tests report `Skipped` until `report_data` has run, because they read the
 generated `out/figures.json`. That is expected on a fresh clone. `report_data` is
 dominated by fixed exact sweeps rather than by the game count, so a smaller number
 buys little: 200 games costs 387 s against 717 s for the 20,000 above.
 
 ## The report
 
-`out/report.html` is the deliverable: one file, opening with an engine that hunts a hidden board using a real posterior and
-closing with one recorded game replayed frame by frame at the exact marginals.
+`out/report.html` is the deliverable: one file. It opens with an engine that
+hunts a hidden board using a real posterior, replays a recorded game frame by
+frame at the exact marginals, and closes with the attack and the defence that the
+measurements support.
 
 `out/results.html` is the companion: 96 recorded quantities, 71 exact and 25
 measured, each labelled by how firmly it is established and by which tool printed
@@ -153,9 +161,10 @@ so the rest of it was already hit. A predicate requiring only
 case, and two orderings of one shot multiset leave 41 and 53 configurations
 standing. See [docs/ORDER_DEPENDENCE.md](docs/ORDER_DEPENDENCE.md).
 
-**A length-1 ship has one placement.** Four of the five sweeps emitted it from
+**A length-1 ship has one placement.** Five of the six sweeps emitted it from
 both the horizontal and the vertical branch, so a fleet of k single cells came
-back 2^k times too large. Both brute-force oracles always carried the guard.
+back 2^k times too large. Both brute-force oracles always carried the guard, and
+the ladder caught nothing until its case list gained a fleet of single cells.
 
 Full detail in [docs/CORRECTNESS.md](docs/CORRECTNESS.md).
 

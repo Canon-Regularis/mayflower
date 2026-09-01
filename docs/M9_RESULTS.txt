@@ -32,53 +32,56 @@ cost of deciding which peaks in between.
 
   6x6 {4,3,2}, 18 cells shot, 400 records per point
     hits   feasible median |Omega|  DP mean us    DP states search nodes     capped
-       0      75.5%             21          60          908            2          0
-       1      74.5%             18          52          911            9          0
-       2      72.2%             13          45          908           26          0
-       3      60.2%              6          41          867           48          0
-       4      42.0%              6          33          769           66          0
-       5      25.0%              4          30          965           77          0
-       6       8.5%              3          28          821           61          0
-       7       2.5%              2          25          808           36          0
-       8       0.0%              0          22          700           17          0
-       9       0.5%              1          29          700           12          0
-      10       0.0%              0          21          808            0          0
-      11       0.0%              0          18          687            0          0
-      12       0.0%              0          21          680            0          0
+       0      75.5%             21         125          908            2          0
+       1      74.5%             18         104          911            9          0
+       2      72.2%             13          84          908           26          0
+       3      60.2%              6          62          867           48          0
+       4      42.0%              6          62          769           66          0
+       5      25.0%              4          52          965           77          0
+       6       8.5%              3          47          821           61          0
+       7       2.5%              2          34          808           36          0
+       8       0.0%              0          43          700           17          0
+       9       0.5%              1          46          700           12          0
+      10       0.0%              0          30          808            0          0
+      11       0.0%              0          34          687            0          0
+      12       0.0%              0          37          680            0          0
   DP cost peaks at 0 hits, search cost peaks at 5 hits
 
   7x7 {5,4,3,2}, 24 cells shot, 120 records per point
     hits   feasible median |Omega|  DP mean us    DP states search nodes     capped
-       0      39.2%             13        1102        10596            2          0
-       2      46.7%             24         581         9368           21          0
-       4      40.8%              6         426         9883          130          0
-       6      22.5%              9         411         7939          174          0
-       8      10.8%              5         445        11724          140          0
-      10       1.7%              3         358        11062          103          0
-      12       0.0%              0         532         8198           32          0
-      14       0.0%              0         732         8235           15          0
-      16       0.0%              0         281         5353            0          0
+       0      39.2%             13        1401        10596            2          0
+       2      46.7%             24        1004         9368           21          0
+       4      40.8%              6         727         9883          130          0
+       6      22.5%              9         560         7939          174          0
+       8      10.8%              5         707        11724          140          0
+      10       1.7%              3         518        11062          103          0
+      12       0.0%              0         394         8198           32          0
+      14       0.0%              0         602         8235           15          0
+      16       0.0%              0         429         5353            0          0
   DP cost peaks at 0 hits, search cost peaks at 6 hits
 
   8x8 {5,4,3,3,2}, 34 cells shot, 40 records per point
     hits   feasible median |Omega|  DP mean us    DP states search nodes     capped
-       0      37.5%             15        4061        48915            3          0
-       2      32.5%             12        5977        22125           28          0
-       4      25.0%             36        1637        36193          339          0
-       6      17.5%             21        2244        51960          440          0
-       8       5.0%              4        1805        32536          548          0
-      10       5.0%              1        1582        37994          531          0
-      12       0.0%              0        1455        26820          188          0
-      14       0.0%              0        1530        21158          103          0
-      16       0.0%              0        1538        34018           19          0
-      18       0.0%              0        1445        23569            0          0
-      20       0.0%              0        1227        15077            0          0
-  DP cost peaks at 2 hits, search cost peaks at 8 hits
+       0      37.5%             15        7479        48915            3          0
+       2      32.5%             12        3773        22125           28          0
+       4      25.0%             36        3060        36193          339          0
+       6      17.5%             21        4236        51960          440          0
+       8       5.0%              4        3258        32536          548          0
+      10       5.0%              1        3204        37994          531          0
+      12       0.0%              0        3127        26820          188          0
+      14       0.0%              0        2774        21158          103          0
+      16       0.0%              0        1960        34018           19          0
+      18       0.0%              0        2566        23569            0          0
+      20       0.0%              0        1421        15077            0          0
+  DP cost peaks at 0 hits, search cost peaks at 8 hits
 
-  Below the threshold nearly every record is satisfiable and the sweep
-  carries a wide state set to the end. Above it nearly none are, and the
-  sweep dies early. The expensive records sit at the edge, which is the
-  easy-hard-easy shape random satisfiability shows.
+  The two engines answer the same records and disagree about which are
+  expensive. Search cost peaks in the middle, where a record is neither
+  clearly satisfiable nor clearly not, which is the easy-hard-easy shape
+  random satisfiability shows. Sweep cost is highest where the record is
+  loosest and broadly falls as it tightens: a counting sweep never
+  backtracks, so a constraint removes work rather than adding it, and the
+  hardest record decides faster than the empty one.
 
 3. The adaptivity gap
 ---------------------

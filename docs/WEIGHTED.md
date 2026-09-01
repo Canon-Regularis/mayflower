@@ -45,5 +45,5 @@ dominates the uniform one in the worst case, by 0.14 shots on 5x5 {4,3,2}. All o
 it is small against the 20.3-shot gap between the bound and the best policy, which
 is why opponent modelling stays out of the headline engine.
 
-Full output in [docs/OPPONENT.txt](OPPONENT.txt) and
-[docs/WEIGHTED_MARGINALS.txt](WEIGHTED_MARGINALS.txt).
+Full output in [OPPONENT.txt](OPPONENT.txt) and
+[WEIGHTED_MARGINALS.txt](WEIGHTED_MARGINALS.txt).

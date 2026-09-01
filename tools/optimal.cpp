@@ -136,6 +136,13 @@ int main(int argc, char** argv) {
         std::printf("%-16s   optimal first shot: cell %d (row %d, col %d); %llu memo states, %.2f s\n",
                     "", opt.optimalFirstShot, opt.optimalFirstShot / c.w, opt.optimalFirstShot % c.w,
                     static_cast<unsigned long long>(opt.memoStates), opt.seconds);
+        // Where each rule's loss goes. A miss fired after the record already
+        // names the board is spent with nothing left to learn, so this column
+        // says how much of the gap is bad choice and how much is no choice.
+        std::printf("%-16s   misses after the board is determined: density %.4f, "
+                    "max-P(hit) %.4f, max-info %.4f of a %.4f gap\n", "",
+                    d.missesAfterCertainty, a.missesAfterCertainty, b.missesAfterCertainty,
+                    gap(b.expectedShots));
     }
 
     std::printf("\nEach gap is the exact price of that objective on that instance, from integer\n");

@@ -99,7 +99,9 @@ struct WeightedResult {
 
     // True when this particular run is exact rather than approximate: the
     // weights were all 1, so every value was a non-negative integer, no layer
-    // sum reached 2^53, and no rescale intervened. The bound in the comment
+    // sum reached 2^53, and neither a rescale nor an underflow intervened. Both
+    // of the last two are checked, since a decaying record can underflow without
+    // ever rescaling. The bound in the comment
     // above is instance-dependent, so the run checks itself rather than relying
     // on the argument holding for whatever instance a caller passes.
     bool exact = false;
