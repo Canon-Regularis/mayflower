@@ -182,4 +182,4 @@ Captured tool output sits beside them: [M9_RESULTS.txt](docs/M9_RESULTS.txt),
 
 ## Licence
 
-[Apache-2.0.](LICENSE)
+Apache-2.0. See [LICENSE.](LICENSE)
