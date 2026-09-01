@@ -133,8 +133,6 @@ def core(results):
         for key, label in (("maxInfoWaste", "max information gain"),
                            ("maxProbWaste", "max hit probability"),
                            ("densityWaste", "density")):
-            if key not in o:
-                continue
             add(family="waste", id="waste-{}-{}".format(o["instance"], key),
                 instance=o["instance"],
                 metric="misses after the board is determined, " + label,

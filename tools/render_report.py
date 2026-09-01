@@ -598,7 +598,7 @@ def build(data, out_path):
       "a total loss of {:.2f} shots. It locates the ship and then leaves it. The other "
       "two rules fire none, on any instance here: a cell they are certain of still scores "
       "highest.</p></div>".format(
-          esc(worst["instance"]), worst.get("maxInfoWaste", 0.0),
+          esc(worst["instance"]), worst["maxInfoWaste"],
           worst["maxInfo"] - worst["optimal"]))
     w('<figure><div class="plate">')
     w(objective_bars(obj))
@@ -795,7 +795,7 @@ def build(data, out_path):
     worst_prob = max(r["maxProb"] - r["optimal"] for r in obj)
     worst_row = max(obj, key=lambda r: r["maxInfo"] - r["optimal"])
     worst_info = worst_row["maxInfo"] - worst_row["optimal"]
-    worst_waste = worst_row.get("maxInfoWaste", 0.0)
+    worst_waste = worst_row["maxInfoWaste"]
     gap = best["mean"] - b["waterfilling"]
 
     w('<section><div class="col"><div class="act">Seven / the strategy</div>')
@@ -902,7 +902,7 @@ def build(data, out_path):
       "a settled answer is worth zero bits, so the rule locates a ship and then spends "
       "{:.2f} misses a game on a board it has already solved.</li>".format(
           max(r["maxInfo"] - r["optimal"] for r in obj),
-          max(r.get("maxInfoWaste", 0.0) for r in obj)))
+          max(r["maxInfoWaste"] for r in obj)))
     w("<li><b>Counting placements is a good substitute if you cannot afford a "
       "posterior.</b> {:.2f} shots against a certified floor of {:.2f}, with no sweep "
       "required.</li>".format(best["mean"], b["waterfilling"]))
