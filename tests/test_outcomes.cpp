@@ -215,6 +215,49 @@ void testTurnZeroChannelIsBinary() {
                 bestP, tiedOnP, bestIG);
 }
 
+// Turn 0 cannot sink anything, so the check above sees a two-symbol channel and
+// would pass on a sweep that dropped SUNK announcements from the sum entirely.
+// This drives the alphabet past two: once a ship is wounded a neighbour can
+// miss, wound again, or sink. The entropy is recomputed here from the public
+// counts, so any term left out of informationBits() shows up as a mismatch.
+void testSunkOutcomesEnterTheEntropy() {
+    std::printf("[sunk announcements carry information]\n");
+    const mayflower::Instance inst(5, 5, {3, 2, 2});
+    mayflower::History h(inst);
+    h.add(2, 2, mayflower::Outcome::Hit);
+
+    std::uint64_t total = 0;
+    const auto dist = mayflower::outcomeDistribution(inst, h, total);
+
+    int withSink = 0;
+    double worst = 0.0;
+    for (int c = 0; c < inst.cellCount(); ++c) {
+        const auto& d = dist[static_cast<std::size_t>(c)];
+        if (!d.shootable) continue;
+        const std::uint64_t t = d.total();
+        if (t == 0) continue;
+        std::uint64_t sunkSum = 0;
+        for (std::uint64_t v : d.sunk) sunkSum += v;
+        if (sunkSum == 0) continue;
+        ++withSink;
+
+        double want = 0.0;
+        const auto term = [&](std::uint64_t n) {
+            if (n == 0 || n == t) return;
+            const double q = static_cast<double>(n) / static_cast<double>(t);
+            want -= q * std::log2(q);
+        };
+        term(d.miss);
+        term(d.hit);
+        for (std::uint64_t v : d.sunk) term(v);
+        const double got = d.informationBits();
+        worst = std::max(worst, std::abs(want - got));
+    }
+    check(withSink > 0, "a wounded ship makes some cell able to announce a sink");
+    check(worst < 1e-12, "information gain sums over the whole outcome alphabet");
+    std::printf("  %d cells can sink, largest departure %.3e bits\n", withSink, worst);
+}
+
 }  // namespace
 
 int main() {
@@ -223,6 +266,7 @@ int main() {
     testPlacementFlowInvariants();
     testOutcomesAgainstOracle();
     testTurnZeroChannelIsBinary();
+    testSunkOutcomesEnterTheEntropy();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
