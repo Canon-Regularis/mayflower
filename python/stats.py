@@ -304,8 +304,11 @@ def record(event: str, experiment: str, detail: str, path=None, when=None):
         "%Y-%m-%dT%H:%M:%SZ")
     if "|" in experiment or "|" in event:
         raise ValueError("event and experiment must not contain the field separator")
+    # Stripped before it is digested, because the reader strips what it
+    # reconstructs. An empty detail would otherwise leave a trailing space in the
+    # digested string but not in the parsed one, breaking a chain nobody touched.
     payload = "{:04d} | {} | {} | {} | {}".format(
-        len(entries) + 1, stamp, event, experiment, detail)
+        len(entries) + 1, stamp, event, experiment, detail).strip()
     digest = _digest(previous, payload)
     with io.open(path, "a", encoding="utf-8", newline="\n") as fh:
         fh.write(payload + " | " + digest + "\n")
@@ -396,6 +399,28 @@ def test_audit():
 
     io.open(tmp, "w", encoding="utf-8", newline="\n").write(saved)
     fails += check(verify_audit(tmp)[0], "and the untouched log still verifies")
+
+    # An empty detail leaves the payload ending in the separator and a trailing
+    # space. The reader strips what it reconstructs, so a writer that digests the
+    # unstripped string breaks a chain nobody tampered with, and the log can then
+    # neither be appended to nor read for a seal.
+    blank = os.path.join(tempfile.mkdtemp(), "audit.log")
+    record("create", "scratch", "seeded", path=blank, when="2026-01-01T00:00:00Z")
+    record("note", "scratch", "", path=blank, when="2026-01-02T00:00:00Z")
+    ok, bad = verify_audit(blank)
+    fails += check(ok, "an empty detail does not break its own chain",
+                   "first bad entry at index {}".format(bad))
+    try:
+        record("unseal", "scratch", "after the blank", path=blank,
+               when="2026-01-03T00:00:00Z")
+        fails += check(True, "and the log can still be appended to")
+    except RuntimeError as exc:
+        fails += check(False, "and the log can still be appended to", str(exc))
+    try:
+        fails += check(is_unsealed("scratch", blank),
+                       "and the seal is still readable")
+    except RuntimeError as exc:
+        fails += check(False, "and the seal is still readable", str(exc))
 
     # A name carrying the field separator must not be able to forge a match.
     threw = False
