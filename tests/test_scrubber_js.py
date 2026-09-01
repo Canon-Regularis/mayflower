@@ -135,6 +135,24 @@ out.labelAtEnd = play.textContent;
 play.fire('click');
 out.restarted = turnOf();
 
+// Keys typed into the number boxes must not reach the scrubber. The boxes are
+// inside root, which carries the key handler, and the handler calls
+// preventDefault, so without a target check the caret cannot move at all.
+slider.value = '5'; slider.fire('input');
+out.beforeKeys = turnOf();
+let prevented = false;
+const keyEv = (key, target) => ({key, target, preventDefault() { prevented = true; }});
+root.fire('keydown', keyEv('Home', stepIn));
+out.afterHomeInBox = turnOf();
+root.fire('keydown', keyEv('ArrowLeft', speedIn));
+out.afterLeftInBox = turnOf();
+out.preventedInBox = prevented;
+
+// The slider is an input too, and it must keep the handler: its native arrow
+// keys would move the thumb without pausing playback.
+root.fire('keydown', keyEv('ArrowLeft', slider));
+out.afterLeftOnSlider = turnOf();
+
 console.log(JSON.stringify(out));
 """
 
@@ -198,6 +216,17 @@ def main():
           "the box reads {}".format(r["clampedStep"]))
     check(r["labelAfterPause"] == "Play" and r["afterPause"] == r["heldAt"],
           "Pause stops the clock moving the frame")
+    check(r["beforeKeys"] == 5 and r["afterHomeInBox"] == 5
+          and r["afterLeftInBox"] == 5 and not r["preventedInBox"],
+          "keys inside a number box are left to the caret",
+          "turn {} -> Home {} -> ArrowLeft {}, preventDefault={}".format(
+              r["beforeKeys"], r["afterHomeInBox"], r["afterLeftInBox"],
+              r["preventedInBox"]))
+
+    check(r["afterLeftOnSlider"] == 4,
+          "the slider still scrubs on an arrow key",
+          "turn {} after ArrowLeft from 5".format(r["afterLeftOnSlider"]))
+
     check(r["reachedEnd"] == turns - 1 and r["labelAtEnd"] == "Play",
           "playback stops itself at the last turn",
           "ended at {} of {}".format(r["reachedEnd"], turns - 1))

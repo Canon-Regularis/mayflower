@@ -236,6 +236,13 @@
   });
 
   root.addEventListener("keydown", function (e) {
+    // The step and period boxes sit inside root, and there Left/Right/Home/End
+    // are caret moves. Scrubbing on them would also preventDefault, so the
+    // caret could not move at all. The range input keeps the handler: its
+    // native keys move the thumb without pausing playback.
+    const el = e.target;
+    const tag = el && el.tagName ? String(el.tagName).toLowerCase() : "";
+    if (tag === "input" && el.type !== "range") return;
     if (e.key === "ArrowRight") { stop(); goTo(turn + 1); e.preventDefault(); }
     else if (e.key === "ArrowLeft") { stop(); goTo(turn - 1); e.preventDefault(); }
     else if (e.key === "Home") { stop(); goTo(0); e.preventDefault(); }
