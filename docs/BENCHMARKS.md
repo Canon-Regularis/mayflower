@@ -26,9 +26,9 @@ V3  merge across 8 threads                     2.66x     (turns over at 10)
 noise floor, A/A control                       1.02x
 ```
 
-Every rung is bit-identical to V0 across 965 checks covering the small-board
-ladder, the pinned order-dependence cases, 180 fuzzed ordered histories and thread
-counts of 1, 2, 4 and 7. The decomposition guarantees it: counts are integers,
+Every rung is bit-identical to V0 across 980 checks covering the small-board
+ladder, single-cell fleets, the pinned order-dependence cases, 180 fuzzed ordered
+histories and thread counts of 1, 2, 4 and 7. The decomposition guarantees it: counts are integers,
 integer addition is associative, and the buckets partition the destination keys so
 no two merges touch one counter.
 
