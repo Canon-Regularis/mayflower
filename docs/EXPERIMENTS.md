@@ -43,4 +43,4 @@ per-arm figure, so the second column serves as both. Because the correlation is
 bimodal, the same comparison against two opponents differs by a factor of
 thirteen and no single number covers both. The formula is checked by simulating at
 exactly the prescribed `n` and confirming the promised 80% power arrives, measured
-at 0.807.
+at 0.807 over 2,000 replicates and 0.825 over the 400 the quick run uses.
