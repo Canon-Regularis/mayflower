@@ -203,6 +203,13 @@ add_test(NAME selfplay_fold COMMAND ${Python3_EXECUTABLE}
          ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_selfplay_fold.py)
 set_tests_properties(selfplay_fold PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# dp_bench is too slow to run in a suite and its correctness content is covered
+# by test_ladder. Its entry point is not: atoi turns a bad argument into 0, and
+# the report indexes sample vectors that a rep count of 0 leaves empty.
+add_test(NAME bench_cli COMMAND ${Python3_EXECUTABLE}
+         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bench_cli.py)
+set_tests_properties(bench_cli PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
 endif()
 
 # The JavaScript engine is a third implementation of the sweep, and the report's

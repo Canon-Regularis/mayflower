@@ -97,7 +97,7 @@ jobs:
       - name: Every interpreter-gated test was registered
         shell: bash
         run: |
-          for t in stats report_data results pool selfplay_fold engine_js scrubber_js live_js bond_dimension; do
+          for t in stats report_data results pool selfplay_fold bench_cli engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t$" --no-tests=error >/dev/null \
               || { echo "$t is missing: CMake did not find its interpreter"; exit 1; }
           done
@@ -145,7 +145,7 @@ jobs:
 
       - name: Every interpreter-gated test was registered
         run: |
-          for t in stats report_data results pool selfplay_fold engine_js scrubber_js live_js bond_dimension; do
+          for t in stats report_data results pool selfplay_fold bench_cli engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t$" --no-tests=error >/dev/null \
               || { echo "$t is missing: CMake did not find its interpreter"; exit 1; }
           done
