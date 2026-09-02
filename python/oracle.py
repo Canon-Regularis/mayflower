@@ -38,6 +38,25 @@ def placements(width, height, length):
     return out
 
 
+# Board counts the C++ sweep and its independent enumerator both agree on. See
+# docs/CORRECTNESS.md; main() holds this file to the same figures.
+LADDER = [
+    (4, 4, [3, 2], 264),
+    (5, 5, [3, 2, 2], 12_798),
+    (5, 5, [4, 3, 2], 9_024),
+    (6, 6, [3, 3, 2], 40_324),
+    (5, 5, [3, 3, 2, 2], 80_688),
+    (4, 6, [3, 2], 840),
+    # Length 1 is the only case where the horizontal and vertical branches name
+    # the same placement, so it is the only case that exercises this file's own
+    # guard. Without it the ladder passes with the guard deleted. C(16,2) and
+    # C(9,3): k indistinguishable single cells on n free cells.
+    (4, 4, [1, 1], 120),
+    (3, 3, [1, 1, 1], 84),
+    (5, 4, [3, 1], 374),
+]
+
+
 def all_boards(width, height, fleet):
     """Every physical board. Increasing placement indices within a length group
     make equal-length ships interchangeable."""
@@ -193,12 +212,21 @@ def main():
     ap.add_argument("--order-dependence", action="store_true")
     args = ap.parse_args()
 
-    ladder = [(4, 4, [3, 2]), (5, 5, [3, 2, 2]), (5, 5, [4, 3, 2]),
-              (6, 6, [3, 3, 2]), (5, 5, [3, 3, 2, 2])]
-
+    # The same counts tests/test_counting.cpp holds the C++ sweep to against its
+    # own enumerator. Pinning them here ties all three implementations to one set
+    # of numbers: this file is what tests/test_engine_js.py validates the browser
+    # engine against, so an oracle that drifted would bless a wrong engine and
+    # say so in a line nobody diffs.
+    failures = 0
     print("board counts (must match the C++ DP exactly)")
-    for w, h, f in ladder:
-        print("  %dx%d %s: %s" % (w, h, f, format(len(all_boards(w, h, f)), ",")))
+    for w, h, f, want in LADDER:
+        got = len(all_boards(w, h, f))
+        if got == want:
+            print("  %dx%d %s: %s" % (w, h, f, format(got, ",")))
+        else:
+            failures += 1
+            print("  %dx%d %s: %s  FAILED, expected %s"
+                  % (w, h, f, format(got, ","), format(want, ",")))
 
     if args.order_dependence:
         print("\n[1] the ordered posterior depends on shot order")
@@ -215,7 +243,8 @@ def main():
                 print("    Any cache key or predicate that ignores order is unsound.")
                 break
         else:
-            print("  none found in the trial budget")
+            failures += 1
+            print("  FAILED: none found in the trial budget")
 
         print("\n[2] the order-free predicate over-counts")
         for w, h, f in [(5, 5, [3, 2, 2]), (5, 4, [3, 3, 2]), (5, 5, [4, 3, 2])]:
@@ -228,8 +257,12 @@ def main():
                 print("    order-free  |Omega| = %d   (over by %d)" % (naive, naive - exact))
                 break
         else:
-            print("  none found in the trial budget")
-    return 0
+            failures += 1
+            print("  FAILED: none found in the trial budget")
+
+    print()
+    print("FAILED" if failures else "all checks passed")
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
