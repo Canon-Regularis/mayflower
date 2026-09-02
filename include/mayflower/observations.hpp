@@ -40,6 +40,13 @@ public:
 
     // Append a shot. `sunkLength` is read only when `outcome` is Sunk.
     void add(int row, int col, Outcome outcome, int sunkLength = 0) {
+        // The column is bounded before the index is flattened. Checking only the
+        // flat index lets a column outside the row slide into the next one:
+        // add(0, 15) on a width-10 board recorded cell 15, and add(1, -5)
+        // recorded cell 5, both silently and both a different cell than asked
+        // for.
+        if (row < 0 || col < 0 || col >= width_)
+            throw std::out_of_range("cell out of range");
         const std::size_t c = static_cast<std::size_t>(row * width_ + col);
         if (c >= time_.size()) throw std::out_of_range("cell out of range");
         if (time_[c] >= 0) throw std::invalid_argument("cell shot twice");

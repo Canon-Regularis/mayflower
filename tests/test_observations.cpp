@@ -61,6 +61,65 @@ std::uint64_t dpCount(const Instance& inst, const History& h) {
 
 // The engine must reproduce the oracle's ordered posterior on arbitrary
 // histories. This is the test that gives sunk handling its meaning.
+// History is the authoritative record, so a coordinate it cannot represent has
+// to be refused rather than folded into a different cell. Bounding only the
+// flattened index is not enough: on a width-10 board (0,15) flattens to 15,
+// which is a perfectly valid index for row 1 column 5, and (1,-5) flattens to 5.
+// Both were accepted, and every count taken from that record would then be
+// confidently wrong about a board nobody described.
+void testAddRefusesCoordinatesOffTheBoard() {
+    std::printf("[coordinates off the board]\n");
+    const mayflower::Instance inst(10, 10, {5, 4, 3, 3, 2});
+    struct Case { int row, col; const char* why; };
+    const Case bad[] = {
+        {0, 15, "a column past the row width"},
+        {1, -5, "a negative column"},
+        {-1, 0, "a negative row"},
+        {10, 0, "a row past the board"},
+        {0, 10, "a column exactly at the width"},
+    };
+    for (const Case& c : bad) {
+        ++gChecks;
+        mayflower::History h(inst);
+        try {
+            h.add(c.row, c.col, mayflower::Outcome::Miss);
+            ++gFailures;
+            std::printf("  FAIL  %s was accepted as cell %d\n", c.why, h.sequence()[0]);
+        } catch (const std::out_of_range&) {
+            std::printf("  refused: %s\n", c.why);
+        }
+    }
+
+    // A legal coordinate still lands where it should, so the guard is not just
+    // refusing everything.
+    mayflower::History ok(inst);
+    ok.add(3, 7, mayflower::Outcome::Miss);
+    checkEq(ok.sequence().at(0), 37, "a legal coordinate still records its own cell");
+
+    // SUNK without a length remains refused, and a plain hit needs none.
+    ++gChecks;
+    mayflower::History s2(inst);
+    try {
+        s2.add(0, 0, mayflower::Outcome::Sunk, 0);
+        ++gFailures;
+        std::printf("  FAIL  SUNK with no length was accepted\n");
+    } catch (const std::invalid_argument&) {
+        std::printf("  refused: SUNK with no ship length\n");
+    }
+
+    // And a cell cannot be shot twice.
+    ++gChecks;
+    mayflower::History s3(inst);
+    s3.add(4, 4, mayflower::Outcome::Miss);
+    try {
+        s3.add(4, 4, mayflower::Outcome::Miss);
+        ++gFailures;
+        std::printf("  FAIL  the same cell was shot twice\n");
+    } catch (const std::invalid_argument&) {
+        std::printf("  refused: shooting the same cell twice\n");
+    }
+}
+
 void testSunkAgainstOracle() {
     std::printf("[ordered posterior vs oracle]\n");
     const int W = 5, H = 5;
@@ -265,6 +324,7 @@ void testMarginalsUnderObservations() {
 int main() {
     const auto t0 = std::chrono::steady_clock::now();
 
+    testAddRefusesCoordinatesOffTheBoard();
     testSunkAgainstOracle();
     testOrderDependence();
     testSunkIsInformative();
