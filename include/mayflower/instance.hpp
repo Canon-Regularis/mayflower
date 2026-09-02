@@ -84,7 +84,10 @@ struct Instance {
     void validate() const {
         if (width <= 0 || height <= 0)
             throw std::invalid_argument("board dimensions must be positive");
-        if (width * height > 128)
+        // Widened before multiplying. As int, 200000000 x 20 wraps to
+        // -294967296, which is not greater than 128, so the guard passed and
+        // cellCount() went on to return a negative size to every caller.
+        if (static_cast<std::int64_t>(width) * height > 128)
             throw std::invalid_argument("board is limited to 128 cells");
         if (fleet.empty())
             throw std::invalid_argument("fleet must be non-empty");
