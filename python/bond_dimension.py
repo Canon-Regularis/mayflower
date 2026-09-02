@@ -104,6 +104,30 @@ def analyse(width, height, fleet, verbose=True):
         rank = rank_mod_p(by_left.values())
         nerode = len({frozenset(v) for v in by_left.values()})
         engine = len({boundary_state(l, cut, height) for l in lefts})
+
+        # The engine is allowed to be finer than Nerode and never coarser. Two
+        # left parts it maps to one boundary state have their counts added
+        # together, so if their completion sets differed the sweep would be
+        # counting boards that do not exist. This is the direction that is an
+        # engine bug rather than a missed optimisation, so it is checked rather
+        # than reported.
+        completions = {}
+        for left in lefts:
+            state = boundary_state(left, cut, height)
+            row = frozenset(by_left[left])
+            if state in completions and completions[state] != row:
+                raise AssertionError(
+                    "cut {}: the engine merges two left parts whose completions "
+                    "differ, so their counts must not be added".format(cut))
+            completions[state] = row
+
+        # rank(M) over GF(p) understates the rank over Q, so it is a floor under
+        # both counts and can never exceed either.
+        if not rank <= nerode <= engine:
+            raise AssertionError(
+                "cut {}: expected rank <= nerode <= engine, got {} {} {}".format(
+                    cut, rank, nerode, engine))
+
         rows_out.append((cut, rank, nerode, engine))
         if verbose:
             print(f"{cut:>4} {rank:>9,} {nerode:>8,} {engine:>8,} "
