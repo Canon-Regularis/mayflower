@@ -100,6 +100,10 @@ def mean_interval(xs, alpha=0.05):
 def wilson_interval(successes, n, alpha=0.05):
     """Wilson score interval for a proportion. The plain normal interval is
     badly wrong near 0 and 1, which is exactly where win rates live."""
+    if n < 0 or successes < 0:
+        raise ValueError("counts must be non-negative; got %d of %d" % (successes, n))
+    if successes > n:
+        raise ValueError("successes cannot exceed trials; got %d of %d" % (successes, n))
     if n == 0:
         return 0.0, 0.0, 1.0
     z = normal_quantile(1 - alpha / 2)
@@ -139,7 +143,15 @@ def exact_coverage(p_true, n, interval, alpha=0.05):
 
 def paired_interval(xs, ys, alpha=0.05):
     """Interval for a paired difference. Under common random numbers the board
-    difficulty is shared, so the difference carries the variance."""
+    difficulty is shared, so the difference carries the variance.
+
+    Lengths must match. zip() would otherwise stop at the shorter sequence and
+    return a confident interval computed from a prefix, and unequal arrays in a
+    paired comparison mean the pairing itself has gone wrong.
+    """
+    if len(xs) != len(ys):
+        raise ValueError(
+            "paired samples must be the same length; got %d and %d" % (len(xs), len(ys)))
     return mean_interval([x - y for x, y in zip(xs, ys)], alpha)
 
 
@@ -166,10 +178,18 @@ def games_needed(effect, sigma, alpha=0.05, power=0.80, rho=0.0):
     the density family and 0.00 between families, so no single figure is right
     for every comparison and this takes it as an argument.
     """
+    if effect <= 0:
+        raise ValueError("effect must be positive; got %r" % (effect,))
+    if sigma <= 0:
+        raise ValueError("sigma must be positive; got %r" % (sigma,))
+    if not 0.0 <= rho < 1.0:
+        raise ValueError("rho must lie in [0, 1); got %r" % (rho,))
     z_a = normal_quantile(1 - alpha / 2)
     z_b = normal_quantile(power)
     paired_var = 2 * sigma * sigma * (1 - rho)
-    return math.ceil(paired_var * (z_a + z_b) ** 2 / (effect * effect))
+    # At least one game: the formula rounds to zero for an effect large against
+    # the spread, and zero games resolves nothing.
+    return max(1, math.ceil(paired_var * (z_a + z_b) ** 2 / (effect * effect)))
 
 
 # --- multiplicity ---------------------------------------------------------
@@ -496,6 +516,58 @@ def test_folds():
     return fails
 
 
+def test_domains():
+    """Arguments outside their domain must be refused, not evaluated.
+
+    Each of these returned a confident answer. paired_interval let zip() stop at
+    the shorter array and reported an interval computed from a prefix, which in a
+    paired comparison hides the fact that the pairing broke. games_needed
+    accepted a correlation of 1.5 and returned -61752 games, a sigma of 0 and
+    returned 0, and a negative effect and returned the count for its positive
+    twin. That function is what experiments/preregistration.md derives from.
+    """
+    print("[argument domains]")
+    fails = 0
+
+    def refuses(what, fn, exc=ValueError):
+        try:
+            got = fn()
+        except exc:
+            return check(True, what)
+        except Exception as e:                       # noqa: BLE001
+            return check(False, what, "raised {} instead".format(type(e).__name__))
+        return check(False, what, "returned {!r}".format(got))
+
+    fails += refuses("mismatched paired samples are refused",
+                     lambda: paired_interval([10.0] * 6, [1.0] * 2))
+    fails += refuses("a correlation of 1.5 is refused",
+                     lambda: games_needed(0.10, 8.87, rho=1.5))
+    fails += refuses("a correlation of exactly 1 is refused",
+                     lambda: games_needed(0.10, 8.87, rho=1.0))
+    fails += refuses("a zero spread is refused",
+                     lambda: games_needed(0.10, 0.0))
+    fails += refuses("a negative effect is refused",
+                     lambda: games_needed(-0.10, 8.87))
+    fails += refuses("more successes than trials is refused",
+                     lambda: wilson_interval(5, 2))
+    fails += refuses("a negative count is refused",
+                     lambda: wilson_interval(-1, 10))
+
+    # A sample size is never zero, however large the effect.
+    fails += check(games_needed(1000.0, 8.87) >= 1,
+                   "a sample size is at least one game")
+
+    # And the guards have not moved the table the pre-registration quotes.
+    pinned = [(0.10, 9510, 123506), (0.25, 1522, 19761),
+              (0.50, 381, 4941), (1.00, 96, 1236)]
+    drift = [e for e, pr, ind in pinned
+             if games_needed(e, 8.87, rho=0.923) != pr or games_needed(e, 8.87) != ind]
+    fails += check(not drift,
+                   "the pre-registered sample sizes are unchanged",
+                   "moved at {}".format(drift))
+    return fails
+
+
 def test_calibration(replicates):
     """Simulate from a known truth and count how often the interval covers it.
     A 95% interval must cover about 95% of the time; anything else is a bug in
@@ -655,6 +727,7 @@ def main():
     print()
     fails += test_audit()
     print()
+    fails += test_domains()
     fails += test_calibration(replicates)
     print()
     fails += test_power(replicates)
