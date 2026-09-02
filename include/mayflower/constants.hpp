@@ -46,7 +46,9 @@ inline constexpr std::uint64_t kOmega0Labelled = 2 * kOmega0;   // 30,093,975,53
 inline constexpr std::uint64_t kOmegaNoTouch = 1'925'751'392ull;
 static_assert(kOmegaNoTouch < kOmega0, "forbidding contact cannot add configurations");
 
-inline constexpr double kPriorEntropyBits = 33.8088;            // log2(kOmega0)
+inline constexpr double kPriorEntropyBits = 33.80875565399003;   // log2(kOmega0)
+// Full precision, not the 33.8088 the reports display: the entropy rung below
+// divides by it, and a 4-decimal value moved that rung in the fifth.
 
 // Sum over cells of P(cell occupied) under the uniform prior, exactly 17.
 inline constexpr int kMarginalSum = kShipCells;
@@ -69,7 +71,10 @@ inline constexpr int kCoverageBound = kShipCells;
 // falls below E1, so coverage is the binding constraint.
 inline constexpr int    kOutcomeAlphabetSize = 6;
 inline constexpr double kMaxBitsPerShot      = 2.5849625007211562;  // log2(6)
-inline constexpr double kEntropyBound        = 13.08;
+// Derived rather than typed. It was pinned at the rounded 13.08 while
+// tools/bounds computed and printed 13.0790 for the same rung, so the one
+// quantity had two written forms that could drift apart.
+inline constexpr double kEntropyBound        = kPriorEntropyBits / kMaxBitsPerShot;
 
 // ---------------------------------------------------------------------------
 // Symmetry.
@@ -98,7 +103,7 @@ static_assert(detail::placementsFor(4, kBoardWidth, kBoardHeight) == kPlacements
 static_assert(detail::placementsFor(3, kBoardWidth, kBoardHeight) == kPlacements3);
 static_assert(detail::placementsFor(2, kBoardWidth, kBoardHeight) == kPlacements2);
 static_assert(detail::shipCellSum() == kShipCells, "fleet cell count must be 17");
-static_assert(kCellCount <= 128, "Board128 holds at most 128 cells");
+static_assert(kCellCount <= 128, "the board must stay inside the 128-cell bound");
 static_assert(kMaxAccumulator < (std::uint64_t{1} << 38), "accumulator headroom check");
 
 }  // namespace mayflower::constants
