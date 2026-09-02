@@ -51,7 +51,18 @@ void report(const char* name, const Sample& s) {
 int main(int argc, char** argv) {
     using namespace mayflower;
 
+    // Validated before anything is measured. Every sample vector below is
+    // indexed with front() and v[n/2], so a rep count of zero is undefined
+    // behaviour rather than an empty report, and atoi() turns any unparsable
+    // argument into exactly that.
     const int reps = argc > 1 ? std::atoi(argv[1]) : 7;
+    if (reps < 1) {
+        std::fprintf(stderr,
+                     "reps must be a positive integer; got \"%s\".\n"
+                     "usage: dp_bench [reps] [--e-core]\n",
+                     argc > 1 ? argv[1] : "");
+        return 2;
+    }
     const bool slow = argc > 2 && std::string(argv[2]) == "--e-core";
 
     std::printf("DP optimisation ladder\n======================\n\n");
