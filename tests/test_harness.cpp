@@ -131,6 +131,33 @@ void testBankIsOrderIndependent() {
     std::printf("  board(7) is stable across interleaved calls\n");
 }
 
+// An instance can pass validate() and still admit nothing, because validate()
+// checks each ship against the board and never the fleet against the space.
+// 2x2 {2,2,2} needs six cells and has four. The bank used to compute
+// UINT64_MAX % 0 on the first draw and die on a division by zero.
+void testEmptyBankIsRefused() {
+    std::printf("[empty board bank]\n");
+    const Instance inst(2, 2, {2, 2, 2});
+    ++gChecks;
+    try {
+        const BoardBank bank(inst, 0x1u);
+        (void)bank.board(0);
+        ++gFailures;
+        std::printf("  FAIL  a bank over an empty space produced a board\n");
+    } catch (const std::invalid_argument&) {
+        std::printf("  %s is refused rather than divided by\n", inst.describe().c_str());
+    }
+
+    // The instance itself is legal, so the refusal has to come from the bank.
+    ++gChecks;
+    if (Sampler(inst).total() != 0) {
+        ++gFailures;
+        std::printf("  FAIL  the premise moved: this instance now admits boards\n");
+    } else {
+        std::printf("  and the instance validates, so only the bank can catch it\n");
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -140,6 +167,7 @@ int main() {
     testPolicyLegality();
     testDeterminism();
     testBankIsOrderIndependent();
+    testEmptyBankIsRefused();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);

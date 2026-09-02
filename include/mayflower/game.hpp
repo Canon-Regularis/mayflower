@@ -105,7 +105,15 @@ inline GameResult playGameTraced(const Instance& inst,
 class BoardBank {
 public:
     BoardBank(const Instance& inst, std::uint64_t key)
-        : sampler_(inst), key_(key), total_(sampler_.total()) {}
+        : sampler_(inst), key_(key), total_(sampler_.total()) {
+        // An instance can validate and still admit nothing: 2x2 {2,2,2} passes,
+        // since every ship fits the board on its own, but six cells will not go
+        // into four. rankFor takes UINT64_MAX % total_, so drawing from such a
+        // bank divided by zero instead of saying there was nothing to draw.
+        if (total_ == 0)
+            throw std::invalid_argument(inst.describe() +
+                                        " admits no configuration to draw from");
+    }
 
     [[nodiscard]] std::uint64_t total() const { return total_; }
 
