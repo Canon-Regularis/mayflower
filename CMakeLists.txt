@@ -181,6 +181,20 @@ set_tests_properties(report_data PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
 add_test(NAME results COMMAND ${Python3_EXECUTABLE}
          ${CMAKE_CURRENT_SOURCE_DIR}/tools/collect_results.py --check)
 set_tests_properties(results PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+
+# The live widget scans web/pool.bin for its opening posterior and three readers
+# took its contents on trust. Decoded here with the formula export_pool
+# documents, so the two disagreeing is a failure rather than a wrong heatmap.
+add_test(NAME pool COMMAND ${Python3_EXECUTABLE}
+         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_pool.py)
+set_tests_properties(pool PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+
+# The refusal that protects the pre-registered TEST fold. selfplay was not a
+# registered test at all, so the only guard on the sealed data was unchecked.
+add_test(NAME selfplay_fold COMMAND ${Python3_EXECUTABLE}
+         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_selfplay_fold.py)
+set_tests_properties(selfplay_fold PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
+                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
 # The JavaScript engine is a third implementation of the sweep, and the report's
