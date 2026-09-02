@@ -114,6 +114,7 @@ void testTranscriptCount() {
     std::printf("[hit transcripts vs brute force]\n");
     const std::vector<std::vector<int>> fleets = {
         {2}, {2, 2}, {3, 2}, {3, 3}, {3, 3, 2}, {4, 3, 2}, {4, 3, 3, 2}, {2, 2, 2},
+        {1}, {1, 1}, {2, 1}, {1, 1, 1}, {3, 2, 1},
     };
     for (const auto& fleet : fleets) {
         const std::uint64_t got = mayflower::countHitTranscripts(fleet);
@@ -146,10 +147,10 @@ void testAgainstBruteForce() {
     std::printf("[blocking numbers vs brute force]\n");
     struct Case { int w, h, l; };
     const std::vector<Case> cases = {
-        {4, 4, 2}, {4, 4, 3}, {4, 4, 4},
-        {5, 4, 2}, {5, 4, 3},
+        {4, 4, 1}, {4, 4, 2}, {4, 4, 3}, {4, 4, 4},
+        {5, 4, 1}, {5, 4, 2}, {5, 4, 3},
         {5, 5, 2}, {5, 5, 3}, {5, 5, 4}, {5, 5, 5},
-        {6, 3, 2}, {6, 3, 3},
+        {6, 3, 1}, {6, 3, 2}, {6, 3, 3},
     };
     for (const Case& c : cases) {
         const auto dp = mayflower::blockingNumber(c.w, c.h, c.l);
@@ -165,7 +166,7 @@ void testAgainstBruteForce() {
 
 void testWitnessesAreValid() {
     std::printf("[witnesses]\n");
-    for (int L : {2, 3, 4, 5}) {
+    for (int L : {1, 2, 3, 4, 5}) {
         const auto found = mayflower::blockingWitness(10, 10, L);
         const std::vector<int>& witness = found.cells;
         check(witnessBlocksEverything(10, 10, L, witness),
