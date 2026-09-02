@@ -85,7 +85,7 @@ struct Instance {
         if (width <= 0 || height <= 0)
             throw std::invalid_argument("board dimensions must be positive");
         if (width * height > 128)
-            throw std::invalid_argument("Board128 holds at most 128 cells");
+            throw std::invalid_argument("board is limited to 128 cells");
         if (fleet.empty())
             throw std::invalid_argument("fleet must be non-empty");
         for (int L : fleet) {
