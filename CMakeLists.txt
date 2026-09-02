@@ -222,12 +222,12 @@ add_test(NAME selfplay_fold COMMAND ${Python3_EXECUTABLE}
 set_tests_properties(selfplay_fold PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
-# dp_bench is too slow to run in a suite and its correctness content is covered
-# by test_ladder. Its entry point is not: atoi turns a bad argument into 0, and
-# the report indexes sample vectors that a rep count of 0 leaves empty.
-add_test(NAME bench_cli COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bench_cli.py)
-set_tests_properties(bench_cli PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+# The tools are too slow to run in a suite; their entry points are not. atoi
+# turns a bad argument into 0, and each tool then divides by that count or writes
+# an artefact from it. export_pool emptied web/pool.bin and exited 0.
+add_test(NAME tool_cli COMMAND ${Python3_EXECUTABLE}
+         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tool_cli.py)
+set_tests_properties(tool_cli PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
 
 # The order-aware reference the browser engine is validated against. It printed
 # its ladder and returned success whatever the numbers were, so a drifted oracle
