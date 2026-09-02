@@ -90,6 +90,48 @@ void testPolicyLegality() {
     }
 }
 
+// Every stochastic policy ends in Stream::below(free.size()). Asked to choose
+// with nothing free it reached `% 0` and the process died on a division by
+// zero. playGameTraced never does that, since it stops once the ship cells are
+// gone, but chooseShot is public and a crash is not a diagnosis.
+void testPoliciesRefuseAFullBoard() {
+    std::printf("[no cell left to choose]\n");
+    const Instance inst(4, 4, {2});
+    History full(inst);
+    for (int c = 0; c < inst.cellCount(); ++c)
+        full.add(c / inst.width, c % inst.width, Outcome::Miss);
+
+    std::vector<std::unique_ptr<Policy>> policies;
+    policies.push_back(std::make_unique<RandomPolicy>());
+    policies.push_back(std::make_unique<ParityHuntTarget>());
+
+    for (auto& p : policies) {
+        ++gChecks;
+        p->reset(inst, 1);
+        try {
+            const int cell = p->chooseShot(inst, full);
+            ++gFailures;
+            std::printf("  FAIL  %s returned cell %d from a full board\n", p->name(), cell);
+        } catch (const std::invalid_argument&) {
+            std::printf("  %-20s refuses rather than dividing by zero\n", p->name());
+        }
+    }
+
+    // The density policy has its own fallback and must still name a cell while
+    // one is free, so the guard has not made the common path throw.
+    ++gChecks;
+    History empty(inst);
+    DensityPolicy d;
+    d.reset(inst, 1);
+    const int c = d.chooseShot(inst, empty);
+    if (c < 0 || c >= inst.cellCount()) {
+        ++gFailures;
+        std::printf("  FAIL  density returned %d on an empty board\n", c);
+    } else {
+        std::printf("  density still chooses %d when the board is untouched\n", c);
+    }
+}
+
 // Determinism: the same seed and board must reproduce the same shot count.
 void testDeterminism() {
     std::printf("[determinism]\n");
@@ -165,6 +207,7 @@ int main() {
 
     testRandomShooterClosedForm();
     testPolicyLegality();
+    testPoliciesRefuseAFullBoard();
     testDeterminism();
     testBankIsOrderIndependent();
     testEmptyBankIsRefused();

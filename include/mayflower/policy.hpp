@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -33,7 +34,14 @@ struct Stream {
         z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
         return z ^ (z >> 31);
     }
-    int below(int n) { return static_cast<int>(next() % static_cast<std::uint64_t>(n)); }
+    // Refused rather than divided by. Every policy ends in below(free.size()),
+    // and a policy asked to choose with nothing free reached `% 0`. The harness
+    // never does that, since it stops once the ship cells are gone, but
+    // chooseShot is public and the failure was a crash rather than an error.
+    int below(int n) {
+        if (n <= 0) throw std::invalid_argument("below() needs a positive bound");
+        return static_cast<int>(next() % static_cast<std::uint64_t>(n));
+    }
 };
 
 // What a heuristic policy needs from the history.
