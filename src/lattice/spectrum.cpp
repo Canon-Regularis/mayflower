@@ -63,7 +63,11 @@ struct Sweep {
                     next[static_cast<std::size_t>(e * k)] += w;                       // empty
                     if (horizontalFits)
                         next[static_cast<std::size_t>((e + (k - 1) * unit) * k)] += w * z;
-                    if (verticalFits)
+                    // A monomer has one orientation. At k = 1 both branches leave
+                    // no residual and land on the same successor, so counting the
+                    // vertical one too would weight every cell (1 + 2z) instead
+                    // of (1 + z).
+                    if (k > 1 && verticalFits)
                         next[static_cast<std::size_t>(e * k + (k - 1))] += w * z;
                 }
             }

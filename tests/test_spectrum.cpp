@@ -70,6 +70,36 @@ void testAgainstBruteForce() {
 
 // A known value: with k=2 and z=1 the count of all ways to lay non-overlapping
 // dominoes on a 1 x W strip, empty cells allowed, is the Fibonacci sequence.
+// Monomers are the one rod length where the two orientations describe the same
+// placement. Every cell is then independently empty or filled, so Z is exactly
+// (1+z)^(H*W); a sweep that offered a vertical monomer as well would return
+// (1+2z)^(H*W). The closed form makes this exact rather than a sanity check.
+void testMonomerClosedForm() {
+    std::printf("[monomers have one orientation]\n");
+    double worst = 0.0;
+    for (int H = 1; H <= 4; ++H) {
+        for (int W = 1; W <= 4; ++W) {
+            for (double z : {0.25, 1.0, 3.0}) {
+                const double got = mayflower::partitionFunction(H, W, 1, z);
+                const double want = std::pow(1.0 + z, H * W);
+                worst = std::max(worst, std::abs(got - want) / want);
+            }
+        }
+    }
+    check(worst < 1e-9, "Z for monomers is (1+z)^(H*W) on every strip tried");
+    std::printf("  largest relative departure %.3e over 48 cases\n", worst);
+
+    // lambda is the growth per column, not per site, so a height-H strip of
+    // independent cells grows as (1+z)^H.
+    for (int H = 1; H <= 4; ++H) {
+        const auto sp = mayflower::transferSpectrum(H, 1, 1.0);
+        const double want = std::pow(2.0, H);
+        check(std::abs(sp.lambdaMax - want) < 1e-8,
+              "lambda_max for monomers on a height-" + std::to_string(H) +
+                  " strip is 2^" + std::to_string(H));
+    }
+}
+
 void testFibonacciStrip() {
     std::printf("[1-row strip is Fibonacci]\n");
     double a = 1, b = 1;   // F(1)=1, F(2)=1 with Z(0)=1, Z(1)=1
@@ -146,6 +176,7 @@ void testMonotonicity() {
 int main() {
     const auto t0 = std::chrono::steady_clock::now();
     testAgainstBruteForce();
+    testMonomerClosedForm();
     testFibonacciStrip();
     testGrowthMatchesRatio();
     testDimerEntropyLimit();
