@@ -126,8 +126,9 @@ inline int firstUnshot(const Situation& s) {
 
 // ---------------------------------------------------------------------------
 
-// Uniform over unshot cells. Its expected shot count has a closed form,
-// N*(N+1)/(k+1) with k ship cells, which makes it the harness self-test.
+// Uniform over unshot cells. The game ends on the last of the k ship cells, so
+// the expected shot count has a closed form, k(N+1)/(k+1) over N cells, which
+// makes it the harness self-test: 95.3889 on the standard instance.
 class RandomPolicy : public Policy {
 public:
     [[nodiscard]] const char* name() const override { return "random"; }
