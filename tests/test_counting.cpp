@@ -56,6 +56,49 @@ void testPlacementCounts() {
     checkEq(std10.shipCells(), mayflower::constants::kShipCells, "fleet cell count");
 }
 
+// validate() is the only thing standing between a caller and a board the rest of
+// the engine cannot represent, so the cases it must refuse are worth pinning.
+void testValidationRefusesBadInstances() {
+    std::printf("[instance validation]\n");
+    struct Case { int w, h; std::vector<int> fleet; const char* why; };
+    const std::vector<Case> bad = {
+        {0, 10, {2}, "zero width"},
+        {10, 0, {2}, "zero height"},
+        {-4, 4, {2}, "negative width"},
+        {20, 20, {2}, "400 cells, past the 128 bound"},
+        // The product wraps in a signed int: 200000000 * 20 is -294967296,
+        // which slipped under the bound and left cellCount() negative.
+        {200000000, 20, {2}, "a cell count that overflows a 32-bit product"},
+        {10, 10, {}, "empty fleet"},
+        {10, 10, {0}, "a zero-length ship"},
+        {10, 10, {-2}, "a negative-length ship"},
+        {4, 4, {9}, "a ship longer than either side"},
+        {10, 30, {2}, "height past what the profile packs"},
+    };
+    for (const Case& c : bad) {
+        ++gChecks;
+        try {
+            const mayflower::Instance inst(c.w, c.h, c.fleet);
+            ++gFailures;
+            std::printf("  FAIL  %s was accepted (%s, cellCount %d)\n", c.why,
+                        inst.describe().c_str(), inst.cellCount());
+        } catch (const std::invalid_argument&) {
+            std::printf("  refused: %s\n", c.why);
+        }
+    }
+
+    // And a legal instance still constructs, so the guard is not just refusing
+    // everything.
+    ++gChecks;
+    const mayflower::Instance ok(10, 10, {5, 4, 3, 3, 2});
+    if (ok.cellCount() != 100 || ok.shipCells() != 17) {
+        ++gFailures;
+        std::printf("  FAIL  the standard instance no longer validates\n");
+    } else {
+        std::printf("  and 10x10 {5,4,3,3,2} still validates\n");
+    }
+}
+
 // Instances small enough to enumerate literally. Fleets with a repeated length
 // are where a labelled-counting bug would surface.
 void testDpAgainstBruteForce() {
@@ -164,6 +207,8 @@ int main() {
     const auto t0 = std::chrono::steady_clock::now();
 
     testPlacementCounts();
+
+    testValidationRefusesBadInstances();
     testDpAgainstBruteForce();
     testMarginalsAgainstBruteForce();
     testConstraints();
