@@ -110,6 +110,20 @@ int main(int argc, char** argv) {
     namespace k = mayflower::constants;
 
     const int games = argc > 1 ? std::atoi(argv[1]) : 20000;
+
+    // Settled before any setup. The default is TRAIN, because an unqualified
+    // run is exploratory. TEST is refused here rather than guarded, since the
+    // guard belongs with the analysis: python/stats.py checks
+    // experiments/audit.log for an unseal and this tool has no business
+    // deciding that on its own. It cannot mint the token either, so refusing
+    // early leaves one way to read TEST rather than two, and costs nothing.
+    const std::string foldArg = argc > 3 ? argv[3] : "train";
+    const Fold fold = foldFromName(foldArg);
+    if (fold == Fold::Test && !(argc > 4 && std::string(argv[4]) == "--unsealed")) {
+        std::printf("TEST is sealed. Record the unseal in experiments/audit.log and run\n"
+                    "this through tools/run_headline.py, which verifies it. Refusing.\n");
+        return 2;
+    }
     const std::uint64_t poolKey = 0xA1B2C3D4u;
 
     const Instance inst = standardInstance();
@@ -129,27 +143,9 @@ int main(int argc, char** argv) {
     boards.reserve(static_cast<std::size_t>(games));
     // Fold discipline. Board ids are drawn in order and kept only if they fall
     // in the requested fold, so a run never sees data it is not entitled to.
-    // The default is TRAIN, because an unqualified run is exploratory.
-    //
-    // TEST is refused here rather than guarded, since the guard belongs with
-    // the analysis: python/stats.py checks experiments/audit.log for an unseal
-    // and this tool has no business deciding that on its own.
-    const std::string foldArg = argc > 3 ? argv[3] : "train";
-    const Fold fold = foldFromName(foldArg);
-
-    // TEST needs a token, and this tool cannot mint one. Only the analysis layer
-    // can, and only after verifying that the unseal is already recorded in
-    // experiments/audit.log. Putting the check in one place means there is one
-    // way to read TEST rather than two, and it leaves a record either way.
-    if (fold == Fold::Test) {
-        const bool token = argc > 4 && std::string(argv[4]) == "--unsealed";
-        if (!token) {
-            std::printf("TEST is sealed. Record the unseal in experiments/audit.log and run\n"
-                        "this through tools/run_headline.py, which verifies it. Refusing.\n");
-            return 2;
-        }
+    if (fold == Fold::Test)
         std::printf("TEST fold, unseal token accepted from the analysis layer.\n");
-    }
+
     std::printf("fold         %s\n\n", foldName(fold));
 
     std::uint64_t id = 0;
