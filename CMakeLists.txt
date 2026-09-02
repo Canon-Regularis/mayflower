@@ -51,6 +51,24 @@ add_library(mayflower_core
   src/platform/bench_platform_win.cpp
   src/lattice/spectrum.cpp)
 target_include_directories(mayflower_core PUBLIC include)
+
+# Every header must compile on its own. folds.hpp used std::invalid_argument
+# without including <stdexcept> and built anyway, because every translation unit
+# that reached it had already pulled the header in through something else. One
+# generated source per header, compiled as part of the normal build, so a header
+# that only works second fails here rather than in whoever includes it first.
+file(GLOB MF_PUBLIC_HEADERS CONFIGURE_DEPENDS
+     ${CMAKE_CURRENT_SOURCE_DIR}/include/mayflower/*.hpp)
+set(MF_HEADER_TUS "")
+foreach(hdr IN LISTS MF_PUBLIC_HEADERS)
+  get_filename_component(hdr_name ${hdr} NAME_WE)
+  set(gen ${CMAKE_CURRENT_BINARY_DIR}/header_selftest/${hdr_name}.cpp)
+  file(WRITE ${gen} "#include \"mayflower/${hdr_name}.hpp\"\n")
+  list(APPEND MF_HEADER_TUS ${gen})
+endforeach()
+add_library(mayflower_headers OBJECT ${MF_HEADER_TUS})
+target_link_libraries(mayflower_headers PRIVATE mf_flags)
+target_include_directories(mayflower_headers PRIVATE include)
 target_link_libraries(mayflower_core PUBLIC mf_flags Threads::Threads)
 
 add_executable(omega0 tools/omega0.cpp)
