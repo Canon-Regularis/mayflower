@@ -163,8 +163,11 @@ int main(int argc, char** argv) {
     // the numbers below are therefore not comparable with the table above.
     std::printf("\n\nV3, the same work across threads\n");
     std::printf("--------------------------------\n\n");
-    platform::unpin();
-    std::printf("unpinned, because a single-core pin would make this meaningless.\n");
+    // Reported rather than assumed: threads still confined to one core would
+    // make every number below a measurement of that core, not of scaling.
+    const bool unpinned = platform::unpin();
+    std::printf("unpinned, because a single-core pin would make this meaningless: %s\n",
+                unpinned ? "yes" : "NO, the rows below are not a scaling curve");
     std::printf("This machine is hybrid, so threads land on cores of different speed and\n");
     std::printf("the curve bends for that reason as much as for any scaling limit.\n\n");
 

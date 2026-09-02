@@ -28,8 +28,11 @@ bool pinToCore(int logicalIndex);
 bool pinToFastestCore();
 bool pinToSlowestCore();
 
-// Undo pinning.
-void unpin();
+// Undo pinning, restoring the thread to every processor the process owns.
+// Returns false if the affinity could not be restored, which matters because a
+// thread-scaling measurement taken while still pinned to one core is not a
+// scaling measurement at all.
+bool unpin();
 
 std::string describeTopology();
 

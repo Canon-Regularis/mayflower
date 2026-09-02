@@ -66,16 +66,23 @@ bool pinToCore(int logicalIndex) {
     return SetThreadAffinityMask(GetCurrentThread(), mask) != 0;
 }
 
-void unpin() {
-    const DWORD_PTR all = ~static_cast<DWORD_PTR>(0);
-    SetThreadAffinityMask(GetCurrentThread(), all);
+bool unpin() {
+    // The process mask rather than ~0. A thread mask naming a processor the
+    // process does not own is documented to fail with ERROR_INVALID_PARAMETER;
+    // this build happens to tolerate ~0, but a run under a job object or
+    // `start /affinity` would not, and the failure would be silent.
+    DWORD_PTR processMask = 0, systemMask = 0;
+    if (!GetProcessAffinityMask(GetCurrentProcess(), &processMask, &systemMask))
+        return false;
+    if (processMask == 0) return false;
+    return SetThreadAffinityMask(GetCurrentThread(), processMask) != 0;
 }
 
 #else
 
 std::vector<LogicalCore> enumerateCores() { return {}; }
 bool pinToCore(int) { return false; }
-void unpin() {}
+bool unpin() { return false; }
 
 #endif
 
