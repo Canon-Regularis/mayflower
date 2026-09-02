@@ -20,7 +20,8 @@ inline constexpr int kFleetSize  = 5;
 inline constexpr int kShipCells  = 17;   // coverage lower bound on shots
 inline constexpr int kFleet[kFleetSize] = {5, 4, 3, 3, 2};
 
-// Placements of a length-L ship: H*(W-L+1) horizontal + W*(H-L+1) vertical.
+// Placements of a length-L ship: H*(W-L+1) horizontal + W*(H-L+1) vertical,
+// the vertical term dropped at L = 1 where the two orientations coincide.
 // On 10x10 that is 20*(11-L).
 inline constexpr int kPlacements5 = 120;
 inline constexpr int kPlacements4 = 140;
@@ -82,7 +83,8 @@ inline constexpr int kD4OrbitCount = 15;
 
 namespace detail {
 consteval int placementsFor(int L, int w, int h) {
-    return h * (w - L + 1) + w * (h - L + 1);
+    // Horizontal only at L = 1; both branches would emit the same single cell.
+    return h * (w - L + 1) + (L > 1 ? w * (h - L + 1) : 0);
 }
 consteval int shipCellSum() {
     int s = 0;

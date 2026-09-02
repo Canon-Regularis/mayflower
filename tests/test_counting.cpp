@@ -46,7 +46,10 @@ void testPlacementCounts() {
     checkEq(std10.placementsFor(3), mayflower::constants::kPlacements3, "L=3 placements");
     checkEq(std10.placementsFor(2), mayflower::constants::kPlacements2, "L=2 placements");
 
-    for (int L : {2, 3, 4, 5}) {
+    // L = 1 included deliberately: it is the only length where the horizontal
+    // and vertical branches name the same placement, so it is the only one that
+    // can catch a formula that counts both.
+    for (int L : {1, 2, 3, 4, 5}) {
         checkEq(static_cast<int>(oracle::placements(10, 10, L).size()),
                 std10.placementsFor(L), "oracle vs formula for L=" + std::to_string(L));
     }
