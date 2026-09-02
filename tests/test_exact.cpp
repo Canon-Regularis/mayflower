@@ -111,6 +111,48 @@ void testRefusesOversizedInstances() {
     std::printf("  10x10 is refused up front\n");
 }
 
+// Pruning may make the search cheaper and may not make it wrong. Every level
+// charges unevaluated branches at an admissible floor, so raising that floor
+// above the truth can prune the optimum and return a larger answer while every
+// other test still passes: the pinned optima are computed at the default level,
+// so they move together with the bug.
+//
+// The instances are the cheap end of the ladder on purpose. Unpruned search is
+// exponential, and 4x4 {2} already costs seconds at level None.
+void testPruningLevelsAgree() {
+    std::printf("[pruning does not change the answer]\n");
+    struct Case { int w, h; std::vector<int> fleet; };
+    const Case cases[] = {
+        {3, 3, {2}}, {4, 3, {2}}, {4, 4, {3}}, {3, 4, {2}}, {4, 4, {2}},
+    };
+    const mayflower::Pruning levels[] = {
+        mayflower::Pruning::None, mayflower::Pruning::Bounds, mayflower::Pruning::Star1,
+    };
+    const char* names[] = {"None", "Bounds", "Star1"};
+
+    for (const Case& c : cases) {
+        const mayflower::Instance inst(c.w, c.h, c.fleet);
+        double shots[3] = {0, 0, 0};
+        int first[3] = {-1, -1, -1};   // recorded, deliberately not compared
+        for (int i = 0; i < 3; ++i) {
+            const auto sol = mayflower::solveOptimal(inst, 60000,
+                                                    mayflower::Adversary::Committed, levels[i]);
+            shots[i] = sol.expectedShots;
+            first[i] = sol.optimalFirstShot;
+        }
+        const bool sameValue = std::abs(shots[0] - shots[1]) < 1e-12
+                            && std::abs(shots[0] - shots[2]) < 1e-12;
+        check(sameValue, inst.describe() + ": every pruning level returns one optimum");
+        if (!sameValue)
+            std::printf("      %s %.10f, %s %.10f, %s %.10f\n",
+                        names[0], shots[0], names[1], shots[1], names[2], shots[2]);
+        // Only the value is compared. The optimal opening is not unique, so the
+        // levels may legitimately name different cells: on 3x3 {2} five of the
+        // nine cells open at 4.5, and None and Star1 pick different ones.
+        (void)first;
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -120,6 +162,7 @@ int main() {
     testPinnedValues();
     testDeterminism();
     testRefusesOversizedInstances();
+    testPruningLevelsAgree();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
