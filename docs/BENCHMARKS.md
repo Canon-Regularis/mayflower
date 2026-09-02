@@ -32,6 +32,14 @@ histories and thread counts of 1, 2, 4 and 7. The decomposition guarantees it: c
 integer addition is associative, and the buckets partition the destination keys so
 no two merges touch one counter.
 
+**The pin is checked, not assumed.** `SetThreadAffinityMask` reporting success
+is not the same as the thread having moved, and a pin that quietly did nothing
+would leave every ratio below measuring a mixture of core classes. `ctest -R
+platform` pins to each of the 12 logical processors in turn and asks the OS which
+one the thread is actually on, 64 times per core across roughly ten scheduler
+quanta. It also checks that `unpin` restores the full process mask, since the
+thread-scaling rows are taken after it.
+
 **Measurement protocol.** A run pins to one logical processor of a stated class,
 warms up, interleaves the rungs ABBA, and runs an A/A control that measures the
 noise floor by comparing a rung against itself. The headline is the ratio of

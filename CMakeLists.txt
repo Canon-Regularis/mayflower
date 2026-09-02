@@ -165,6 +165,14 @@ target_link_libraries(test_folds PRIVATE mayflower_core)
 add_test(NAME folds COMMAND test_folds)
 set_tests_properties(folds PROPERTIES LABELS "fast")
 
+# Every number in docs/BENCHMARKS.md assumes the pin took. SetThreadAffinityMask
+# reporting success is not the same as the thread having moved, so this asks the
+# OS which processor the thread is on rather than trusting the return code.
+add_executable(test_platform tests/test_platform.cpp)
+target_link_libraries(test_platform PRIVATE mayflower_core)
+add_test(NAME platform COMMAND test_platform)
+set_tests_properties(platform PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+
 if(Python3_Interpreter_FOUND)
 add_test(NAME stats COMMAND ${Python3_EXECUTABLE}
          ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick)
