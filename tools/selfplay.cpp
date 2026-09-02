@@ -109,7 +109,17 @@ int main(int argc, char** argv) {
     using namespace mayflower;
     namespace k = mayflower::constants;
 
+    // Summaries divide by the game count and index the shot vector, so zero
+    // games aborted rather than reporting an empty run. atoi turns any
+    // unparsable argument into exactly that.
     const int games = argc > 1 ? std::atoi(argv[1]) : 20000;
+    if (games < 1) {
+        std::fprintf(stderr,
+                     "game count must be a positive integer; got \"%s\".\n"
+                     "usage: selfplay [games] [unused] [fold] [--unsealed]\n",
+                     argc > 1 ? argv[1] : "");
+        return 2;
+    }
 
     // Settled before any setup. The default is TRAIN, because an unqualified
     // run is exploratory. TEST is refused here rather than guarded, since the

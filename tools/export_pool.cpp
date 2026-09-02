@@ -33,7 +33,17 @@ int placementIndexOf(const mayflower::Instance& inst, const mayflower::ShipPlace
 int main(int argc, char** argv) {
     using namespace mayflower;
     const char* path = argc > 1 ? argv[1] : "web/pool.bin";
+    // atoi turns an unparsable argument into 0, and a count of 0 wrote an
+    // empty pool and exited 0. The artefact this produces is read by the live
+    // widget and by tests, so a silent empty file is worse than a failure.
     const int wanted = argc > 2 ? std::atoi(argv[2]) : 200000;
+    if (wanted < 1) {
+        std::fprintf(stderr,
+                     "board count must be a positive integer; got \"%s\".\n"
+                     "usage: export_pool [path] [boards] [key]\n",
+                     argc > 2 ? argv[2] : "");
+        return 2;
+    }
     const std::uint64_t key = argc > 3 ? std::strtoull(argv[3], nullptr, 0) : 0x5A17C0DEull;
 
     const Instance inst = standardInstance();

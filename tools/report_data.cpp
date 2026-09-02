@@ -54,7 +54,15 @@ std::string num(double v, int decimals = 6) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    // Same hazard as selfplay: the figure data averages over the game count.
     const int games = argc > 1 ? std::atoi(argv[1]) : 20000;
+    if (games < 1) {
+        std::fprintf(stderr,
+                     "game count must be a positive integer; got \"%s\".\n"
+                     "usage: report_data [games]\n",
+                     argc > 1 ? argv[1] : "");
+        return 2;
+    }
     const Instance inst = standardInstance();
     namespace k = mayflower::constants;
 
