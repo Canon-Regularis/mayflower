@@ -228,6 +228,13 @@ set_tests_properties(selfplay_fold PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
 add_test(NAME bench_cli COMMAND ${Python3_EXECUTABLE}
          ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bench_cli.py)
 set_tests_properties(bench_cli PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+
+# The order-aware reference the browser engine is validated against. It printed
+# its ladder and returned success whatever the numbers were, so a drifted oracle
+# would have blessed a wrong engine.
+add_test(NAME oracle COMMAND ${Python3_EXECUTABLE}
+         ${CMAKE_CURRENT_SOURCE_DIR}/python/oracle.py --order-dependence)
+set_tests_properties(oracle PROPERTIES LABELS "fast")
 endif()
 
 # The JavaScript engine is a third implementation of the sweep, and the report's
