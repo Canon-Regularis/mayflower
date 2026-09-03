@@ -24,6 +24,29 @@
   const frames = data.frames;                     // turns * CELLS bytes
   const cells = data.cells, outcomes = data.outcomes, truth = data.truth;
 
+  // The payload has to describe one game, and every part of it is indexed
+  // against a length taken from another part. Without this the widget drew
+  // whatever it could: a width of 7 against 10-wide frame data painted a
+  // 70-cell board where every cell showed another cell's posterior, and empty
+  // frames painted a full board out of undefined. A blank widget with a reason
+  // beats a confident picture of nothing.
+  const problems = [];
+  if (!(W > 0 && H > 0)) problems.push(`board is ${W}x${H}`);
+  if (turns < 1) problems.push("no turns recorded");
+  if (frames.length !== turns * CELLS)
+    problems.push(`${frames.length} frame bytes against ${turns} turns x ${CELLS} cells`);
+  if (cells.length !== turns - 1)
+    problems.push(`${cells.length} shots against ${turns - 1} turns after the prior`);
+  if (outcomes.length !== cells.length)
+    problems.push(`${outcomes.length} outcomes against ${cells.length} shots`);
+  if (truth.length !== CELLS)
+    problems.push(`${truth.length} truth cells against ${CELLS}`);
+  if (problems.length) {
+    root.textContent = "The recorded game does not describe this board: " +
+                       problems.join("; ") + ".";
+    return;
+  }
+
   let turn = 0;
   let revealed = false;
   let playing = null;

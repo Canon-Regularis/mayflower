@@ -157,6 +157,73 @@ console.log(JSON.stringify(out));
 """
 
 
+
+# Every length in the payload is used to index another part of it. A width of 7
+# against 10-wide frame data painted a 70-cell board where each cell showed
+# another cell's posterior, and empty frames painted a full board out of
+# undefined. Both looked like a working widget.
+MALFORMED_HARNESS = r"""
+const fs = require('fs');
+global.setTimeout = (fn, ms) => ({}); global.clearTimeout = () => {};
+function makeEl(tag) {
+  return { tagName: tag, children: [], listeners: {}, style: {}, dataset: {}, attrs: {},
+    className: '', textContent: '', innerHTML: '', value: '', type: '', min: '', max: '',
+    step: '', title: '', disabled: false, tabIndex: 0, inputMode: '',
+    appendChild(c) { this.children.push(c); return c; },
+    addEventListener(k, fn) { (this.listeners[k] = this.listeners[k] || []).push(fn); },
+    setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; } };
+}
+const base = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const src = fs.readFileSync(process.argv[3], 'utf8');
+const cases = {
+  'control': p => p,
+  'omega emptied': p => { p.omega = []; },
+  'frames truncated': p => { p.frames = p.frames.slice(0, p.frames.length - p.width * p.height); },
+  'frames emptied': p => { p.frames = []; },
+  'shots emptied': p => { p.cells = []; },
+  'outcomes emptied': p => { p.outcomes = []; },
+  'truth emptied': p => { p.truth = []; },
+  'zero width': p => { p.width = 0; },
+  'width disagrees with frames': p => { p.width = 7; },
+};
+const out = {};
+for (const [label, mutate] of Object.entries(cases)) {
+  const payload = JSON.parse(JSON.stringify(base));
+  mutate(payload);
+  const root = makeEl('div');
+  root.dataset.frames = JSON.stringify(payload);
+  global.document = { getElementById: id => (id === 'scrub' ? root : null), createElement: makeEl };
+  global.window = { matchMedia: () => ({matches: false}) };
+  let built = 0, said = '';
+  try { eval(src); built = root.children.length ? (root.children[0].children || []).length : 0;
+        said = String(root.textContent || ''); }
+  catch (e) { said = 'threw ' + e.constructor.name; }
+  out[label] = {built, refused: said.indexOf('does not describe this board') >= 0};
+}
+console.log(JSON.stringify(out));
+"""
+
+
+def run_malformed_probe(payload):
+    """Build the widget against malformed payloads; returns label -> result."""
+    harness = os.path.join(ROOT, "out", "_scrub_malformed.js")
+    data = os.path.join(ROOT, "out", "_scrub_payload.json")
+    os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
+    io.open(harness, "w", encoding="utf-8", newline="\n").write(MALFORMED_HARNESS)
+    io.open(data, "w", encoding="utf-8").write(json.dumps(payload))
+    try:
+        proc = subprocess.run(
+            [NODE, harness, data, os.path.join(ROOT, "web", "scrubber.js")],
+            capture_output=True, text=True)
+    finally:
+        for f in (harness, data):
+            if os.path.exists(f):
+                os.remove(f)
+    if proc.returncode != 0:
+        return None
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
 def main():
     print("the belief scrubber's playback")
     print("==============================")
@@ -231,6 +298,23 @@ def main():
           "playback stops itself at the last turn",
           "ended at {} of {}".format(r["reachedEnd"], turns - 1))
     check(r["restarted"] == 0, "Play from the end restarts at the prior")
+
+    # The widget must refuse a payload that does not describe one game rather
+    # than drawing whatever the lengths allow.
+    verdicts = run_malformed_probe(payload)
+    if verdicts is None:
+        check(False, "the malformed-payload probe runs")
+    else:
+        control = verdicts.pop("control")
+        check(control["built"] > 0 and not control["refused"],
+              "a well-formed payload still builds the board",
+              "{} cells".format(control["built"]))
+        drawn = [k for k, v in verdicts.items() if not v["refused"]]
+        check(not drawn,
+              "every malformed payload is refused, not drawn",
+              "drawn anyway: {}".format(", ".join(drawn)))
+        check(all(v["built"] == 0 for v in verdicts.values()),
+              "and no board is painted when it refuses")
 
     print("\n" + ("FAILED" if failures else "all checks passed"))
     return 1 if failures else 0
