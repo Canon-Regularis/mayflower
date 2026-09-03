@@ -33,6 +33,21 @@
   for (let i = 0; i < raw.length; i++) pool[i] = raw.charCodeAt(i);
   const NBOARDS = (pool.length / LENS.length) | 0;
 
+  // Placement index -> cells, matching the exporter's formula.
+  function placementCells(idx, L) {
+    const hcount = H * (W - L + 1);
+    const out = new Array(L);
+    if (idx < hcount) {
+      const r = (idx / (W - L + 1)) | 0, c = idx % (W - L + 1);
+      for (let k = 0; k < L; k++) out[k] = r * W + c + k;
+    } else {
+      const j = idx - hcount;
+      const c = (j / (H - L + 1)) | 0, r = j % (H - L + 1);
+      for (let k = 0; k < L; k++) out[k] = (r + k) * W + c;
+    }
+    return out;
+  }
+
   // The pool is the widget's whole cheap regime. A broken one is not caught by
   // anything downstream: recompute() finds no survivors, falls through to the
   // exact sweep, and keeps answering correctly at roughly seventy times the
@@ -64,21 +79,6 @@
   if (poolFault) {
     root.textContent = "The board pool did not load: " + poolFault + ".";
     return;
-  }
-
-  // Placement index -> cells, matching the exporter's formula.
-  function placementCells(idx, L) {
-    const hcount = H * (W - L + 1);
-    const out = new Array(L);
-    if (idx < hcount) {
-      const r = (idx / (W - L + 1)) | 0, c = idx % (W - L + 1);
-      for (let k = 0; k < L; k++) out[k] = r * W + c + k;
-    } else {
-      const j = idx - hcount;
-      const c = (j / (H - L + 1)) | 0, r = j % (H - L + 1);
-      for (let k = 0; k < L; k++) out[k] = (r + k) * W + c;
-    }
-    return out;
   }
 
   // Stamped ownership map, so loading a board costs 17 writes and no clear.
