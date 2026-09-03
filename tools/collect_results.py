@@ -42,18 +42,35 @@ def read(relative):
 
 # --- table parsing --------------------------------------------------------
 
-def table(text, header, source, stop=None):
+def table(text, header, source, stop=None, occurrence=None):
     """Rows under an exact header line, split on whitespace.
 
     `header` must appear verbatim. Rows end at the first blank line, or at
     `stop` if given. A cell of "-" becomes None.
+
+    A header that appears more than once is ambiguous and must be disambiguated
+    with `occurrence`. Silently taking the first match is how a damaged header
+    on the first of two identically-headed tables made this read the second and
+    label its rows with the first table's instance: every opponent value moved
+    from the 4x4 figures to the 5x5 ones, under the 4x4 label, and the collector
+    reported success.
     """
     lines = text.split("\n")
-    for i, line in enumerate(lines):
-        if line.strip() == header.strip():
-            break
-    else:
+    hits = [i for i, line in enumerate(lines) if line.strip() == header.strip()]
+    if not hits:
         raise KeyError("header not found in {}: {!r}".format(source, header))
+    if occurrence is None:
+        if len(hits) > 1:
+            raise KeyError(
+                "header appears {} times in {}, so it does not identify a table: "
+                "{!r}".format(len(hits), source, header))
+        i = hits[0]
+    else:
+        if occurrence >= len(hits):
+            raise KeyError(
+                "asked for occurrence {} of a header appearing {} times in {}: "
+                "{!r}".format(occurrence, len(hits), source, header))
+        i = hits[occurrence]
 
     rows = []
     for line in lines[i + 1:]:
@@ -163,8 +180,11 @@ def m9(results):
     # header repeats, so the occurrence is selected by the line that precedes it.
     for inst, marker in (("4x4 {3,2}", "H0 = 8.0444"), ("5x5 {4,3,2}", "H0 = 13.1396")):
         block = t[t.index(marker):]
+        # The block already starts at this instance, so the first header in it is
+        # the right one. Said explicitly, because the slice runs to the end of
+        # the file and therefore still contains the other instance's table.
         for r in table(block, "eps     beta   capacity  shots used      bound    ratio",
-                       src + " (" + inst + ")"):
+                       src + " (" + inst + ")", occurrence=0):
             results.append(dict(source=src, family="noisy", id="noisy-" + inst + "-" + r[0],
                                 instance=inst, metric="shots to identify the board",
                                 value=num(r[3]), unit="shots", exact=False,
@@ -189,11 +209,16 @@ def maxcover(results):
 def opponent(results):
     t = read("docs/OPPONENT.txt")
     src = "docs/OPPONENT.txt"
-    for r in table(t, "believes     worst case regret vs flat", src):
-        results.append(dict(source=src, family="opponent", id="opp-worst-" + r[0],
-                            instance="4x4 {3,2}", metric="worst case over opponents",
-                            value=num(r[1]), unit="shots", exact=True,
-                            believesTheta=num(r[0]), regret=num(r[2])))
+    header = "believes     worst case regret vs flat"
+    # The tool prints this table once per instance, in this order. Reading only
+    # the first meant the 5x5 figures were computed, printed, and dropped.
+    for occurrence, instance in enumerate(("4x4 {3,2}", "5x5 {4,3,2}")):
+        for r in table(t, header, src, occurrence=occurrence):
+            results.append(dict(source=src, family="opponent",
+                                id="opp-worst-{}-{}".format(instance.replace(" ", ""), r[0]),
+                                instance=instance, metric="worst case over opponents",
+                                value=num(r[1]), unit="shots", exact=True,
+                                believesTheta=num(r[0]), regret=num(r[2])))
 
 
 def headline(results):

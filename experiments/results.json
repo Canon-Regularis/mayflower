@@ -1,11 +1,11 @@
 {
  "schema": 1,
- "commit": "658c205",
+ "commit": "fe804b8",
  "note": "Every value is read from a tool's own output, never transcribed. Text tables are parsed against their exact headers, so a tool changing its output breaks this rather than corrupting it.",
  "counts": {
-  "results": 114,
+  "results": 118,
   "families": 12,
-  "exact": 89,
+  "exact": 93,
   "measured": 25
  },
  "crossChecks": [
@@ -1276,7 +1276,7 @@
   {
    "source": "docs/OPPONENT.txt",
    "family": "opponent",
-   "id": "opp-worst-0.0",
+   "id": "opp-worst-4x4{3,2}-0.0",
    "instance": "4x4 {3,2}",
    "metric": "worst case over opponents",
    "value": 9.2246,
@@ -1288,7 +1288,7 @@
   {
    "source": "docs/OPPONENT.txt",
    "family": "opponent",
-   "id": "opp-worst-1.0",
+   "id": "opp-worst-4x4{3,2}-1.0",
    "instance": "4x4 {3,2}",
    "metric": "worst case over opponents",
    "value": 9.0189,
@@ -1300,7 +1300,7 @@
   {
    "source": "docs/OPPONENT.txt",
    "family": "opponent",
-   "id": "opp-worst-2.0",
+   "id": "opp-worst-4x4{3,2}-2.0",
    "instance": "4x4 {3,2}",
    "metric": "worst case over opponents",
    "value": 9.1705,
@@ -1312,7 +1312,7 @@
   {
    "source": "docs/OPPONENT.txt",
    "family": "opponent",
-   "id": "opp-worst-3.0",
+   "id": "opp-worst-4x4{3,2}-3.0",
    "instance": "4x4 {3,2}",
    "metric": "worst case over opponents",
    "value": 9.1705,
@@ -1320,6 +1320,54 @@
    "exact": true,
    "believesTheta": 3.0,
    "regret": -0.0541
+  },
+  {
+   "source": "docs/OPPONENT.txt",
+   "family": "opponent",
+   "id": "opp-worst-5x5{4,3,2}-0.0",
+   "instance": "5x5 {4,3,2}",
+   "metric": "worst case over opponents",
+   "value": 14.8952,
+   "unit": "shots",
+   "exact": true,
+   "believesTheta": 0.0,
+   "regret": 0.0
+  },
+  {
+   "source": "docs/OPPONENT.txt",
+   "family": "opponent",
+   "id": "opp-worst-5x5{4,3,2}-1.0",
+   "instance": "5x5 {4,3,2}",
+   "metric": "worst case over opponents",
+   "value": 14.756,
+   "unit": "shots",
+   "exact": true,
+   "believesTheta": 1.0,
+   "regret": -0.1392
+  },
+  {
+   "source": "docs/OPPONENT.txt",
+   "family": "opponent",
+   "id": "opp-worst-5x5{4,3,2}-2.0",
+   "instance": "5x5 {4,3,2}",
+   "metric": "worst case over opponents",
+   "value": 14.9346,
+   "unit": "shots",
+   "exact": true,
+   "believesTheta": 2.0,
+   "regret": 0.0395
+  },
+  {
+   "source": "docs/OPPONENT.txt",
+   "family": "opponent",
+   "id": "opp-worst-5x5{4,3,2}-3.0",
+   "instance": "5x5 {4,3,2}",
+   "metric": "worst case over opponents",
+   "value": 14.9982,
+   "unit": "shots",
+   "exact": true,
+   "believesTheta": 3.0,
+   "regret": 0.1031
   },
   {
    "source": "experiments/headline_train.json",
