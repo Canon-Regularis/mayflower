@@ -119,6 +119,56 @@ void testRefusesOversizedInstances() {
 //
 // The instances are the cheap end of the ladder on purpose. Unpruned search is
 // exponential, and 4x4 {2} already costs seconds at level None.
+// Instances at the edge of what the solver can be asked about. An instance
+// with one configuration is settled at the root, so value() returned before
+// it ever chose a cell and left the caller holding the -1 sentinel as an
+// "optimal opening". An instance with none reached front() on an empty
+// support and aborted inside the solver, and the policy evaluator averaged
+// over nothing and returned NaN, which compares false against every bound a
+// caller might test it against.
+void testDegenerateInstances() {
+    std::printf("[instances at the edge]\n");
+
+    // Settled at the root: the ship cells are known, so the opening is any of
+    // them and must be a real cell.
+    struct Settled { int w, h; std::vector<int> fleet; double shots; };
+    const Settled settled[] = {
+        {1, 1, {1}, 1.0},
+        {1, 4, {4}, 4.0},
+        {3, 3, {3, 3, 3}, 9.0},
+    };
+    for (const Settled& c : settled) {
+        const mayflower::Instance inst(c.w, c.h, c.fleet);
+        const auto sol = mayflower::solveOptimal(inst);
+        check(std::abs(sol.expectedShots - c.shots) < 1e-9,
+              inst.describe() + ": every cell must be shot");
+        check(sol.optimalFirstShot >= 0 && sol.optimalFirstShot < inst.cellCount(),
+              inst.describe() + ": names a real opening rather than -1");
+    }
+
+    // A fleet that cannot be placed validates, so only the solver can refuse.
+    const mayflower::Instance empty(2, 2, {2, 2, 2});
+    ++gChecks;
+    try {
+        const auto sol = mayflower::solveOptimal(empty);
+        ++gFailures;
+        std::printf("  FAIL  solved an empty space, E[T] %.4f\n", sol.expectedShots);
+    } catch (const std::invalid_argument&) {
+        std::printf("  an empty configuration space is refused\n");
+    }
+
+    ++gChecks;
+    try {
+        mayflower::DensityPolicy p;
+        const auto r = mayflower::exactPolicyExpectation(empty, p);
+        ++gFailures;
+        std::printf("  FAIL  averaged a policy over nothing, E[T] %.4f\n",
+                    r.expectedShots);
+    } catch (const std::invalid_argument&) {
+        std::printf("  and a policy cannot be averaged over it either\n");
+    }
+}
+
 void testPruningLevelsAgree() {
     std::printf("[pruning does not change the answer]\n");
     struct Case { int w, h; std::vector<int> fleet; };
@@ -162,6 +212,7 @@ int main() {
     testPinnedValues();
     testDeterminism();
     testRefusesOversizedInstances();
+    testDegenerateInstances();
     testPruningLevelsAgree();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();

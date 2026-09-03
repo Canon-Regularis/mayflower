@@ -176,8 +176,16 @@ struct Solver {
     }
 
     double value(Mask shot, const std::vector<ConfigId>& support, int* bestCell) {
-        if (occupancySettled(support))
-            return __builtin_popcount(w.occupancy[support.front()] & ~shot);
+        if (occupancySettled(support)) {
+            const Mask remaining = w.occupancy[support.front()] & ~shot;
+            // Every surviving configuration occupies the same cells, so the
+            // remaining ship cells are known and any of them is an optimal
+            // shot. Naming one matters: returning without setting bestCell left
+            // the caller holding its -1 sentinel and calling it an opening.
+            if (bestCell != nullptr)
+                *bestCell = remaining ? __builtin_ctz(remaining) : -1;
+            return __builtin_popcount(remaining);
+        }
 
         StateKey key{shot, support};
         if (bestCell == nullptr) {
@@ -297,6 +305,10 @@ ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimi
     const auto t0 = std::chrono::steady_clock::now();
     const World w = buildWorld(inst, configurationLimit);
 
+    if (w.occupancy.empty())
+        throw std::invalid_argument(inst.describe() +
+                                    " admits no configuration, so there is nothing to solve");
+
     std::vector<ConfigId> all(w.occupancy.size());
     for (std::size_t i = 0; i < all.size(); ++i) all[i] = static_cast<ConfigId>(i);
 
@@ -339,6 +351,14 @@ PolicyExpectation exactPolicyExpectation(const Instance& inst, Policy& policy,
     const auto t0 = std::chrono::steady_clock::now();
     const Sampler sampler(inst);
     const std::uint64_t total = sampler.total();
+
+    // Averaging over no configurations gave 0/0. A NaN expectation is worse
+    // than a refusal: it compares false against every bound a caller might
+    // check it against, so a policy that cannot be evaluated looks like one
+    // that beat everything.
+    if (total == 0)
+        throw std::invalid_argument(inst.describe() +
+                                    " admits no configuration to average a policy over");
 
     PolicyExpectation out;
     out.configurations = total;
