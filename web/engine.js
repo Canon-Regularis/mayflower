@@ -17,6 +17,29 @@
 export const MISS = 0, HIT = 1, SUNK = 2;
 
 export function makeInstance(width, height, fleet) {
+  // The same rules Instance::validate() applies in the C++. Three
+  // implementations that are meant to agree should refuse the same inputs, and
+  // this one answered 0 for a zero-length ship, 0 for a ship longer than the
+  // board, and threw "Invalid typed array length: -16" on a negative dimension.
+  // A silent 0 from one of three engines is the worst of the three outcomes,
+  // because it looks like a legitimate count.
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0)
+    throw new RangeError(`board dimensions must be positive integers, got ${width}x${height}`);
+  if (width * height > 128)
+    throw new RangeError(`board is limited to 128 cells, got ${width * height}`);
+  if (!Array.isArray(fleet) || fleet.length === 0)
+    throw new RangeError("fleet must be a non-empty array");
+  for (const L of fleet) {
+    if (!Number.isInteger(L) || L < 1)
+      throw new RangeError(`ship length must be a positive integer, got ${L}`);
+    if (L > width && L > height)
+      throw new RangeError(`ship of length ${L} does not fit on ${width}x${height}`);
+    if (L > 8)
+      throw new RangeError(`profile sweep supports ship length <= 8, got ${L}`);
+  }
+  if (height > 20)
+    throw new RangeError(`profile sweep supports height <= 20, got ${height}`);
+
   const lengths = [...new Set(fleet)].sort((a, b) => a - b);
   const caps = lengths.map(L => fleet.filter(x => x === L).length);
   const stride = [];

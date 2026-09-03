@@ -296,6 +296,52 @@ def check_widget_handoff():
     return failures
 
 
+
+# The C++ refuses these outright. A third implementation that answered 0 instead
+# would look like it had counted something, and 0 is a legitimate count for a
+# fleet that cannot fit, so the two cases were indistinguishable from outside.
+VALIDATION_PROBE = r"""
+const eng = await import(process.argv[2]);
+const bad = [
+  ["zero width",        () => eng.makeInstance(0, 4, [2])],
+  ["negative width",    () => eng.makeInstance(-4, 4, [2])],
+  ["zero height",       () => eng.makeInstance(4, 0, [2])],
+  ["empty fleet",       () => eng.makeInstance(4, 4, [])],
+  ["zero-length ship",  () => eng.makeInstance(4, 4, [0])],
+  ["negative length",   () => eng.makeInstance(4, 4, [-2])],
+  ["ship off the board",() => eng.makeInstance(3, 3, [9])],
+  ["past 128 cells",    () => eng.makeInstance(20, 20, [2])],
+  ["height past 20",    () => eng.makeInstance(4, 30, [2])],
+];
+const refused = [];
+for (const [why, fn] of bad) {
+  try { fn(); } catch (e) { refused.push(why); continue; }
+  refused.push("ACCEPTED:" + why);
+}
+// A legal instance must still build, so the guard is not refusing everything.
+let legal = false;
+try { eng.makeInstance(4, 4, [3, 2]); legal = true; } catch (e) { legal = false; }
+console.log(JSON.stringify({refused, legal}));
+"""
+
+
+def run_validation_probe():
+    """Returns (list of verdicts, legal-instance-still-builds)."""
+    path = os.path.join(ROOT, "out", "_engine_validation.mjs")
+    os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
+    io.open(path, "w", encoding="utf-8", newline="\n").write(VALIDATION_PROBE)
+    url = "file:///" + os.path.join(ROOT, "web", "engine.js").replace("\\", "/")
+    try:
+        proc = subprocess.run([NODE, path, url], capture_output=True, text=True)
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
+    if proc.returncode != 0:
+        return None, proc.stderr[:300]
+    out = json.loads(proc.stdout.strip().splitlines()[-1])
+    return out["refused"], out["legal"]
+
+
 def main():
     print("javascript engine against the python oracle")
     print("===========================================")
@@ -368,7 +414,26 @@ def main():
 
     failures += check_widget_handoff()
 
-    print("\n" + ("FAILED" if failures else "all checks passed"))
+    # Instance validation, so the browser engine refuses what the C++ refuses.
+    print("[instance validation]")
+    refused, legal = run_validation_probe()
+    if refused is None:
+        print("  {:<56} {}".format("the validation probe runs", "FAILED"))
+        print("      " + str(legal)[:160])
+        failures += 1
+    else:
+        accepted = [r[len("ACCEPTED:"):] for r in refused if r.startswith("ACCEPTED:")]
+        print("  {:<56} {}".format(
+            "{} degenerate instances refused".format(len(refused) - len(accepted)),
+            "ok" if not accepted else "FAILED"))
+        if accepted:
+            print("      accepted: " + ", ".join(accepted))
+            failures += 1
+        print("  {:<56} {}".format(
+            "a legal instance still builds", "ok" if legal else "FAILED"))
+        if not legal:
+            failures += 1
+
     return 1 if failures else 0
 
 
