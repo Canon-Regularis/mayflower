@@ -28,6 +28,12 @@
 
 namespace {
 
+// Everything below is Windows-only, the helpers included. Left outside the
+// guard, `check` is defined and never called on the other platforms, which
+// -Wunused-function reports and -Werror turns into a failed build on all three
+// Linux legs.
+#ifdef _WIN32
+
 int gFailures = 0;
 int gChecks = 0;
 
@@ -37,8 +43,6 @@ void check(bool ok, const std::string& what, const std::string& detail = "") {
     if (!detail.empty()) std::printf("      %s\n", detail.c_str());
     if (!ok) ++gFailures;
 }
-
-#ifdef _WIN32
 
 using namespace mayflower;
 
