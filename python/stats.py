@@ -89,8 +89,17 @@ def normal_quantile(p: float) -> float:
 
 
 def mean_interval(xs, alpha=0.05):
-    """Normal-approximation interval for a mean. Reported by the harness."""
+    """Normal-approximation interval for a mean. Reported by the harness.
+
+    Two observations minimum: the spread divides by n-1, so one sample gave a
+    bare ZeroDivisionError and none gave another one line earlier. Neither says
+    what a caller did wrong, and paired_interval reaches this with whatever it
+    was handed.
+    """
     n = len(xs)
+    if n < 2:
+        raise ValueError(
+            "an interval needs at least two observations; got {}".format(n))
     m = sum(xs) / n
     var = sum((x - m) ** 2 for x in xs) / (n - 1)
     half = normal_quantile(1 - alpha / 2) * math.sqrt(var / n)
