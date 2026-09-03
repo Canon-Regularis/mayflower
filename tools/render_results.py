@@ -30,7 +30,21 @@ def load():
 
 
 def by_id(results):
-    return {r["id"]: r for r in results}
+    """Index by id, refusing a collision.
+
+    A dict comprehension keeps the last of any duplicate, so two results sharing
+    an id would leave one silently unreachable and the page would show the other
+    without a word. The ids are built by the collector from instance and metric,
+    so a collision means two different quantities are being called the same
+    thing.
+    """
+    out = {}
+    for r in results:
+        if r["id"] in out:
+            raise ValueError("two results share the id {!r}: {} and {}".format(
+                r["id"], out[r["id"]].get("metric"), r.get("metric")))
+        out[r["id"]] = r
+    return out
 
 
 def fam(results, name):
@@ -215,8 +229,8 @@ def _check_counts(d):
     stated = d["counts"]
     actual = {
         "results": len(results),
-        "exact": sum(1 for r in results if r.get("exact")),
-        "measured": sum(1 for r in results if not r.get("exact")),
+        "exact": sum(1 for r in results if r["exact"]),
+        "measured": sum(1 for r in results if not r["exact"]),
         "families": len({r["family"] for r in results}),
     }
     drift = {k: (stated[k], v) for k, v in actual.items()
