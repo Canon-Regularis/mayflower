@@ -164,6 +164,34 @@ void testAgainstBruteForce() {
     }
 }
 
+// The survival term divides by the hypothesis count, so a fleet that cannot be
+// placed produced 1 - x/0 at every depth and the bound came back NaN. A NaN
+// bound is worse than no bound: it compares false against every comparison a
+// caller might make, so the rung is silently discarded rather than reported.
+void testWaterFillingRefusesAnEmptySpace() {
+    std::printf("[water filling on an empty space]\n");
+    ++gChecks;
+    try {
+        const auto r = mayflower::waterFillingBound({2, 2, 2}, 0, 4);
+        ++gFailures;
+        std::printf("  FAIL  returned %.4f for a space with no configurations\n", r.bound);
+    } catch (const std::invalid_argument&) {
+        std::printf("  an empty hypothesis space is refused\n");
+    }
+
+    // And a real space still produces a finite bound, so the guard has not
+    // turned the working case into a refusal.
+    ++gChecks;
+    const auto ok = mayflower::waterFillingBound({5, 4, 3, 3, 2},
+                                                 mayflower::constants::kOmega0, 100);
+    if (!(ok.bound > 0.0) || ok.bound != ok.bound) {
+        ++gFailures;
+        std::printf("  FAIL  the standard instance no longer bounds: %.4f\n", ok.bound);
+    } else {
+        std::printf("  the standard instance still bounds at %.4f shots\n", ok.bound);
+    }
+}
+
 void testWitnessesAreValid() {
     std::printf("[witnesses]\n");
     for (int L : {1, 2, 3, 4, 5}) {
@@ -201,6 +229,7 @@ int main() {
 
     testAgainstBruteForce();
     testParityCase();
+    testWaterFillingRefusesAnEmptySpace();
     testWitnessesAreValid();
     testTranscriptCount();
     testWaterFillingIsSound();

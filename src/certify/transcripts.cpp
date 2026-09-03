@@ -135,6 +135,15 @@ WaterFillingResult waterFillingBound(const std::vector<int>& fleet, std::uint64_
     out.hitTranscripts = countHitTranscripts(fleet);
     out.shipCells = shipCells;
 
+    // The survival term divides by the hypothesis count. With none, every term
+    // was 1 - x/0 and the bound came back NaN, which is worse than refusing:
+    // NaN compares false against everything, so a caller testing whether this
+    // rung beats another silently keeps the other, and a report prints "nan".
+    if (hypotheses == 0)
+        throw std::invalid_argument("water filling needs at least one configuration to bound");
+    if (cells < 0)
+        throw std::invalid_argument("cell count must not be negative");
+
     // C(t, k) as a double; C(100,17) is about 3.4e19, well inside range.
     const auto binomial = [](int n, int k) -> double {
         if (k < 0 || n < k) return 0.0;
