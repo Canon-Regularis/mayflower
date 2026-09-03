@@ -273,7 +273,23 @@ export function constrain(inst, history) {
   const outcome = new Uint8Array(inst.cells);
   const sunkLen = new Uint8Array(inst.cells);
 
+  // The same record rules History::add applies in the C++. Typed arrays ignore
+  // an out-of-range write instead of throwing, so a shot at cell 999 simply
+  // vanished and constrain returned the unconstrained posterior: 264 on
+  // 4x4 {3,2}, exactly as if nothing had been shot. A caller conditioning on a
+  // record it got wrong would have been shown the prior and told it was the
+  // posterior.
+  const seen = new Set();
   history.forEach((s, t) => {
+    if (!Number.isInteger(s.cell) || s.cell < 0 || s.cell >= inst.cells)
+      throw new RangeError(`shot ${t} is at cell ${s.cell}, off a ${inst.cells}-cell board`);
+    if (seen.has(s.cell))
+      throw new RangeError(`cell ${s.cell} is shot twice, at shot ${t}`);
+    seen.add(s.cell);
+    if (s.outcome !== MISS && s.outcome !== HIT && s.outcome !== SUNK)
+      throw new RangeError(`shot ${t} carries outcome ${s.outcome}`);
+    if (s.outcome === SUNK && !(Number.isInteger(s.length) && s.length >= 1))
+      throw new RangeError(`shot ${t} announces SUNK without a ship length`);
     time[s.cell] = t;
     outcome[s.cell] = s.outcome;
     sunkLen[s.cell] = s.length || 0;

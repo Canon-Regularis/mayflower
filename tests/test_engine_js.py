@@ -321,7 +321,39 @@ for (const [why, fn] of bad) {
 // A legal instance must still build, so the guard is not refusing everything.
 let legal = false;
 try { eng.makeInstance(4, 4, [3, 2]); legal = true; } catch (e) { legal = false; }
-console.log(JSON.stringify({refused, legal}));
+
+// The record, not just the instance. Typed arrays drop an out-of-range write
+// rather than throwing, so a shot off the board vanished and constrain returned
+// the unconstrained posterior while the caller believed it had conditioned.
+const inst = eng.makeInstance(4, 4, [3, 2]);
+const unconstrained = (() => {
+  const {cells, gate} = eng.constrain(inst, []);
+  return eng.count(inst, cells, gate);
+})();
+const records = [
+  ["cell off the board",   [{cell: 999, outcome: eng.MISS}]],
+  ["negative cell",        [{cell: -1, outcome: eng.MISS}]],
+  ["non-integer cell",     [{cell: 1.5, outcome: eng.MISS}]],
+  ["cell shot twice",      [{cell: 0, outcome: eng.MISS}, {cell: 0, outcome: eng.HIT}]],
+  ["SUNK with no length",  [{cell: 0, outcome: eng.SUNK}]],
+];
+const recordsRefused = [];
+for (const [why, hist] of records) {
+  try {
+    const {cells, gate} = eng.constrain(inst, hist);
+    eng.count(inst, cells, gate);
+    recordsRefused.push("ACCEPTED:" + why);
+  } catch (e) { recordsRefused.push(why); }
+}
+// A legitimate shot must still constrain, and to fewer boards than none.
+let constrains = false;
+try {
+  const {cells, gate} = eng.constrain(inst, [{cell: 0, outcome: eng.MISS}]);
+  const n = eng.count(inst, cells, gate);
+  constrains = n > 0 && n < unconstrained;
+} catch (e) { constrains = false; }
+
+console.log(JSON.stringify({refused, legal, recordsRefused, constrains}));
 """
 
 
@@ -339,7 +371,7 @@ def run_validation_probe():
     if proc.returncode != 0:
         return None, proc.stderr[:300]
     out = json.loads(proc.stdout.strip().splitlines()[-1])
-    return out["refused"], out["legal"]
+    return out
 
 
 def main():
@@ -416,7 +448,9 @@ def main():
 
     # Instance validation, so the browser engine refuses what the C++ refuses.
     print("[instance validation]")
-    refused, legal = run_validation_probe()
+    probe_out = run_validation_probe()
+    refused = probe_out.get("refused") if probe_out else None
+    legal = probe_out.get("legal") if probe_out else None
     if refused is None:
         print("  {:<56} {}".format("the validation probe runs", "FAILED"))
         print("      " + str(legal)[:160])
@@ -432,6 +466,22 @@ def main():
         print("  {:<56} {}".format(
             "a legal instance still builds", "ok" if legal else "FAILED"))
         if not legal:
+            failures += 1
+
+    # The record is validated too, not only the instance.
+    if refused is not None:
+        rec = probe_out.get("recordsRefused", [])
+        taken = [r[len("ACCEPTED:"):] for r in rec if r.startswith("ACCEPTED:")]
+        print("  {:<56} {}".format(
+            "{} malformed records refused".format(len(rec) - len(taken)),
+            "ok" if not taken else "FAILED"))
+        if taken:
+            print("      accepted: " + ", ".join(taken))
+            failures += 1
+        print("  {:<56} {}".format(
+            "a legitimate shot still narrows the posterior",
+            "ok" if probe_out.get("constrains") else "FAILED"))
+        if not probe_out.get("constrains"):
             failures += 1
 
     return 1 if failures else 0
