@@ -33,6 +33,39 @@
   for (let i = 0; i < raw.length; i++) pool[i] = raw.charCodeAt(i);
   const NBOARDS = (pool.length / LENS.length) | 0;
 
+  // The pool is the widget's whole cheap regime. A broken one is not caught by
+  // anything downstream: recompute() finds no survivors, falls through to the
+  // exact sweep, and keeps answering correctly at roughly seventy times the
+  // cost. Measured here, an empty pool took 26 s to start and 12.5 s a shot
+  // against 0.06 s and 0.18 s, and its hidden board decodes to nothing, so the
+  // game cannot be won either. The page just stops responding and says nothing.
+  const poolFault = (() => {
+    if (pool.length === 0) return "the board pool is empty";
+    if (pool.length % LENS.length !== 0)
+      return `the board pool is ${pool.length} bytes, not a whole number of ${LENS.length}-byte boards`;
+    // One board is enough to tell a decoded pool from a corrupted one: every
+    // ship must land inside its own placement table and the fleet must cover
+    // exactly its own cells without overlapping.
+    const seen = new Set();
+    for (let j = 0; j < LENS.length; j++) {
+      const L = LENS[j], idx = pool[j];
+      const slots = H * (W - L + 1) + (L > 1 ? W * (H - L + 1) : 0);
+      if (idx >= slots) return `ship ${j} of the first board has placement index ${idx} of ${slots}`;
+      for (const c of placementCells(idx, L)) {
+        if (seen.has(c)) return `the first board places two ships on cell ${c}`;
+        seen.add(c);
+      }
+    }
+    const want = LENS.reduce((a, b) => a + b, 0);
+    if (seen.size !== want)
+      return `the first board covers ${seen.size} cells, not ${want}`;
+    return null;
+  })();
+  if (poolFault) {
+    root.textContent = "The board pool did not load: " + poolFault + ".";
+    return;
+  }
+
   // Placement index -> cells, matching the exporter's formula.
   function placementCells(idx, L) {
     const hcount = H * (W - L + 1);

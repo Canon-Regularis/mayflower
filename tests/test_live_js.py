@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import os
 import subprocess
 import sys
@@ -129,6 +130,73 @@ console.log(JSON.stringify(out));
 """
 
 
+
+# A broken pool is not caught by anything downstream. recompute() finds no
+# survivors, falls through to the exact sweep, and keeps answering correctly at
+# roughly seventy times the cost: measured at 26 s to start and 12.5 s a shot
+# against 0.2 s and 0.1 s. The counts stay right, so nothing looks wrong; the
+# page simply stops responding, and with an empty pool the hidden board decodes
+# to nothing so the game cannot be won either.
+POOL_HARNESS = r"""
+const fs = require('fs');
+global.setTimeout = () => ({}); global.clearTimeout = () => {};
+global.atob = b64 => Buffer.from(b64, 'base64').toString('binary');
+function makeEl(tag) { return { tagName: tag, children: [], listeners: {}, attrs: {}, dataset: {},
+  className:'', textContent:'', innerHTML:'', disabled:false,
+  appendChild(c){this.children.push(c);return c;},
+  addEventListener(k,fn){(this.listeners[k]=this.listeners[k]||[]).push(fn);},
+  setAttribute(k,v){this.attrs[k]=v;},
+  fire(k,ev){(this.listeners[k]||[]).forEach(fn=>fn(ev||{preventDefault(){}}));} }; }
+let eng = fs.readFileSync(process.argv[3],'utf8')
+  .split('export const ').join('const ').split('export function ').join('function ');
+const live = fs.readFileSync(process.argv[4],'utf8');
+const real = fs.readFileSync(process.argv[2]);
+function build(pool) {
+  const root = makeEl('div'); root.dataset.pool = pool.toString('base64');
+  const nodes = {'.liveboard':makeEl('div'),'.livestats':makeEl('div'),
+    '[data-act="new"]':makeEl('button'),'[data-act="step"]':makeEl('button'),
+    '[data-act="play"]':makeEl('button'),'[data-act="reveal"]':makeEl('button')};
+  root.querySelector = s => nodes[s] || null;
+  global.document = { getElementById: id => id==='live'?root:null, createElement: makeEl };
+  global.window = {}; Math.random = () => 0.4242;
+  try {
+    eval('(function(){\n'+eng+'\nwindow.MayflowerEngine={makeInstance,count,marginals,constrain,MISS,HIT,SUNK,FREE,EMPTY,OCCUPIED};\n})();');
+    eval(live);
+  } catch (e) { return {refused: false, threw: String(e.message).slice(0,60)}; }
+  const said = String(root.textContent || '');
+  return {refused: said.indexOf('The board pool did not load') >= 0,
+          cells: (nodes['.liveboard'].innerHTML.match(/class=/g) || []).length};
+}
+const out = {
+  control: build(real),
+  empty: build(Buffer.alloc(0)),
+  oneByte: build(Buffer.from([0])),
+  ragged: build(real.subarray(0, 53)),
+  indexTooBig: build(Buffer.alloc(50, 255)),
+  overlapping: build(Buffer.alloc(50, 0)),
+};
+console.log(JSON.stringify(out));
+"""
+
+
+def run_pool_probe():
+    """Build the widget against malformed pools; returns label -> verdict."""
+    harness = os.path.join(ROOT, "out", "_live_pool.js")
+    os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
+    io.open(harness, "w", encoding="utf-8", newline="\n").write(POOL_HARNESS)
+    try:
+        proc = subprocess.run(
+            [NODE, harness, POOL, os.path.join(ROOT, "web", "engine.js"),
+             os.path.join(ROOT, "web", "live.js")],
+            capture_output=True, text=True, timeout=300)
+    finally:
+        if os.path.exists(harness):
+            os.remove(harness)
+    if proc.returncode != 0:
+        return None
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
 def main():
     print("the live widget's playback")
     print("==========================")
@@ -171,6 +239,21 @@ def main():
           "{} pending".format(r["pendingAfterFourMore"]))
     check(r["pendingAfterTick"] == 1, "a tick replaces itself rather than multiplying",
           "{} pending after the next tick".format(r["pendingAfterTick"]))
+
+    # A pool that is not a decoded set of boards must stop the widget rather
+    # than push it into the exact sweep on every shot.
+    pools = run_pool_probe()
+    if pools is None:
+        check(False, "the malformed-pool probe runs")
+    else:
+        control = pools.pop("control")
+        check(not control["refused"] and control.get("cells", 0) > 0,
+              "the real pool still builds the widget",
+              "{} cells".format(control.get("cells")))
+        accepted = [k for k, v in pools.items() if not v["refused"]]
+        check(not accepted,
+              "every malformed pool stops the widget",
+              "accepted: {}".format(", ".join(accepted)))
 
     print("\n" + ("FAILED" if failures else "all checks passed"))
     return 1 if failures else 0
