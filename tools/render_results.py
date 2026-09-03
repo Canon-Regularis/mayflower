@@ -208,7 +208,30 @@ def fmt(v, places=4):
     return group(v)
 
 
+def _check_counts(d):
+    """The page quotes d["counts"]; the rows come from d["results"]. If those two
+    ever disagree the header is a claim about data the page is not showing."""
+    results = d["results"]
+    stated = d["counts"]
+    actual = {
+        "results": len(results),
+        "exact": sum(1 for r in results if r.get("exact")),
+        "measured": sum(1 for r in results if not r.get("exact")),
+        "families": len({r["family"] for r in results}),
+    }
+    drift = {k: (stated[k], v) for k, v in actual.items()
+             if k in stated and stated[k] != v}
+    if drift:
+        raise ValueError(
+            "collected counts disagree with the collected results: "
+            + ", ".join("{} says {} but there are {}".format(k, a, b)
+                        for k, (a, b) in sorted(drift.items())))
+    if not d["crossChecks"]:
+        raise ValueError("crossChecks is empty; the agreement section would be blank")
+
+
 def build(d):
+    _check_counts(d)
     R = d["results"]
     idx = by_id(R)
     b = {r["note"]: r["value"] for r in fam(R, "bounds") if r.get("note")}

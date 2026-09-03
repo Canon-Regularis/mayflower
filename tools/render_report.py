@@ -722,6 +722,8 @@ def build(data, out_path):
       "shaded.</figcaption></figure>")
 
     w('<figure><div class="plate">')
+    if not data["blockingWitness"]:
+        raise ValueError("blockingWitness is empty; the certificates figure would be blank")
     w(blocking_boards(data["blockingWitness"], prior["width"], prior["height"]))
     w("</div><figcaption><b>Blocking sets.</b> Shoot the marked cells and no placement of "
       "that length survives untouched, which is what makes beta(L) the number of shots "
@@ -858,8 +860,11 @@ def build(data, out_path):
           pol["parity hunt/target"]["mean"] - best["mean"]))
 
     # the opening book ---------------------------------------------------
-    book = data.get("openingBook") or []
-    if book:
+    book = data["openingBook"]
+    if not book:
+        raise ValueError("openingBook is empty; the report cannot describe an opening "
+                         "that was not computed")
+    if True:
         bw = prior["width"]
         forced = book[-1]
         w('<div class="col"><h3>Where to shoot first</h3>')
@@ -871,7 +876,7 @@ def build(data, out_path):
         w("<p>The line walks the long diagonal outward from the centre and then fills the "
           "gaps between those cells. It also ends by itself, after <b>{}</b> shots: by then "
           "only {:,} boards remain and every one of them occupies {}, so that cell has "
-          "marginal 1 and the miss branch is empty. Twenty-two shots into this order, "
+          "marginal 1 and the miss branch is empty. That many shots into this order, "
           "contact is not likely but certain.</p>".format(
               len(book), forced["omega"],
               chr(ord("A") + forced["cell"] % bw) + str(forced["cell"] // bw + 1)))
@@ -897,7 +902,7 @@ def build(data, out_path):
           sum(1 for r in obj if abs(r["maxProb"] - r["optimal"]) < 1e-9), len(obj),
           max(r["maxProb"] - r["optimal"] for r in obj)))
     w("<li><b>Open on the centre and work outward along the diagonal.</b> That is the line "
-      "above, and the {} cells it names guarantee contact.</li>".format(len(book) or 22))
+      "above, and the {} cells it names guarantee contact.</li>".format(len(book)))
     w("<li><b>Never pick a shot by information gain.</b> Up to {:.2f} shots worse, because "
       "a settled answer is worth zero bits, so the rule locates a ship and then spends "
       "{:.2f} misses a game on a board it has already solved.</li>".format(
