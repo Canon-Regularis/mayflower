@@ -47,8 +47,14 @@ public:
         // for.
         if (row < 0 || col < 0 || col >= width_)
             throw std::out_of_range("cell out of range");
-        const std::size_t c = static_cast<std::size_t>(row * width_ + col);
-        if (c >= time_.size()) throw std::out_of_range("cell out of range");
+        // Widened before multiplying. row * width_ overflows int for a large
+        // enough row, which is undefined behaviour and traps under the ubtrap
+        // preset; it happened to land on a negative that cast to a huge size_t
+        // and was caught by the bound below, but only by luck of the wrap.
+        const std::int64_t flat = static_cast<std::int64_t>(row) * width_ + col;
+        if (flat < 0 || flat >= static_cast<std::int64_t>(time_.size()))
+            throw std::out_of_range("cell out of range");
+        const std::size_t c = static_cast<std::size_t>(flat);
         if (time_[c] >= 0) throw std::invalid_argument("cell shot twice");
         if (outcome == Outcome::Sunk && sunkLength < 1)
             throw std::invalid_argument("SUNK needs a ship length");
