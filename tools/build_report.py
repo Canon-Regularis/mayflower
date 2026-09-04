@@ -502,8 +502,8 @@ def scaling(rows):
     w, h = 400, 258
     pad_l, pad_r, pad_t, pad_b = 62, 20, 20, 48
     inset = 14
-    lo = math.log10(min(r["omega"] for r in rows))
-    hi = math.log10(max(r["omega"] for r in rows))
+    lo = math.floor(math.log10(min(r["omega"] for r in rows)))
+    hi = math.ceil(math.log10(max(r["omega"] for r in rows)))
     ns = [r["n"] for r in rows]
     x_lo, x_hi = pad_l + inset, w - pad_r - inset
     y_lo, y_hi = h - pad_b - inset, pad_t + inset
@@ -515,9 +515,7 @@ def scaling(rows):
         return y_lo + (math.log10(v) - lo) / (hi - lo) * (y_hi - y_lo)
 
     out = [svg_open(w, h, "Configuration count against board size")]
-    for e in range(int(lo), int(hi) + 2):
-        if not (lo <= e <= hi):
-            continue
+    for e in range(lo, hi + 1):
         yy = sy(10 ** e)
         out.append(axis_line(pad_l, yy, w - pad_r, yy, "grid"))
         out.append(text(pad_l - 8, yy + 4, f"10^{e}", "tick", "end"))

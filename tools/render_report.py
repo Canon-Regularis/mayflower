@@ -876,8 +876,7 @@ def build(data, out_path):
         w("<p>The line walks the long diagonal outward from the centre and then fills the "
           "gaps between those cells. It also ends by itself, after <b>{}</b> shots: by then "
           "only {:,} boards remain and every one of them occupies {}, so that cell has "
-          "marginal 1 and the miss branch is empty. That many shots into this order, "
-          "contact is not likely but certain.</p>".format(
+          "marginal 1 and the miss branch is empty. By then contact is certain.</p>".format(
               len(book), forced["omega"],
               chr(ord("A") + forced["cell"] % bw) + str(forced["cell"] // bw + 1)))
         w("<p>The marginals rise as the line runs, from {:.4f} at the first cell to "

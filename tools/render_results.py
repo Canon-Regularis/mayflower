@@ -135,12 +135,14 @@ def scaling(points):
     w, h, l, r, t, b = 520, 230, 52, 16, 18, 40
     xs = [p["n"] for p in points]
     ys = [math.log10(p["omega"]) for p in points]
+    lo = math.floor(min(ys))
+    hi = math.ceil(max(ys))
     x = lambda v: l + (w - l - r) * (v - min(xs)) / (max(xs) - min(xs))
-    y = lambda v: t + (h - t - b) * (1 - (v - 6) / (11.5 - 6))
+    y = lambda v: t + (h - t - b) * (1 - (v - lo) / (hi - lo))
 
     out = [svg_open(w, h, "Configuration count against board side, log scale",
                     "Configurations by board side, log scale")]
-    for e in range(6, 12):
+    for e in range(lo, hi + 1):
         out.append('<line x1="{}" y1="{:.1f}" x2="{}" y2="{:.1f}" class="grid"/>'
                    .format(l, y(e), w - r, y(e)))
         out.append('<text x="{}" y="{:.1f}" class="tk" text-anchor="end">10^{}</text>'
