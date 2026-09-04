@@ -183,6 +183,21 @@ target_link_libraries(test_folds PRIVATE mayflower_core)
 add_test(NAME folds COMMAND test_folds)
 set_tests_properties(folds PROPERTIES LABELS "fast")
 
+# Random instances against literal enumeration. The hand-written case lists all
+# used ships of length two or more for a long time, which is the one input where
+# a sweep's two orientation branches cannot disagree, so a rung that emitted a
+# length-1 ship twice passed every one of them. Seeds are fixed, so this is a
+# generated case list rather than a search: a failure replays exactly.
+add_executable(test_fuzz tests/test_fuzz.cpp)
+target_include_directories(test_fuzz PRIVATE tests)
+target_link_libraries(test_fuzz PRIVATE mayflower_core)
+add_test(NAME fuzz COMMAND test_fuzz 250 0x5EED)
+set_tests_properties(fuzz PROPERTIES LABELS "fast")
+
+# A wider draw on a different seed, for the slower gate.
+add_test(NAME fuzz_wide COMMAND test_fuzz 1200 0xA17E)
+set_tests_properties(fuzz_wide PROPERTIES LABELS "pr" TIMEOUT 900)
+
 # Every number in docs/BENCHMARKS.md assumes the pin took. SetThreadAffinityMask
 # reporting success is not the same as the thread having moved, so this asks the
 # OS which processor the thread is on rather than trusting the return code.
