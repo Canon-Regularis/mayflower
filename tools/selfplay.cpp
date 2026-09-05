@@ -94,13 +94,31 @@ void pairedComparison(const Summary& a, const Summary& b) {
         const double x = a.shots[i] - ca, y = b.shots[i] - cb;
         cov += x * y; va += x * x; vb += y * y;
     }
-    const double rho = cov / std::sqrt(va * vb);
+    // Both ratios below divide by a spread that can be zero, and one of them
+    // does on the standard pool. density(b=50) and density(b=200) saturate to
+    // the same play, so every paired difference is zero, half is zero, and the
+    // variance ratio printed "CRN saves infx": a division by zero with an "x"
+    // appended. run_headline copies this table verbatim into the headline
+    // record, so that is what the run would have preserved. rho goes the same
+    // way, as 0/0, when a policy has no spread of its own.
+    const double spread = std::sqrt(va * vb);
+    const double rho = spread > 0.0 ? cov / spread : 0.0;
     const double independentHalf =
         1.959964 * std::sqrt(a.sd * a.sd + b.sd * b.sd) / std::sqrt(static_cast<double>(n));
 
-    std::printf("  %-20s - %-20s  %+7.3f  [%+7.3f, %+7.3f]   rho %.3f   CRN saves %.1fx\n",
+    // Pairing removed the whole difference rather than some fraction of it,
+    // which is an outcome and not a number.
+    char saving[24];
+    if (half > 0.0) {
+        const double ratio = (independentHalf / half) * (independentHalf / half);
+        std::snprintf(saving, sizeof saving, "%.1fx", ratio);
+    } else {
+        std::snprintf(saving, sizeof saving, "unbounded");
+    }
+
+    std::printf("  %-20s - %-20s  %+7.3f  [%+7.3f, %+7.3f]   rho %.3f   CRN saves %s\n",
                 a.name.c_str(), b.name.c_str(), dmean, dmean - half, dmean + half, rho,
-                (independentHalf / half) * (independentHalf / half));
+                saving);
 }
 
 }  // namespace

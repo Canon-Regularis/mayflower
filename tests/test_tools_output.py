@@ -164,6 +164,36 @@ def test_selfplay():
         check(best <= mean <= worst, "{}: the mean lies inside the range".format(label))
         check(sd >= 0.0, "{}: the spread is non-negative".format(label))
 
+    # The paired table divides by spreads that can be zero. density(b=50) and
+    # density(b=200) saturate to the same play, so their difference has no
+    # spread and the variance ratio printed "CRN saves infx"; a policy with no
+    # spread of its own sends rho the same way as 0/0. run_headline copies this
+    # table verbatim into the headline record, so a malformed figure here is
+    # what the pre-registered run would have preserved.
+    saves = re.findall(r"CRN saves (\S+)", text)
+    check(saves, "the paired table reports a CRN saving", "none found")
+    bad = [v for v in saves if not re.fullmatch(r"\d+(?:\.\d+)?x|unbounded", v)]
+    check(not bad, "every CRN saving is a number or a stated non-number",
+          "got {}".format(sorted(set(bad))))
+
+    rhos = re.findall(r"rho\s+(\S+)", text)
+    check(rhos, "the paired table reports a correlation", "none found")
+    bad = [v for v in rhos if not re.fullmatch(r"-?\d+\.\d+", v)]
+    check(not bad, "every correlation is a number", "got {}".format(sorted(set(bad))))
+
+    # run_headline turns this same text into the recorded result, and its parser
+    # lives in a file no test ran. Checking it here costs nothing extra and ties
+    # the captured rows in test_run_headline to the format selfplay emits today.
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import run_headline
+    parsed = run_headline.parse(text)
+    check(len(parsed["policies"]) == len(rows),
+          "the headline parser reads the same policies this test did",
+          "{} against {}".format(len(parsed["policies"]), len(rows)))
+    check(len(parsed["paired"]) == len(saves),
+          "and every paired row it will record",
+          "{} against {}".format(len(parsed["paired"]), len(saves)))
+
 
 def test_optimal_pruning():
     """The pruning ladder, whose last column is the claim that matters."""
