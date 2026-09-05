@@ -244,6 +244,13 @@ add_test(NAME tool_cli COMMAND ${Python3_EXECUTABLE}
          ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tool_cli.py)
 set_tests_properties(tool_cli PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
 
+# The same three tools, run for real and read. Each builds the unranking sampler
+# for the standard instance first, about twenty-five seconds whatever size is
+# asked for, so this sits in the slower gate.
+add_test(NAME tools_output COMMAND ${Python3_EXECUTABLE}
+         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tools_output.py)
+set_tests_properties(tools_output PROPERTIES LABELS "pr" SKIP_RETURN_CODE 77 TIMEOUT 900)
+
 # The order-aware reference the browser engine is validated against. It printed
 # its ladder and returned success whatever the numbers were, so a drifted oracle
 # would have blessed a wrong engine.
