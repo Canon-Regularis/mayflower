@@ -237,6 +237,23 @@ add_test(NAME selfplay_fold COMMAND ${Python3_EXECUTABLE}
 set_tests_properties(selfplay_fold PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
+# The other half of that guard: the script that mints the token. run_headline.py
+# decides whether TEST may be read, and nothing executed it, so both of its gates
+# and the parser that turns a run into the recorded result were unchecked. The
+# test replaces selfplay, because the real path reads TEST and writes the log.
+add_test(NAME run_headline COMMAND ${Python3_EXECUTABLE}
+         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_run_headline.py)
+set_tests_properties(run_headline PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
+                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# The dossier renderer, six hundred lines that nothing executed. It concatenates
+# strings, so it cannot fail on a page that came out wrong: the page is checked
+# against the collected results instead of against fixed text.
+add_test(NAME render_results COMMAND ${Python3_EXECUTABLE}
+         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_render_results.py)
+set_tests_properties(render_results PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
+                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
 # The tools are too slow to run in a suite; their entry points are not. atoi
 # turns a bad argument into 0, and each tool then divides by that count or writes
 # an artefact from it. export_pool emptied web/pool.bin and exited 0.
