@@ -409,6 +409,12 @@ void testUnderflowIsReported() {
                       "a weight it cannot hold is flagged (kept %.3f%% of the total)",
                       100 * kept);
         check(r.underflowed && kept < 0.5, buf);
+        // Weighted runs are never exact, whatever else happened. Note this
+        // cannot test the !underflowed term of that condition: trivial weights
+        // are all 1, so no multiply turns a non-zero into a zero and no rescale
+        // fires, which makes underflow unreachable whenever trivial() holds.
+        // The term is redundant by construction rather than untested.
+        check(!r.exact, "and a weighted run is never reported exact");
     }
 
     // Through the public channel constructor, with an eps its own validator
@@ -427,6 +433,7 @@ void testUnderflowIsReported() {
             inst, mayflower::Weights::noisyChannel(inst, allMiss, 1e-25));
         check(gone.underflowed,
               "eps = 1e-25 does not, and does not pass for impossible");
+        check(!gone.exact, "and a weighted run is never exact here either");
     }
 
     // The unweighted bridge is untouched, and an underflowed run is never exact.
