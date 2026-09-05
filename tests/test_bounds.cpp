@@ -168,6 +168,35 @@ void testAgainstBruteForce() {
 // placed produced 1 - x/0 at every depth and the bound came back NaN. A NaN
 // bound is worse than no bound: it compares false against every comparison a
 // caller might make, so the rung is silently discarded rather than reported.
+// The two numbers docs/BOUNDS.md and the report quote. Neither was pinned:
+// waterFillingBound was only ever checked for being non-negative and no
+// larger than the board, and countHitTranscripts was compared against
+// enumeration on small fleets but never on the standard one. A transcript
+// count off by one therefore passed the whole suite, and the published
+// figure would have moved with nothing to say so.
+void testPublishedBoundsArePinned() {
+    std::printf("[the published bounds]\n");
+    const std::vector<int> fleet = {5, 4, 3, 3, 2};
+
+    const std::uint64_t k = mayflower::countHitTranscripts(fleet);
+    checkEq(k, std::uint64_t{28560}, "K, the feasible hit-transcript count");
+
+    const auto wf = mayflower::waterFillingBound(fleet, mayflower::constants::kOmega0, 100);
+    checkEq(wf.hitTranscripts, std::uint64_t{28560},
+            "and the bound is built from that same K");
+    check(std::abs(wf.bound - 24.0876) < 5e-5,
+          "the water-filling bound is 24.0876 shots");
+    if (std::abs(wf.bound - 24.0876) >= 5e-5)
+        std::printf("      got %.6f\n", wf.bound);
+    checkEq(wf.saturatesAt, 25, "and it stops contributing at depth 25");
+
+    // The rung must clear the trivial one it is meant to improve on.
+    check(wf.bound > static_cast<double>(mayflower::constants::kCoverageBound),
+          "and it beats the coverage bound it is quoted against");
+    std::printf("  K = %llu, bound = %.4f shots, saturates at %d\n",
+                static_cast<unsigned long long>(k), wf.bound, wf.saturatesAt);
+}
+
 void testWaterFillingRefusesAnEmptySpace() {
     std::printf("[water filling on an empty space]\n");
     ++gChecks;
@@ -229,6 +258,7 @@ int main() {
 
     testAgainstBruteForce();
     testParityCase();
+    testPublishedBoundsArePinned();
     testWaterFillingRefusesAnEmptySpace();
     testWitnessesAreValid();
     testTranscriptCount();
