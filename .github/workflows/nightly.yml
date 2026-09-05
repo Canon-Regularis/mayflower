@@ -125,7 +125,7 @@ jobs:
 
       # ctest reports Skipped, and exits zero, when out/figures.json is absent.
       # That is right for the per-push suite and wrong here, where running these
-      # two for real is the whole point of the job.
+      # three for real is the whole point of the job.
       - name: The figure data is there to check
         run: |
           python - <<'EOF'
@@ -137,8 +137,21 @@ jobs:
           print("figures.json carries", len(d), "sections")
           EOF
 
+      # scrubber_js is gated on out/figures.json like the other two, and was
+      # left out of this list. Being labelled fast, it therefore ran nowhere:
+      # every push leg skipped it for want of out/, and the one job that
+      # builds out/ did not call it.
+      # A skip still exits zero, which is how scrubber_js stayed missing without
+      # anything going red, so a skip is an error in the one job that supplies
+      # what these three are gated on.
       - name: The figure-data contract
-        run: ctest --test-dir build -R '^(report_data|results)$' --output-on-failure --no-tests=error
+        run: |
+          ctest --test-dir build -R '^(report_data|results|scrubber_js)$' \n            --output-on-failure --no-tests=error > figure-data.log 2>&1 \n            || { cat figure-data.log; exit 1; }
+          cat figure-data.log
+          if grep -q Skipped figure-data.log; then
+            echo 'a figure-data test skipped in the job that exists to run it'
+            exit 1
+          fi
 
       - name: Render the report
         run: python tools/render_report.py out/figures.json out/report.html
