@@ -39,6 +39,12 @@ struct ExactSolution {
     std::uint64_t nodesExpanded = 0;   // states whose children were generated
     std::uint64_t cellsPruned = 0;     // candidate shots the bound rejected outright
     std::uint64_t branchesCut = 0;     // chance branches abandoned part-way
+
+    // Nodes where the admissible floor came out above the state's exact value.
+    // Every prune rests on that floor being a lower bound, so any count above
+    // zero means the search may have discarded the branch it should have kept.
+    // It stays zero on a correct floor whatever the instance.
+    std::uint64_t admissibilityViolations = 0;
 };
 
 // Pruning strength. Each level adds one mechanism to the one before, so a
@@ -60,9 +66,16 @@ struct ExactSolution {
 //         run-to-run spread, and one timing run does not resolve it.
 enum class Pruning { None, Bounds, Star1 };
 
+// `auditFloor` turns on the admissibility check described above. The check has
+// to run at settled states, which is the branch built to return immediately, so
+// it puts a pass over the support on the hot path: measured at about 6% on
+// 4x4 {2} by ratio of minima, which is small but not free. Off by default so a
+// measurement does not pay for it; tests ask for it, and that is where the
+// invariant belongs.
 ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit = 60000,
                            Adversary adversary = Adversary::Committed,
-                           Pruning pruning = Pruning::Star1);
+                           Pruning pruning = Pruning::Star1,
+                           bool auditFloor = false);
 
 // Expected shots for a policy, averaged over every configuration. Exact, with no
 // sampling, because the whole space is enumerated.

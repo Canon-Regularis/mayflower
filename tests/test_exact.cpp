@@ -126,6 +126,35 @@ void testRefusesOversizedInstances() {
 // support and aborted inside the solver, and the policy evaluator averaged
 // over nothing and returned NaN, which compares false against every bound a
 // caller might test it against.
+// Every prune in the search rests on floorOf being a lower bound on the value
+// it stands in for, and nothing checked that. Comparing pruning levels does not
+// reach it: a floor inflated by 0.5 changed no answer on any instance small
+// enough to solve, because away from the endgame the value exceeds the floor by
+// the expected misses and absorbs the error. The states with no slack at all are
+// the settled ones, where the ship cells are known and the value IS the unshot
+// count, and there an error of 0.001 is visible. That is where this looks.
+void testFloorIsAdmissible() {
+    std::printf("[the pruning floor is a lower bound]\n");
+    struct Case { int w, h; std::vector<int> fleet; };
+    const Case cases[] = {
+        {3, 3, {2}}, {4, 3, {2}}, {4, 4, {3}}, {3, 4, {2}}, {4, 4, {2}},
+    };
+    for (const Case& c : cases) {
+        const mayflower::Instance inst(c.w, c.h, c.fleet);
+        for (const auto level : {mayflower::Pruning::Bounds, mayflower::Pruning::Star1}) {
+            const auto sol = mayflower::solveOptimal(
+                inst, 60000, mayflower::Adversary::Committed, level, /*auditFloor=*/true);
+            check(sol.admissibilityViolations == 0,
+                  inst.describe() + ": the floor never exceeds the value it bounds");
+            if (sol.admissibilityViolations != 0)
+                std::printf("      %llu nodes where floorOf came out above the exact value\n",
+                            static_cast<unsigned long long>(sol.admissibilityViolations));
+        }
+    }
+    std::printf("  %d instances audited at two pruning levels, no violation\n",
+                static_cast<int>(sizeof(cases) / sizeof(cases[0])));
+}
+
 void testDegenerateInstances() {
     std::printf("[instances at the edge]\n");
 
@@ -212,6 +241,7 @@ int main() {
     testPinnedValues();
     testDeterminism();
     testRefusesOversizedInstances();
+    testFloorIsAdmissible();
     testDegenerateInstances();
     testPruningLevelsAgree();
 

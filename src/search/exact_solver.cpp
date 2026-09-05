@@ -184,7 +184,17 @@ struct Solver {
             // the caller holding its -1 sentinel and calling it an opening.
             if (bestCell != nullptr)
                 *bestCell = remaining ? __builtin_ctz(remaining) : -1;
-            return __builtin_popcount(remaining);
+            const double settled = __builtin_popcount(remaining);
+            if (!auditFloor) return settled;
+            // A settled state is where the floor has no slack at all: the ship
+            // cells are known, so the exact value IS the unshot ship-cell count
+            // and floorOf must equal it. Everywhere else the value exceeds the
+            // floor by the expected misses, which hides a floor inflated by
+            // less than that gap. Checking here is what makes a small error
+            // visible, and these states are reached constantly, since the
+            // branches leading into them are floored on the way.
+            if (floorOf(shot, support) > settled + 1e-9) ++admissibilityViolations;
+            return settled;
         }
 
         StateKey key{shot, support};
@@ -292,16 +302,30 @@ struct Solver {
             }
         }
 
+        // Admissibility, checked where it can be: `best` is this state's exact
+        // value, and floorOf claims to be a lower bound on it. Every prune in
+        // the search rests on that claim and nothing tested it, because a floor
+        // wrong by less than the gap between competing cells still returns the
+        // right answer on every instance small enough to solve. A floor that
+        // exceeded the truth here would prune the branch it should have kept.
+        if (auditFloor && floorOf(shot, support) > best + 1e-9) ++admissibilityViolations;
+
         if (bestCell != nullptr) *bestCell = bestAt;
         else memo.emplace(std::move(key), best);
         return best;
     }
+
+    // Nodes where the floor came out above the value it bounds. Reported rather
+    // than thrown: the search is still correct for this run if it never pruned
+    // on the bad floor, and a count is what a test can assert on.
+    std::uint64_t admissibilityViolations = 0;
+    bool auditFloor = false;
 };
 
 }  // namespace
 
 ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimit,
-                           Adversary adversary, Pruning pruning) {
+                           Adversary adversary, Pruning pruning, bool auditFloor) {
     const auto t0 = std::chrono::steady_clock::now();
     const World w = buildWorld(inst, configurationLimit);
 
@@ -313,10 +337,12 @@ ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimi
     for (std::size_t i = 0; i < all.size(); ++i) all[i] = static_cast<ConfigId>(i);
 
     Solver solver(w, adversary, pruning);
+    solver.auditFloor = auditFloor;
     ExactSolution out;
     out.configurations = w.occupancy.size();
     out.expectedShots = solver.value(0, all, &out.optimalFirstShot);
     out.memoStates = solver.memo.size();
+    out.admissibilityViolations = solver.admissibilityViolations;
     out.nodesExpanded = solver.nodes;
     out.cellsPruned = solver.cellsPruned;
     out.branchesCut = solver.branchesCut;
