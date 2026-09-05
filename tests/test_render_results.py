@@ -99,6 +99,21 @@ def main():
               "the page prints the collected {}".format(key),
               "{} is not on the page".format(by_id[key]))
 
+    # The twelve noisy-channel results were collected from docs/M9_RESULTS.txt
+    # and rendered nowhere: the page carried no section for them and said nothing
+    # about leaving them out. Pinned here, because a section that stops being
+    # called leaves no other trace than the numbers going missing.
+    noisy = [r for r in data["results"] if r.get("family") == "noisy"]
+    check(noisy, "results.json still carries the noise channel")
+    start = page.find("What noise costs")
+    check(start >= 0, "and the page has a section for it")
+    section = page[start:page.find("</section>", start)] if start >= 0 else ""
+    absent = [r["id"] for r in noisy
+              if "{:.1f}".format(r["value"]) not in section
+              or "{:.2f}".format(r["ratio"]) not in section]
+    check(not absent, "carrying every noise measurement and its ratio",
+          "{} of {} absent, first: {}".format(len(absent), len(noisy), absent[:3]))
+
     # Same input, same page: the dossier is regenerated for every release and a
     # renderer that reordered a dict would churn the diff without changing a
     # number.

@@ -421,6 +421,29 @@ def build(d):
                    "{:+.2f}".format(r["value"] - r["committed"])] for r in adv]))
     w("</section>")
 
+    # The collector gathered these twelve from docs/M9_RESULTS.txt and the page
+    # had no section for them, so the noise channel appeared nowhere on it.
+    noise = sorted(fam(R, "noisy"), key=lambda r: (r["instance"], r["eps"]))
+    w('<section><h2>What noise costs</h2>')
+    w('<p class="lede">Every shot reports the wrong outcome with probability '
+      "eps, so the board has to be identified through a channel rather than read "
+      "off the answers. The floor is the channel-capacity bound, the fewest shots "
+      "that could carry the instance's entropy at that noise rate, and the ratio "
+      "against it is what the shot choice costs on top of what the channel "
+      "does.</p>")
+    w(rows_table(["instance", "noise rate", "capacity (bits/shot)",
+                  "capacity floor", "measured shots", "ratio"],
+                 [[r["instance"], "{:.4f}".format(r["eps"]),
+                   "{:.4f}".format(r["capacity"]), fmt(r["bound"], 1),
+                   fmt(r["value"], 1), "{:.2f}".format(r["ratio"])]
+                  for r in noise]))
+    w('<p class="cap">The ratio runs from 2.47 to 4.29. It climbs from about 2.5 '
+      "where noise is negligible and then settles between roughly 3.7 and 4.3 "
+      "rather than continuing to climb, which is what separates the cost of the "
+      "channel from the cost of choosing shots. The shot counts are measured "
+      "rather than exact.</p>")
+    w("</section>")
+
     # Cross checks.
     w('<section><h2>Where two tools compute the same thing</h2>')
     w('<p class="lede">Several quantities are produced independently by more than '
