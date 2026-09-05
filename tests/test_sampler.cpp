@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <limits>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -66,6 +67,55 @@ std::vector<oracle::BoardShips> canonical(std::vector<oracle::BoardShips> boards
 }
 
 // ---------------------------------------------------------------------------
+
+// unrank guards its argument, and nothing exercised the guard: every call in
+// this file draws from [0, total), so a bound that admitted total itself went
+// unnoticed. One past the end reads a layer entry that was never written, and
+// the board it decodes from that would look like any other.
+void testUnrankRefusesRanksOffTheEnd() {
+    std::printf("[ranks off the end]\n");
+    struct Case { int w, h; std::vector<int> fleet; };
+    const Case cases[] = { {4, 4, {3, 2}}, {3, 3, {2}}, {4, 4, {1, 1}} };
+
+    for (const Case& c : cases) {
+        const mayflower::Instance inst(c.w, c.h, c.fleet);
+        const mayflower::Sampler sampler(inst);
+        const std::uint64_t total = sampler.total();
+
+        // The last legal rank still works, so the bound is not simply off the
+        // other way and refusing everything.
+        ++gChecks;
+        try {
+            const auto last = sampler.unrank(total - 1);
+            if (last.size() != inst.fleet.size()) {
+                ++gFailures;
+                std::printf("  FAIL  %s: the last rank gave %zu ships\n",
+                            inst.describe().c_str(), last.size());
+            }
+        } catch (const std::out_of_range&) {
+            ++gFailures;
+            std::printf("  FAIL  %s: the last legal rank was refused\n",
+                        inst.describe().c_str());
+        }
+
+        for (const std::uint64_t bad : {total, total + 1,
+                                        std::numeric_limits<std::uint64_t>::max()}) {
+            ++gChecks;
+            try {
+                (void)sampler.unrank(bad);
+                ++gFailures;
+                std::printf("  FAIL  %s: rank %llu of %llu was accepted\n",
+                            inst.describe().c_str(),
+                            static_cast<unsigned long long>(bad),
+                            static_cast<unsigned long long>(total));
+            } catch (const std::out_of_range&) {
+            }
+        }
+        std::printf("  %-14s ranks up to %llu draw, past that refused\n",
+                    inst.describe().c_str(),
+                    static_cast<unsigned long long>(total - 1));
+    }
+}
 
 void testUnrankBijection() {
     std::printf("[unrank bijection, exhaustive]\n");
@@ -202,6 +252,7 @@ void testSamplerAgreesWithMarginals() {
 int main() {
     const auto t0 = std::chrono::steady_clock::now();
 
+    testUnrankRefusesRanksOffTheEnd();
     testUnrankBijection();
     testFleetComposition();
     testSamplingUnderObservations();
