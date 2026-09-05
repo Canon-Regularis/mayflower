@@ -68,17 +68,29 @@ def main():
           "exit {}".format(r.returncode))
     check("drew" not in r.stdout, "and it draws nothing either")
 
-    # The token is the only way through. Checked by letting the tool get past
-    # the guard and into its setup, then stopping it: reaching the build is the
-    # evidence, and waiting for it to finish would cost half a minute.
-    accepted = False
+    # The token is the only way through. Without it the tool exits 2 before any
+    # setup, which the three checks above establish, so acceptance is the absence
+    # of that: either the run finishes and reports success, or it is still
+    # working when the clock runs out, which it can only be having passed the
+    # guard and reached the board bank.
+    #
+    # The first version asserted the timeout itself, treating "did not finish in
+    # six seconds" as the definition of accepted. That measured the runtime, not
+    # the guard, so a machine quick enough to finish inside the window was scored
+    # as a rejection: this build takes 47 s here and about 3 s on a Linux runner,
+    # and it failed CI on the gcc-13 release and clang release legs while every
+    # other leg ran the same commit green. It also discarded the tool's output on
+    # the branch it called a failure, so the log said only FAILED.
     try:
-        run(["300", "0", "test", "--unsealed"], timeout=6)
+        r = run(["300", "0", "test", "--unsealed"], timeout=6)
     except subprocess.TimeoutExpired:
-        accepted = True     # got past the guard and into the board bank
+        accepted = True
+        detail = "still building the board bank at 6 s"
     else:
-        accepted = False
-    check(accepted, "the unseal token is accepted and the run proceeds")
+        accepted = r.returncode == 0
+        detail = "" if accepted else "exit {}: {}".format(
+            r.returncode, " ".join((r.stdout + r.stderr).split())[-140:])
+    check(accepted, "the unseal token is accepted and the run proceeds", detail)
 
     # Refusing must not depend on the expensive setup, or no suite can afford
     # to check it.
