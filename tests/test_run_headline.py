@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -136,13 +137,68 @@ def test_parser():
 
 
 def test_provenance():
-    """The field that pins a headline number to a build."""
+    """The field that pins a headline number to a build.
+
+    The defect was that this recorded the empty string on every run, so what
+    must hold is that the field is never empty.
+
+    Whether git can answer is the environment's business and not this function's:
+    "unknown" is its documented fallback, and the Windows CI runner took it. The
+    first version of this test required a real commit unconditionally, which
+    asserted that git was installed rather than that the code was right, and it
+    failed there while the function did exactly what it says.
+    """
     print("\n[the recorded commit]")
+    probe = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                           capture_output=True, text=True)
     c = run_headline.commit()
-    check(bool(c), "a commit is recorded at all", "got {!r}".format(c))
-    check(c != "unknown", "and git actually answered", "got {!r}".format(c))
-    check(re.fullmatch(r"[0-9a-f]{40}(-dirty)?", c) is not None,
-          "and it is a commit rather than a placeholder", "got {!r}".format(c))
+
+    check(bool(c), "something is always recorded, never the empty string it held",
+          "got {!r}".format(c))
+    if probe.returncode == 0:
+        check(re.fullmatch(r"[0-9a-f]{40}(-dirty)?", c) is not None,
+              "and where git answers, it is that commit", "got {!r}".format(c))
+    else:
+        check(c == "unknown", "and where git cannot answer, it says so",
+              "got {!r}; git said {!r}".format(c, probe.stderr.strip()[:80]))
+
+    # A headline number from a tree with uncommitted changes is not reproducible
+    # from the commit alone, so the marker is the part that carries the warning.
+    # Checked against the tree as it actually is, either way round, because the
+    # sha pattern above accepts the marker without requiring it.
+    if probe.returncode == 0:
+        st = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
+                            capture_output=True, text=True)
+        if st.returncode == 0:
+            if st.stdout.strip():
+                check(c.endswith("-dirty"),
+                      "a tree with uncommitted changes is marked dirty",
+                      "got {!r} with {} changed files".format(
+                          c, len(st.stdout.strip().splitlines())))
+            else:
+                check(not c.endswith("-dirty"),
+                      "and a clean tree is not marked dirty", "got {!r}".format(c))
+
+    # The fallback itself, without needing a machine that has no git.
+    saved = run_headline.subprocess
+
+    class NoGit:
+        # commit() catches subprocess.SubprocessError, and it looks the name up
+        # on whatever this module is, so the stub has to carry it.
+        SubprocessError = subprocess.SubprocessError
+
+        @staticmethod
+        def run(*a, **k):
+            raise OSError("git is not installed")
+
+    run_headline.subprocess = NoGit
+    try:
+        fallback = run_headline.commit()
+    finally:
+        run_headline.subprocess = saved
+    check(fallback == "unknown",
+          "and with no git at all it records the stated fallback",
+          "got {!r}".format(fallback))
 
 
 def main():
