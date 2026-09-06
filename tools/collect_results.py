@@ -303,6 +303,86 @@ def cross_checks(results):
         checks.append({"quantity": label, "sources": [sa, sb],
                        "instances": len(shared), "agree": not bad,
                        "disagreements": [{"instance": i, sa: a[i], sb: b[i]} for i in bad]})
+    # Orderings that hold by definition, between families rather than within
+    # one. The optimal policy is optimal, a lower bound bounds, a worst case is
+    # no better than an average, and feedback cannot hurt. Each side is produced
+    # by a different tool on a different run, and nothing had ever put them in
+    # the same place, so a result contradicting another family's would have sat
+    # in the table with nothing to notice it.
+    OPT = "E[T] under optimal"
+    rules = [
+        ("E[T] under density", "ge", OPT),
+        ("E[T] under max hit probability", "ge", OPT),
+        ("E[T] under max information gain", "ge", OPT),
+        ("E4 water filling", "le", OPT),
+        ("worst case W*", "ge", OPT),
+        ("non-adaptive optimum", "ge", OPT),
+    ]
+    per_instance = {}
+    for r in results:
+        per_instance.setdefault(r["instance"], {})[r["metric"]] = r["value"]
+
+    compared, off = 0, []
+    for inst in sorted(per_instance):
+        m = per_instance[inst]
+        for left, rel, right in rules:
+            if left not in m or right not in m:
+                continue
+            compared += 1
+            ok = (m[left] >= m[right] - 1e-9 if rel == "ge"
+                  else m[left] <= m[right] + 1e-9)
+            if not ok:
+                off.append({"instance": inst,
+                            "claim": "{} {} {}".format(
+                                left, ">=" if rel == "ge" else "<=", right),
+                            left: m[left], right: m[right]})
+    if compared:
+        checks.append({"quantity": "orderings that hold by definition",
+                       "sources": ["every family"], "instances": compared,
+                       "agree": not off, "disagreements": off})
+
+    # Waste is a subset of the misses, not a separate quantity: it counts the
+    # misses taken after the board was already determined, and a game takes
+    # E[T] - shipCells misses in total. The two come from different sweeps, so
+    # a waste figure larger than the misses available to it would mean one of
+    # them is measuring something else.
+    def ship_cells(instance):
+        m = re.search(r"\{([^}]*)\}", instance)
+        if not m:
+            return None
+        try:
+            return sum(int(x) for x in m.group(1).split(","))
+        except ValueError:
+            return None
+
+    waste_pairs = [
+        ("misses after the board is determined, density", "E[T] under density"),
+        ("misses after the board is determined, max hit probability",
+         "E[T] under max hit probability"),
+        ("misses after the board is determined, max information gain",
+         "E[T] under max information gain"),
+    ]
+    counted, over = 0, []
+    for inst in sorted(per_instance):
+        cells = ship_cells(inst)
+        if cells is None:
+            continue
+        m = per_instance[inst]
+        for waste, shots in waste_pairs:
+            if waste not in m or shots not in m:
+                continue
+            counted += 1
+            misses = m[shots] - cells
+            if m[waste] > misses + 1e-9:
+                over.append({"instance": inst, "waste": m[waste],
+                             "misses available": round(misses, 4),
+                             "claim": "waste <= E[T] - shipCells"})
+    if counted:
+        checks.append({"quantity": "waste is a subset of the misses",
+                       "sources": ["objective", "waste"], "instances": counted,
+                       "agree": not over, "disagreements": over})
+
+
     return checks
 
 
