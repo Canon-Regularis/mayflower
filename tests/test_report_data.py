@@ -23,6 +23,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -46,15 +47,92 @@ def check(ok, what, detail=""):
         failures += 1
 
 
+def test_blocking_hover():
+    """The blocking boards answer a hover, and answer it with the truth.
+
+    Issue #6: every other board on the page carried a tooltip and these four did
+    not, so a reader could count the marks and learn nothing else. The figure now
+    reports, per cell, how many placements of that length run through it.
+
+    That number is geometry, so it can be checked rather than trusted: summed
+    over a board it must come to length times the number of placements, because
+    each placement covers exactly that many cells. It runs before the
+    figures.json gate below, needing none of it, so it is checked in every leg
+    rather than only where the report has been built.
+    """
+    print("[the blocking boards]")
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import build_report
+
+    W = H = 10
+    for length in (1, 2, 3, 4, 5):
+        placements = H * (W - length + 1) + (W * (H - length + 1) if length > 1 else 0)
+        total = sum(build_report.placements_through(r, c, length, W, H)
+                    for r in range(H) for c in range(W))
+        check(total == length * placements,
+              "length {}: incidences sum to {} x {} placements".format(
+                  length, length, placements),
+              "got {} against {}".format(total, length * placements))
+
+    # A 1-cell ship has no second orientation, so it must not be counted twice.
+    check(build_report.placements_through(4, 4, 1, W, H) == 1,
+          "a one-cell ship covers its own cell once")
+
+    witnesses = [{"length": 3, "beta": 33, "optimal": True,
+                  "cells": list(range(33))}]
+    svg = build_report.blocking_boards(witnesses, W, H)
+    tips = re.findall(r'data-tip="([^"]+)"', svg)
+    check(len(tips) == W * H, "every cell of a board carries a tooltip",
+          "{} of {}".format(len(tips), W * H))
+    check(sum(1 for t in tips if " shot, " in t) == 33,
+          "the marked cells are the ones reported as shot",
+          "{} reported shot".format(sum(1 for t in tips if " shot, " in t)))
+    check(sum(1 for t in tips if "left free" in t) == W * H - 33,
+          "and the rest as left free")
+    check(all("length-3 placements" in t for t in tips),
+          "each names the length its board is drawn for")
+
+    # The numbers the figure actually prints, not just the function behind them.
+    # Checking the corner alone was not enough: it meets two placements of any
+    # length, so a tooltip reporting a flat 2 for every cell passed that and the
+    # sums above, which are computed straight from the function. The rendered
+    # incidences have to satisfy the same identity.
+    rendered = [int(re.search(r"(?:meets|:) (\d+) of the", t).group(1)) for t in tips]
+    check(sum(rendered) == 3 * 160,
+          "the incidences the figure prints sum to 3 x 160 as well",
+          "got {}".format(sum(rendered)))
+    check(len(set(rendered)) > 1,
+          "and are not one number repeated across the board",
+          "every cell printed {}".format(rendered[0]))
+
+    # The corner is the smallest a cell can be, one along its row and one down
+    # its column, and the centre the largest, so between them they pin the
+    # clipping at the edge and the count in the middle.
+    corner = [t for t in tips if t.startswith("A1 ")]
+    centre = [t for t in tips if t.startswith("E5 ")]
+    check(len(corner) == 1 and " 2 of the 160 " in corner[0],
+          "the corner meets two of the 160 length-3 placements",
+          corner[0] if corner else "no A1 tooltip")
+    check(len(centre) == 1 and " 6 of the 160 " in centre[0],
+          "and the centre meets six",
+          centre[0] if centre else "no E5 tooltip")
+
+
 def main():
     print("the figure-data contract")
     print("========================")
+    test_blocking_hover()
+
     if not os.path.exists(FIGURES):
         # Not a pass and not a failure. out/ is generated and gitignored, so a
         # clean clone has nothing to check; ctest reports this as Skipped, which
         # stays visible instead of turning green on an empty run.
         print("  out/figures.json is missing; run tools/report_data first")
-        return SKIP
+        # The blocking checks above need none of it, so a failure in them is a
+        # failure even here. Returning SKIP unconditionally would have buried
+        # them in exactly the legs where out/ is absent, which is every per-push
+        # leg, and ctest would have reported the whole thing green.
+        return 1 if failures else SKIP
 
     fig = json.load(io.open(FIGURES, encoding="utf-8"))
     prior = fig["prior"]

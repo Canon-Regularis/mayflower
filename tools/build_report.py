@@ -385,6 +385,22 @@ def orbit_map(counts, total, width, height, cell=46):
     return "".join(out)
 
 
+def placements_through(r, c, length, width, height):
+    """Length-L placements covering one cell, by geometry alone.
+
+    A horizontal one starts anywhere from length-1 columns left of the cell to
+    the cell itself, clipped to the board; a vertical one likewise down the
+    column. A 1-cell ship has no vertical orientation, the same rule the sweeps
+    use, so it is not counted twice. Summed over the board this gives
+    length * 20 * (11 - length) on a 10x10, since each placement covers exactly
+    that many cells.
+    """
+    h = max(0, min(c, width - length) - max(0, c - length + 1) + 1)
+    v = (0 if length == 1
+         else max(0, min(r, height - length) - max(0, r - length + 1) + 1))
+    return h + v
+
+
 def blocking_boards(witnesses, width, height, cell=26):
     """Each witness set drawn on its own board: shoot these cells and no
     placement of that length can survive untouched."""
@@ -397,16 +413,50 @@ def blocking_boards(witnesses, width, height, cell=26):
     for i, wit in enumerate(witnesses):
         ox = i * bw + 8
         marked = set(wit["cells"])
+        length = wit["length"]
+        placements = (height * (width - length + 1)
+                      + (width * (height - length + 1) if length > 1 else 0))
+        free = width * height - len(marked)
         out.append(text(ox + width * cell / 2, 16,
                         f'length {wit["length"]}: beta = {wit["beta"]}', "rowlbl"))
         for r in range(height):
             for c in range(width):
                 x, y = ox + c * cell, 28 + r * cell
                 on = (r * width + c) in marked
+                # Every other board on this page answers a hover and these
+                # did not, so the marks could be counted and nothing else.
+                # What a cell is worth here is how much of the placement set it
+                # meets, which is geometry and needs no extra data.
+                n = placements_through(r, c, length, width, height)
+                name = f'{chr(ord("A") + c)}{r + 1}'
+                tip = (f'{name} shot, one of the {len(marked)}: meets {n} of the '
+                       f'{placements} length-{length} placements'
+                       if on else
+                       f'{name} left free, one of the {free}: {n} of the '
+                       f'{placements} length-{length} placements run through it')
+                # Shaded by that count, on the same ramp as every other board.
+                # The scale is fixed across all four rather than stretched to
+                # each, so a colour means the same number everywhere and the
+                # boards get visibly denser with length, which is true: a cell
+                # is met by more placements as the ship grows. Two is the floor
+                # anywhere, one along the row and one down the column, and ten
+                # is the centre at length five.
+                b = min(BUCKETS, max(0, int((n - 2) / 8 * BUCKETS)))
                 out.append(
                     f'<rect class="cellmark" x="{x + 1}" y="{y + 1}" width="{cell - 2}" '
-                    f'height="{cell - 2}" rx="2" '
-                    f'fill="{"var(--series-1)" if on else "var(--ramp-0)"}"/>')
+                    f'height="{cell - 2}" rx="2" fill="var(--ramp-{b})" '
+                    f'data-tip="{tip}"/>')
+                # The set itself is a disc rather than a fill, so the shading
+                # underneath stays readable and the marks stay countable, which
+                # is what the caption asks a reader to do. The ring keeps it off
+                # whatever tone it lands on. It takes no pointer events, or it
+                # would sit between the cell and its own tooltip.
+                if on:
+                    out.append(
+                        f'<circle cx="{x + cell / 2:.1f}" cy="{y + cell / 2:.1f}" '
+                        f'r="{cell * 0.21:.1f}" fill="var(--series-1)" '
+                        f'stroke="var(--surface)" stroke-width="1.4" '
+                        f'pointer-events="none"/>')
         # The label has to describe the drawing. Titling a 34-cell greedy cover
         # "beta = 33" leaves a reader who counts the marks with the wrong number.
         note = ("minimum" if wit.get("optimal")
