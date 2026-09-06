@@ -349,6 +349,19 @@ def record(event: str, experiment: str, detail: str, path=None, when=None):
         "%Y-%m-%dT%H:%M:%SZ")
     if "|" in experiment or "|" in event:
         raise ValueError("event and experiment must not contain the field separator")
+    # One entry is one line. A control character in any field splits it in two,
+    # and the second half carries a digest for a payload that no longer exists,
+    # so verify_audit fails from that entry onward. Every later append is then
+    # refused, is_unsealed raises, and reading TEST becomes impossible: a caller
+    # passing a captured error message as the detail would brick the log and
+    # leave it looking edited. The separator check above guards the two
+    # positional fields against forgery; this guards all three against that.
+    for _name, _value in (("event", event), ("experiment", experiment),
+                          ("detail", detail)):
+        if any(ch < " " for ch in _value):
+            raise ValueError(
+                "{} must not contain a control character; one entry is one line "
+                "and a break in it stops the chain verifying".format(_name))
     # Stripped before it is digested, because the reader strips what it
     # reconstructs. An empty detail would otherwise leave a trailing space in the
     # digested string but not in the parsed one, breaking a chain nobody touched.
@@ -487,6 +500,41 @@ def test_audit():
         fails += check(False, "and appending to a broken chain is refused")
     except RuntimeError:
         fails += check(True, "and appending to a broken chain is refused")
+
+    # A field that would split the entry across two lines. This was accepted:
+    # the chain then failed to verify from that entry onward, every later append
+    # was refused, and the log looked edited rather than mis-written. The pipe is
+    # checked alongside because it is safe in the detail and must stay allowed;
+    # rpartition takes the digest off the end whatever the detail contains.
+    #
+    # On its own chain, because the one above has been deliberately broken by
+    # this point and record() refuses any append to a broken chain. Written
+    # against that one, these checks passed whatever the field contained: two
+    # mutations that removed the guard entirely went unnoticed.
+    fresh = os.path.join(tempfile.mkdtemp(), "audit.log")
+    io.open(fresh, "w", encoding="utf-8", newline="\n").write("# a second scratch chain\n")
+    record("create", "scratch", "seeded", path=fresh, when="2026-01-01T00:00:00Z")
+
+    nl, cr, tab = chr(10), chr(13), chr(9)
+    for label, event, experiment, detail in (
+            ("a line break in the detail", "note", "exp", "first" + nl + "second"),
+            ("a line break in the event", "no" + nl + "te", "exp", "d"),
+            ("a tab in the experiment", "note", "ex" + tab + "p", "d"),
+            ("a carriage return", "note", "exp", "a" + cr + "b")):
+        try:
+            record(event, experiment, detail, path=fresh, when="2026-01-05T00:00:00Z")
+            fails += check(False, "record refuses {}".format(label),
+                           "it appended the entry")
+        except ValueError:
+            fails += check(True, "record refuses {}".format(label))
+
+    # The chain has to be intact afterwards, which is the property the guard
+    # exists for, and a pipe in the detail must still be allowed through it.
+    record("note", "scratch", "read 20000 | games", path=fresh,
+           when="2026-01-06T00:00:00Z")
+    ok, bad = verify_audit(fresh)
+    fails += check(ok, "the chain still verifies once the bad fields are refused",
+                   "" if ok else "first bad entry at index {}".format(bad))
 
     # The real log must verify too.
     ok, bad = verify_audit()
