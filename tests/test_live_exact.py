@@ -31,6 +31,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE = os.environ.get("MF_NODE", "node")
 POOL = os.path.join(ROOT, "web", "pool.bin")
 SKIP = 77
+# Generous, because contention is the only thing that varies here.
+TIMEOUT = 1800
 failures = 0
 
 
@@ -85,12 +87,23 @@ def run_exact_probe():
         proc = subprocess.run(
             [NODE, harness, POOL, os.path.join(ROOT, "web", "engine.js"),
              os.path.join(ROOT, "web", "live.js")],
-            capture_output=True, text=True, timeout=300)
+            capture_output=True, text=True, timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # These sweeps are CPU-bound and the clock is the only thing about this
+        # test that varies: the widget is deterministic, Math.random pinned. A
+        # run that outlasts its timeout raises rather than returning, and the
+        # first version let that escape, so a loaded machine failed the test with
+        # a traceback and no statement of what went wrong. It cost one red suite
+        # at 877 s where the same checks pass in 130 s on an idle machine.
+        return {"error": "node did not finish inside {} s".format(TIMEOUT)}
+    except OSError as exc:
+        return {"error": "node could not be run: {}".format(exc)}
     finally:
         if os.path.exists(harness):
             os.remove(harness)
     if proc.returncode != 0:
-        return None
+        return {"error": "node exited {}: {}".format(
+            proc.returncode, proc.stderr.strip()[-120:])}
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
@@ -163,12 +176,23 @@ def run_play_probe():
         proc = subprocess.run(
             [NODE, harness, POOL, os.path.join(ROOT, "web", "engine.js"),
              os.path.join(ROOT, "web", "live.js")],
-            capture_output=True, text=True, timeout=600)
+            capture_output=True, text=True, timeout=TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # These sweeps are CPU-bound and the clock is the only thing about this
+        # test that varies: the widget is deterministic, Math.random pinned. A
+        # run that outlasts its timeout raises rather than returning, and the
+        # first version let that escape, so a loaded machine failed the test with
+        # a traceback and no statement of what went wrong. It cost one red suite
+        # at 877 s where the same checks pass in 130 s on an idle machine.
+        return {"error": "node did not finish inside {} s".format(TIMEOUT)}
+    except OSError as exc:
+        return {"error": "node could not be run: {}".format(exc)}
     finally:
         if os.path.exists(harness):
             os.remove(harness)
     if proc.returncode != 0:
-        return None
+        return {"error": "node exited {}: {}".format(
+            proc.returncode, proc.stderr.strip()[-120:])}
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
@@ -181,8 +205,9 @@ def main():
         return SKIP
 
     ex = run_exact_probe()
-    if ex is None:
-        check(False, "the exact-handoff probe runs")
+    if ex is None or "error" in ex:
+        check(False, "the exact-handoff probe runs",
+              (ex or {}).get("error", "no output"))
     else:
         spent, over = ex["spent"], ex["justOver"]
         check(spent["exact"], "a pool below the threshold switches to the exact sweep")
@@ -208,8 +233,9 @@ def main():
               "closest sampled figure was within {:.2f} points".format(drift))
 
     play = run_play_probe()
-    if play is None:
-        check(False, "the play-through probe runs")
+    if play is None or "error" in play:
+        check(False, "the play-through probe runs",
+              (play or {}).get("error", "no output"))
     elif not play.get("drivable"):
         check(False, "the widget binds a step handler that can be pressed")
     else:

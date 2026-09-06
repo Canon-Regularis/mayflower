@@ -254,15 +254,19 @@ add_test(NAME render_results COMMAND ${Python3_EXECUTABLE}
 set_tests_properties(render_results PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
                      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
-# The live widget's exact regime. It has two, and every other probe hands it the
-# whole pool, so the branch that runs the exact sweep was executed by nothing.
-# Slower gate: an unconstrained sweep is the widget's heaviest case at about
-# thirty seconds, and one it never pays in the report, where exact mode engages
-# only after a game has already cut the lattice down.
+# The live widget's exact regime, and a game played through it. It has two
+# regimes and every other probe hands it the whole pool, so the branch that runs
+# the exact sweep was executed by nothing.
+#
+# Nightly rather than per-pull-request. The work is a string of exact sweeps over
+# the 10x10 lattice: about 130 s on an idle machine, and 877 s on a busy one,
+# where it overran its own subprocess clock and turned red on time rather than on
+# anything it measured. The widget is deterministic, so nothing but the clock can
+# vary, and a gate that a loaded runner can fail is worse than a slower one.
 add_test(NAME live_exact COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE}
          ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_live_exact.py)
-set_tests_properties(live_exact PROPERTIES LABELS "pr" SKIP_RETURN_CODE 77
-                     TIMEOUT 900 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+set_tests_properties(live_exact PROPERTIES LABELS "nightly" SKIP_RETURN_CODE 77
+                     TIMEOUT 3600 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # The tools are too slow to run in a suite; their entry points are not. atoi
 # turns a bad argument into 0, and each tool then divides by that count or writes
