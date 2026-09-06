@@ -8,5 +8,7 @@ out/
 *.obj
 *.gcda
 *.gcno
+*.gcov
+.coverage
 __pycache__/
 
