@@ -407,7 +407,7 @@ def blocking_boards(witnesses, width, height, cell=26):
     per = pad_l = 34
     bw = width * cell + 16
     w = len(witnesses) * bw
-    h = 34 + height * cell + 30
+    h = 34 + height * cell + 62
 
     out = [svg_open(w, h, "Blocking sets: the fewest shots that meet every placement")]
     for i, wit in enumerate(witnesses):
@@ -434,34 +434,68 @@ def blocking_boards(witnesses, width, height, cell=26):
                        if on else
                        f'{name} left free, one of the {free}: {n} of the '
                        f'{placements} length-{length} placements run through it')
-                # Shaded by that count, on the same ramp as every other board.
-                # The scale is fixed across all four rather than stretched to
-                # each, so a colour means the same number everywhere and the
-                # boards get visibly denser with length, which is true: a cell
-                # is met by more placements as the ship grows. Two is the floor
-                # anywhere, one along the row and one down the column, and ten
-                # is the centre at length five.
+                # The cells left free are graded by that count on the same ramp
+                # as every other board, light to dark. The set itself keeps its
+                # solid fill, so the marks stay countable, which is what the
+                # caption asks a reader to do.
+                #
+                # The scale is fixed across all four boards rather than stretched
+                # to each, so a tone means the same number everywhere and the
+                # boards darken with length, which is true: a cell is met by more
+                # placements as the ship grows. Two is the floor anywhere, one
+                # along the row and one down the column, and ten is the centre at
+                # length five.
                 b = min(BUCKETS, max(0, int((n - 2) / 8 * BUCKETS)))
                 out.append(
                     f'<rect class="cellmark" x="{x + 1}" y="{y + 1}" width="{cell - 2}" '
                     f'height="{cell - 2}" rx="2" fill="var(--ramp-{b})" '
                     f'data-tip="{tip}"/>')
-                # The set itself is a disc rather than a fill, so the shading
-                # underneath stays readable and the marks stay countable, which
-                # is what the caption asks a reader to do. The ring keeps it off
-                # whatever tone it lands on. It takes no pointer events, or it
-                # would sit between the cell and its own tooltip.
+                # The outline goes on as its own ring, inset so it reads against
+                # the fill underneath, and carried on a surface-coloured stroke
+                # so it stays visible at both ends of the ramp: the pale steps
+                # and the near-black ones. Neither takes pointer events, or a
+                # marked cell would sit between itself and its own tooltip.
                 if on:
+                    rx_, ry_ = x + 3, y + 3
+                    rw = rh = cell - 6
                     out.append(
-                        f'<circle cx="{x + cell / 2:.1f}" cy="{y + cell / 2:.1f}" '
-                        f'r="{cell * 0.21:.1f}" fill="var(--series-1)" '
-                        f'stroke="var(--surface)" stroke-width="1.4" '
+                        f'<rect x="{rx_}" y="{ry_}" width="{rw}" height="{rh}" rx="2" '
+                        f'fill="none" stroke="var(--surface)" stroke-width="3.5" '
+                        f'pointer-events="none"/>')
+                    out.append(
+                        f'<rect x="{rx_}" y="{ry_}" width="{rw}" height="{rh}" rx="2" '
+                        f'fill="none" stroke="var(--mark)" stroke-width="2" '
                         f'pointer-events="none"/>')
         # The label has to describe the drawing. Titling a 34-cell greedy cover
         # "beta = 33" leaves a reader who counts the marks with the wrong number.
         note = ("minimum" if wit.get("optimal")
                 else f'a greedy cover of {len(wit["cells"])}')
         out.append(text(ox + width * cell / 2, 28 + height * cell + 18, note, "tick"))
+
+    # The key. The figure carries two encodings at once and a reader should not
+    # have to hover to find that out: the ramp says how many placements run
+    # through a cell, the outline says the cell is in the set.
+    ky = 28 + height * cell + 40
+    sw, gap = 15, 2
+    kx = 12
+    out.append(text(kx, ky + 10, "placements through a cell", "legendlbl", "start"))
+    kx += 168
+    out.append(text(kx - 6, ky + 10, "2", "tick", "end"))
+    for i in range(BUCKETS + 1):
+        out.append(f'<rect x="{kx + i * (sw + gap)}" y="{ky}" width="{sw}" '
+                   f'height="13" rx="2" fill="var(--ramp-{i})"/>')
+    kx += (BUCKETS + 1) * (sw + gap)
+    out.append(text(kx + 4, ky + 10, "10", "tick", "start"))
+    kx += 34
+    # Shown on a mid tone, which is where an outline has to work hardest.
+    out.append(f'<rect x="{kx}" y="{ky}" width="{sw}" height="13" rx="2" '
+               f'fill="var(--ramp-6)"/>')
+    out.append(f'<rect x="{kx + 2}" y="{ky + 2}" width="{sw - 4}" height="9" rx="1.5" '
+               f'fill="none" stroke="var(--surface)" stroke-width="3"/>')
+    out.append(f'<rect x="{kx + 2}" y="{ky + 2}" width="{sw - 4}" height="9" rx="1.5" '
+               f'fill="none" stroke="var(--mark)" stroke-width="1.8"/>')
+    out.append(text(kx + sw + 7, ky + 10, "in the blocking set", "legendlbl", "start"))
+
     out.append("</svg>")
     return "".join(out)
 

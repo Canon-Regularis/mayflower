@@ -60,6 +60,7 @@ def test_blocking_hover():
     figures.json gate below, needing none of it, so it is checked in every leg
     rather than only where the report has been built.
     """
+    BUCKETS_MAX = 12
     print("[the blocking boards]")
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import build_report
@@ -116,6 +117,96 @@ def test_blocking_hover():
     check(len(centre) == 1 and " 6 of the 160 " in centre[0],
           "and the centre meets six",
           centre[0] if centre else "no E5 tooltip")
+
+    graded = re.findall(r'fill="var\(--ramp-(\d+)\)"[^>]*data-tip="([^"]+)"', svg)
+    check(len(graded) == W * H, "every cell is graded from the ramp",
+          "{} of {}".format(len(graded), W * H))
+
+    rings = re.findall(
+        r'<rect x="([0-9.]+)" y="([0-9.]+)"[^>]*stroke="var\(--mark\)" '
+        r'stroke-width="2"[^>]*>', svg)
+    cell, ox, top = 26, 8, 28
+    want = {(str(ox + (i % W) * cell + 3), str(top + (i // W) * cell + 3))
+            for i in range(33)}
+    check(set(rings) == want,
+          "the ring lands on every cell of the set and no other",
+          "{} rings, {} of them where no mark is".format(
+              len(rings), len(set(rings) - want)))
+
+    # Carried on a surface-coloured stroke underneath, or it would vanish into
+    # the dark end of the ramp it is drawn over.
+    halo = re.findall(r'stroke="var\(--surface\)" stroke-width="3.5"', svg)
+    check(len(halo) == 33, "each ring is carried on a halo so it reads on any tone",
+          "{} halos for 33 rings".format(len(halo)))
+    check("var(--series-1)" not in svg,
+          "and the ring is off the ramp's own hue",
+          "the figure still uses series-1, which is ramp-7")
+
+    # Neither the ring nor its halo may take pointer events: they sit on top of
+    # the cell, and a marked cell would otherwise be the one cell on the board
+    # that answers no hover.
+    overlays = re.findall(
+        r'<rect [^>]*stroke="var\((?:--mark|--surface)\)"[^>]*>', svg)
+    board_overlays = [o for o in overlays
+                      if 'stroke-width="2"' in o or 'stroke-width="3.5"' in o]
+    check(len(board_overlays) == 66,
+          "the ring and its halo are two overlays per marked cell",
+          "{} overlays for 33 cells".format(len(board_overlays)))
+    check(all('pointer-events="none"' in o for o in board_overlays),
+          "and neither of them intercepts the hover",
+          "{} take pointer events".format(
+              sum(1 for o in board_overlays if 'pointer-events="none"' not in o)))
+
+    css = io.open(os.path.join(ROOT, "tools", "render_report.py"),
+                  encoding="utf-8").read()
+    themes = re.findall(r"--mark:\s*(#[0-9a-fA-F]{6})", css)
+    check(len(themes) == 2, "the mark colour is defined for both themes",
+          "found {}".format(themes))
+
+    # The key, so neither encoding needs a hover to be understood.
+    check("placements through a cell" in svg and "in the blocking set" in svg,
+          "the figure carries a key for both encodings")
+    # Every step of the ramp, so the key shows the scale it is a key for. The
+    # outlined example beside it is drawn the same size and would be counted
+    # too, which is why this asks which buckets appear and not how many swatches.
+    swatches = {int(b) for b in re.findall(
+        r'height="13" rx="2" fill="var\(--ramp-(\d+)\)"', svg)}
+    check(swatches == set(range(BUCKETS_MAX + 1)),
+          "whose ramp shows every step of the scale",
+          "buckets in the key: {}".format(sorted(swatches)))
+
+    pairs = sorted((int(re.search(r"(?:meets|:) (\d+) of the", t).group(1)), int(b))
+                   for b, t in graded)
+    check(all(pairs[i][1] <= pairs[i + 1][1] for i in range(len(pairs) - 1)),
+          "a cell met by more placements is never shaded lighter",
+          "buckets out of order: {}".format(pairs[:6]))
+    check(len({b for _, b in pairs}) > 1,
+          "and the board is not one flat tone",
+          "every free cell shaded {}".format(pairs[0][1]))
+    check(pairs[0] == (2, 0), "the floor of the scale is a corner at two placements",
+          "lightest free cell is {}".format(pairs[0]))
+
+    five = build_report.blocking_boards(
+        [{"length": 5, "beta": 20, "optimal": True, "cells": list(range(20))}], W, H)
+
+    def tones(svg_text):
+        out = {}
+        for bucket, tip in re.findall(
+                r'fill="var\(--ramp-(\d+)\)" data-tip="([^"]+)"', svg_text):
+            n = int(re.search(r"(?:meets|:) (\d+) of the", tip).group(1))
+            out.setdefault(n, set()).add(int(bucket))
+        return out
+
+    t3, t5 = tones(svg), tones(five)
+    shared = sorted(set(t3) & set(t5))
+    disagree = [n for n in shared if t3[n] != t5[n]]
+    check(len(shared) >= 3 and not disagree,
+          "a count shades the same on the length-3 and length-5 boards",
+          "{} counts in common, disagreeing on {}".format(
+              len(shared), [(n, sorted(t3[n]), sorted(t5[n])) for n in disagree[:2]]))
+    check(max(b for bs in t5.values() for b in bs) == BUCKETS_MAX,
+          "and the length-5 board reaches the top of the scale",
+          "highest bucket {}".format(max(b for bs in t5.values() for b in bs)))
 
 
 def main():
