@@ -165,9 +165,25 @@ def paired_interval(xs, ys, alpha=0.05):
 
 
 def bootstrap_interval(xs, alpha=0.05, resamples=2000, rng=None):
-    """Percentile bootstrap, resampling boards rather than moves."""
-    rng = rng or random.Random(12345)
+    """Percentile bootstrap, resampling boards rather than moves.
+
+    The same two-observation minimum mean_interval carries, for a sharper
+    reason here. One observation resamples to itself every time, so this
+    returned a zero-width 95% interval and called it an interval: false
+    precision that reads as certainty rather than as the failure it is. Empty
+    input gave a bare ZeroDivisionError and no resamples an IndexError, neither
+    of which says what the caller did wrong.
+    """
     n = len(xs)
+    if n < 2:
+        raise ValueError(
+            "an interval needs at least two observations; got {}".format(n))
+    if resamples < 1:
+        raise ValueError(
+            "a bootstrap needs at least one resample; got {}".format(resamples))
+    if not 0.0 < alpha < 1.0:
+        raise ValueError("alpha must lie in (0, 1); got {}".format(alpha))
+    rng = rng or random.Random(12345)
     means = []
     for _ in range(resamples):
         means.append(sum(xs[rng.randrange(n)] for _ in range(n)) / n)
@@ -577,6 +593,137 @@ def test_domains():
     return fails
 
 
+def test_multiplicity(replicates):
+    """The two pre-registered procedures that nothing called.
+
+    experiments/preregistration.md commits to Holm step-down over the pairwise
+    family and to a percentile bootstrap where a statistic has no closed form.
+    Neither had a caller anywhere in the repository and neither appeared in this
+    file's own self-test, so coverage measured both at zero lines executed. A
+    pre-registered method that has never run is a promise rather than a
+    procedure, and the bootstrap was quietly returning a zero-width 95% interval
+    for a single observation until this went in.
+    """
+    print("")
+    print("[the pre-registered corrections]")
+    fails = 0
+
+    # Hand-computed. Sorted, the p-values are .001, .009, .04, .20 against
+    # alpha/4, alpha/3, alpha/2, alpha. The third fails its threshold and
+    # step-down stops there instead of going on to test the fourth.
+    got = holm([0.04, 0.001, 0.20, 0.009])
+    fails += check(got == [False, True, False, True],
+                   "Holm rejects the two smallest and stops at the first failure",
+                   "got {}".format(got))
+    fails += check(holm([0.001, 0.002, 0.003]) == [True] * 3,
+                   "a family that all clears is all rejected")
+    fails += check(holm([0.9, 0.8]) == [False] * 2,
+                   "and one that clears nothing rejects nothing")
+    fails += check(holm([]) == [], "an empty family is not an error")
+
+    # None of the cases above separates Holm from Bonferroni: they agree on all
+    # of them, so a flat alpha/m threshold passed every one. At m = 4 the second
+    # threshold is alpha/3, so .015 clears Holm and fails Bonferroni's alpha/4.
+    got = holm([0.001, 0.015, 0.02, 0.9])
+    fails += check(got == [True, True, True, False],
+                   "the thresholds widen down the family, unlike Bonferroni's",
+                   "got {}".format(got))
+
+    # Nor does anything above show that stopping matters, since in each of them
+    # everything after the first failure fails anyway. Here .04 would clear the
+    # second threshold on its own, but .03 has already failed the first, so a
+    # step-down rejects neither and a procedure that carried on would take it.
+    got = holm([0.03, 0.04])
+    fails += check(got == [False, False],
+                   "a failure stops the step-down rather than skipping past it",
+                   "got {}".format(got))
+
+    # Holm is chosen for sitting strictly between Bonferroni and no correction,
+    # so that ordering has to hold on every family, not just a convenient one.
+    rng = random.Random(20260906)
+    weaker_than_bonferroni = stronger_than_uncorrected = 0
+    for _ in range(300):
+        ps = [rng.random() ** 3 for _ in range(rng.randrange(2, 12))]
+        rejected = holm(ps)
+        for p, r in zip(ps, rejected):
+            if p <= 0.05 / len(ps) and not r:
+                weaker_than_bonferroni += 1
+            if p > 0.05 and r:
+                stronger_than_uncorrected += 1
+    fails += check(weaker_than_bonferroni == 0,
+                   "Holm rejects everything Bonferroni would",
+                   "{} cases where it did not".format(weaker_than_bonferroni))
+    fails += check(stronger_than_uncorrected == 0,
+                   "and never rejects what an uncorrected test would keep",
+                   "{} cases where it did".format(stronger_than_uncorrected))
+
+    # The bootstrap, on the property it exists for. Percentile intervals at this
+    # sample size sit a little under nominal, so the band is wide enough to say
+    # the procedure works without asserting a precision it does not have.
+    trials = max(60, replicates // 4)
+    covered = 0
+    rng = random.Random(4242)
+    for _ in range(trials):
+        xs = [rng.gauss(15.0, 4.0) for _ in range(30)]
+        _, lo, hi = bootstrap_interval(xs, resamples=120, rng=rng)
+        if lo <= 15.0 <= hi:
+            covered += 1
+    rate = covered / trials
+    fails += check(0.85 <= rate <= 0.995,
+                   "the bootstrap interval covers the true mean about 95% of the time",
+                   "{:.1%} over {} trials".format(rate, trials))
+
+    # The coverage band is too loose to notice an endpoint read from the wrong
+    # percentile: taking the minimum resample widens the interval, which raises
+    # coverage rather than lowering it. Where the CLT applies the percentile
+    # interval has to land on the normal one, and that pins both endpoints.
+    # Its own stream rather than the shared one, so that adding a check above
+    # cannot move the sample and quietly change the margin this relies on. The
+    # correct endpoints sit 0.11 and 0.04 se off the normal ones here; reading
+    # the upper one from the 95th percentile instead of the 97.5th puts it 0.28
+    # off, so the tolerance separates them with room on both sides.
+    n = 300
+    draw = random.Random(8675309)
+    xs = [draw.gauss(15.0, 4.0) for _ in range(n)]
+    m = sum(xs) / n
+    se = math.sqrt(sum((x - m) ** 2 for x in xs) / (n - 1)) / math.sqrt(n)
+    _, lo, hi = bootstrap_interval(xs, resamples=800, rng=random.Random(31))
+    fails += check(abs(lo - (m - 1.959964 * se)) < 0.20 * se
+                   and abs(hi - (m + 1.959964 * se)) < 0.20 * se,
+                   "and it lands on the normal interval where the CLT applies",
+                   "bootstrap [{:.3f}, {:.3f}] against normal [{:.3f}, {:.3f}]".format(
+                       lo, hi, m - 1.959964 * se, m + 1.959964 * se))
+
+    same_a = bootstrap_interval([1.0, 5.0, 9.0, 2.0], rng=random.Random(1))
+    same_b = bootstrap_interval([1.0, 5.0, 9.0, 2.0], rng=random.Random(1))
+    fails += check(same_a == same_b, "a seeded bootstrap is reproducible")
+
+    xs = [rng.gauss(0.0, 1.0) for _ in range(40)]
+    _, lo95, hi95 = bootstrap_interval(xs, alpha=0.05, resamples=400,
+                                       rng=random.Random(9))
+    _, lo99, hi99 = bootstrap_interval(xs, alpha=0.01, resamples=400,
+                                       rng=random.Random(9))
+    fails += check(lo99 <= lo95 and hi99 >= hi95,
+                   "and a smaller alpha never narrows it",
+                   "95% [{:.3f}, {:.3f}] against 99% [{:.3f}, {:.3f}]".format(
+                       lo95, hi95, lo99, hi99))
+
+    # Domains, the same way the rest of this file refuses them.
+    for label, call in (
+            ("no observations", lambda: bootstrap_interval([])),
+            ("one observation", lambda: bootstrap_interval([1.0])),
+            ("no resamples", lambda: bootstrap_interval([1.0, 2.0], resamples=0)),
+            ("alpha outside (0, 1)", lambda: bootstrap_interval([1.0, 2.0], alpha=0.0))):
+        try:
+            call()
+            fails += check(False, "the bootstrap refuses {}".format(label),
+                           "it returned an answer")
+        except ValueError:
+            fails += check(True, "the bootstrap refuses {}".format(label))
+
+    return fails
+
+
 def test_calibration(replicates):
     """Simulate from a known truth and count how often the interval covers it.
     A 95% interval must cover about 95% of the time; anything else is a bug in
@@ -737,6 +884,7 @@ def main():
     fails += test_audit()
     print()
     fails += test_domains()
+    fails += test_multiplicity(replicates)
     fails += test_calibration(replicates)
     print()
     fails += test_power(replicates)
