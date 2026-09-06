@@ -161,7 +161,7 @@ jobs:
       - name: The report is a report
         run: |
           python - <<'EOF'
-          import io, sys
+          import base64, io, re, sys
           html = io.open("out/report.html", encoding="utf-8").read()
           size = len(html.encode("utf-8"))
           figures = html.count("<svg")
@@ -171,7 +171,31 @@ jobs:
               sys.exit("report.html carries {} inline figures".format(figures))
           if "15,046,987,768" not in html:
               sys.exit("report.html does not carry the hypothesis-space size")
-          print("report.html: {:.0f} KB, {} inline figures".format(size / 1024, figures))
+
+          # Guarded from above as well. Four fifths of this page is one
+          # attribute, the base64 board pool, and the only bound on the page was
+          # a floor: a pool regenerated at twice the size would have doubled the
+          # file with nothing to say so. The budget in the plan is 0.7 to 1.0 MB
+          # and the pool already puts it past that, so the ceiling is set where
+          # a materially larger pool trips it rather than where the plan sits.
+          if size > 2_500_000:
+              sys.exit("report.html is {} bytes; check what grew, the pool is "
+                       "usually most of it".format(size))
+
+          # The pool as it ships, not as it sits on disk. tests/test_pool.py
+          # checks web/pool.bin; nothing checked that the bytes reaching the
+          # page are those bytes, so a bad encode would have shipped a widget
+          # that silently falls back to its degraded regime.
+          m = re.search(r'data-pool="([^"]+)"', html)
+          if m is None:
+              sys.exit("report.html carries no board pool for the live widget")
+          embedded = base64.b64decode(m.group(1))
+          on_disk = io.open("web/pool.bin", "rb").read()
+          if embedded != on_disk:
+              sys.exit("the embedded pool is {} bytes against {} on disk".format(
+                  len(embedded), len(on_disk)))
+          print("report.html: {:.0f} KB, {} inline figures, pool {} boards".format(
+              size / 1024, figures, len(embedded) // 5))
           EOF
 
       # Keep the output whether or not the checks passed, so a failure can be
