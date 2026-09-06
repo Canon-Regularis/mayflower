@@ -149,24 +149,35 @@ def test_provenance():
     failed there while the function did exactly what it says.
     """
     print("\n[the recorded commit]")
-    probe = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
-                           capture_output=True, text=True)
+    # A missing executable raises rather than coming back with a non-zero code,
+    # which is what commit() catches and what this probe did not. The branch
+    # below for a machine without git was therefore unreachable on a machine
+    # without git: the line choosing between the branches threw first, and the
+    # Windows leg died here rather than taking the path written for it.
+    try:
+        probe = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+                               capture_output=True, text=True)
+        have_git = probe.returncode == 0
+        why = probe.stderr.strip()[:80]
+    except (OSError, subprocess.SubprocessError) as exc:
+        have_git, why = False, "{}: {}".format(type(exc).__name__, exc)[:80]
+
     c = run_headline.commit()
 
     check(bool(c), "something is always recorded, never the empty string it held",
           "got {!r}".format(c))
-    if probe.returncode == 0:
+    if have_git:
         check(re.fullmatch(r"[0-9a-f]{40}(-dirty)?", c) is not None,
               "and where git answers, it is that commit", "got {!r}".format(c))
     else:
         check(c == "unknown", "and where git cannot answer, it says so",
-              "got {!r}; git said {!r}".format(c, probe.stderr.strip()[:80]))
+              "got {!r}; git said {!r}".format(c, why))
 
     # A headline number from a tree with uncommitted changes is not reproducible
     # from the commit alone, so the marker is the part that carries the warning.
     # Checked against the tree as it actually is, either way round, because the
     # sha pattern above accepts the marker without requiring it.
-    if probe.returncode == 0:
+    if have_git:
         st = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
                             capture_output=True, text=True)
         if st.returncode == 0:
