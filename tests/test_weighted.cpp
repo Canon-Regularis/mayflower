@@ -346,6 +346,85 @@ void testRescaling() {
           "powers of two in, powers of two out, with no drift");
 }
 
+// The log-linear opponent prior. Nothing executed this: the registered test
+// named "weighted" is this file, and tools/weighted, whose "prior" mode is the
+// only caller of fromLogPlacementScores, is run by no test at all. Coverage put
+// the whole function at zero lines executed.
+//
+// It takes logs so a caller can express a range the linear weights cannot hold,
+// then exponentiates immediately, and outside about (-745, 709) that saturates
+// with nothing downstream to say so. The flags cannot see it: underflowed
+// watches a product go to zero, not a weight that began there.
+void testLogPlacementScoresSaturate() {
+    std::printf("[log-linear placement scores]\n");
+    const mayflower::Instance inst(5, 5, {3, 2});
+    const std::size_t slots = static_cast<std::size_t>(inst.cellCount())
+                            * inst.distinctLengths().size();
+
+    // All zeros is the uniform prior exactly, which is the bridge tools/weighted
+    // prints and nothing checked.
+    const auto flat = mayflower::Weights::fromLogPlacementScores(
+        inst, std::vector<double>(slots, 0.0), std::vector<double>(slots, 0.0));
+    const auto weighted = mayflower::weightedCount(inst, flat);
+    const auto plain = mayflower::weightedCount(inst, mayflower::Weights::uniform());
+    check(weighted.total == plain.total,
+          "scores of zero reproduce the uniform count exactly");
+
+    struct Case { double score; bool refused; const char* why; };
+    const Case cases[] = {
+        {200.0, false, "a score of 200 is inside the range"},
+        {700.0, false, "and 700 still is, where the product saturates instead"},
+        {-700.0, false, "as is -700, where underflowed reports the loss"},
+        {710.0, true, "a score of 710 overflows exp and is refused"},
+        {-800.0, true, "and -800 underflows it and is refused"},
+    };
+    for (const Case& c : cases) {
+        const std::vector<double> lh(slots, c.score), lv(slots, c.score);
+        bool threw = false;
+        try {
+            (void)mayflower::Weights::fromLogPlacementScores(inst, lh, lv);
+        } catch (const std::invalid_argument&) { threw = true; }
+        check(threw == c.refused, c.why);
+    }
+
+    // One orientation at a time. Every case above passes the same score to both
+    // vectors, so dropping either half of the check is still caught by the
+    // other: a guard covering only the horizontal scores survived that.
+    const std::vector<double> zero(slots, 0.0), over(slots, 710.0), under(slots, -800.0);
+    struct Half { const std::vector<double>* h; const std::vector<double>* v;
+                  const char* why; };
+    const Half halves[] = {
+        {&zero, &over, "an overflowing vertical score alone is refused"},
+        {&over, &zero, "and an overflowing horizontal score alone"},
+        {&zero, &under, "an underflowing vertical score alone is refused"},
+        {&under, &zero, "and an underflowing horizontal score alone"},
+    };
+    for (const Half& half : halves) {
+        bool refused = false;
+        try {
+            (void)mayflower::Weights::fromLogPlacementScores(inst, *half.h, *half.v);
+        } catch (const std::invalid_argument&) { refused = true; }
+        check(refused, half.why);
+    }
+
+    // Inside the range the saturation that does happen is still reported, so the
+    // guard above is not standing in for the flags.
+    const std::vector<double> big(slots, 700.0);
+    const auto hot = mayflower::weightedCount(
+        inst, mayflower::Weights::fromLogPlacementScores(inst, big, big));
+    check(std::isfinite(hot.logTotal),
+          "at 700 the total saturates but logTotal stays finite");
+    check(hot.underflowed, "and the run says a configuration was lost");
+
+    // A mis-sized score vector is refused rather than read past its end.
+    bool threw = false;
+    try {
+        (void)mayflower::Weights::fromLogPlacementScores(
+            inst, std::vector<double>(slots - 1, 0.0), std::vector<double>(slots, 0.0));
+    } catch (const std::invalid_argument&) { threw = true; }
+    check(threw, "a score vector of the wrong length is refused");
+}
+
 void testRejectsBadInput() {
     std::printf("[input validation]\n");
     const mayflower::Instance inst(4, 4, {3, 2});
@@ -519,6 +598,7 @@ int main() {
     testRescaling();
     testUnderflowIsReported();
     testMarginalsRefuseWhatTheyCannotHold();
+    testLogPlacementScoresSaturate();
     testRejectsBadInput();
     std::printf("\n%s\n", failures ? "FAILED" : "all checks passed");
     return failures ? 1 : 0;

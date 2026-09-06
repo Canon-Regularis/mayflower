@@ -322,12 +322,37 @@ Weights Weights::fromLogPlacementScores(const Instance& inst,
     if (logH.size() != slots || logV.size() != slots)
         throw std::invalid_argument("score vectors must have cellCount * nLengths entries");
 
+    // The scores arrive as logs so a caller can express a range the linear
+    // weights cannot hold, and this exponentiates them immediately, which throws
+    // that away. Outside roughly (-745, 709) exp saturates and nothing
+    // downstream says so: a score of 710 gave infinite weights, so total and
+    // logTotal both came back infinite while logTotal is documented as finite
+    // whenever the sum is, and no flag was set. A score of -800 gave weights of
+    // exactly zero, so every configuration was annihilated and the run reported
+    // total = 0 with underflowed still false, because that flag watches for a
+    // product going to zero and not for a weight that started there.
+    //
+    // Refused rather than rescaled: shifting the scores by their maximum would
+    // preserve the ratios, but it multiplies the answer by a constant the
+    // caller would have to be told about, and this returns weights rather than
+    // a result to carry it on.
     Weights w;
     w.startH.resize(slots);
     w.startV.resize(slots);
     for (std::size_t i = 0; i < slots; ++i) {
-        w.startH[i] = std::exp(logH[i]);
-        w.startV[i] = std::exp(logV[i]);
+        const double h = std::exp(logH[i]);
+        const double v = std::exp(logV[i]);
+        if (!std::isfinite(h) || !std::isfinite(v))
+            throw std::invalid_argument(
+                "log placement score is too large: exp overflows to infinity, and "
+                "the weighted sweep reports no flag for it");
+        if ((h == 0.0 && std::isfinite(logH[i]))
+            || (v == 0.0 && std::isfinite(logV[i])))
+            throw std::invalid_argument(
+                "log placement score is too small: exp underflows to zero, which "
+                "drops every configuration without setting underflowed");
+        w.startH[i] = h;
+        w.startV[i] = v;
     }
     return w;
 }
