@@ -197,6 +197,7 @@ def run_pool_probe():
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
+
 def main():
     print("the live widget's playback")
     print("==========================")
@@ -254,6 +255,7 @@ def main():
         check(not accepted,
               "every malformed pool stops the widget",
               "accepted: {}".format(", ".join(accepted)))
+
 
     print("\n" + ("FAILED" if failures else "all checks passed"))
     return 1 if failures else 0
