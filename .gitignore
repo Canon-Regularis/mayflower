@@ -1,4 +1,6 @@
-build/
+# Every build tree, however it is configured. Listing them one at a time got
+# as far as build/ and build-ub/ before a coverage tree turned up untracked.
+build*/
 cache/
 out/
 *.exe
@@ -8,5 +10,3 @@ out/
 *.gcno
 __pycache__/
 
-# Sanitizer build tree, configured on demand.
-build-ub/
