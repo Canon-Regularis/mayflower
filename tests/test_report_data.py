@@ -267,6 +267,77 @@ def test_prose_figures(fig):
                       stated.group(1) if stated else "?", worse, best, worse - best))
 
 
+def test_structure(fig):
+    """Structure the figures assert and nothing checked.
+
+    The prior's symmetry, the orbit count, the opening tie and the lattice
+    totals are all things the page states as fact. The sum to 17 was tested; the
+    rest were not, so a sweep that had quietly broken the board's symmetry would
+    still have drawn a symmetric-looking heatmap and been believed.
+    """
+    print("")
+    print("[structure the figures assert]")
+    counts, total = fig["prior"]["counts"], fig["prior"]["total"]
+    W = H = 10
+
+    def at(r, c):
+        return counts[r * W + c]
+
+    # Every element of the dihedral group, not just the two flips: the diagonal
+    # is what folds 100 cells into 15 rather than into 30.
+    bad = 0
+    for r in range(H):
+        for c in range(W):
+            v = at(r, c)
+            for rr, cc in ((r, W - 1 - c), (H - 1 - r, c), (H - 1 - r, W - 1 - c),
+                           (c, r), (W - 1 - c, H - 1 - r), (c, H - 1 - r),
+                           (W - 1 - c, r)):
+                if at(rr, cc) != v:
+                    bad += 1
+    check(bad == 0, "the prior is invariant under all eight symmetries",
+          "{} of {} cell pairs disagree".format(bad, W * H * 7))
+    check(len(set(counts)) == 15,
+          "so it takes exactly 15 values, one per orbit",
+          "{} distinct values".format(len(set(counts))))
+
+    # In exact integers rather than to a tolerance: every board occupies 17
+    # cells, so the counts have to sum to 17 times the space with nothing left
+    # over. A float comparison would pass on a count that was off by one.
+    check(sum(counts) == 17 * total,
+          "and they sum to exactly 17 boards' worth, as integers",
+          "{} against {}".format(sum(counts), 17 * total))
+
+    # The opening. A sink needs two cells, so shot one is a binary channel and
+    # the information rule and the probability rule agree: the first shot is a
+    # maximum-marginal cell, and there are four of them.
+    best = max(counts)
+    argmax = {i for i, v in enumerate(counts) if v == best}
+    check(argmax == {44, 45, 54, 55},
+          "the prior peaks on the four centre cells and only those",
+          "peaks at {}".format(sorted(argmax)))
+    check(fig["openingBook"][0]["cell"] in argmax,
+          "and the book opens on one of them",
+          "opens on {}".format(fig["openingBook"][0]["cell"]))
+    check(fig["openingBook"][0]["omega"] == total,
+          "before any shot has been fired",
+          "opens at omega {} against {}".format(
+              fig["openingBook"][0]["omega"], total))
+
+    # The lattice totals are summaries of the layer vector drawn beside them, so
+    # they have to be that vector's sum and maximum.
+    lat = fig["lattice"]
+    layers = lat["layerSizes"]
+    check(sum(layers) == lat["stateVisits"],
+          "the state visits are the layer sizes added up",
+          "{} against {}".format(sum(layers), lat["stateVisits"]))
+    check(max(layers) == lat["peakStates"],
+          "and the peak is the largest of them",
+          "{} against {}".format(max(layers), lat["peakStates"]))
+    check(lat["edges"] > lat["stateVisits"],
+          "with more edges than states, since a state has somewhere to go",
+          "{} edges against {} states".format(lat["edges"], lat["stateVisits"]))
+
+
 def main():
     print("the figure-data contract")
     print("========================")
@@ -288,6 +359,7 @@ def main():
     total = prior["total"]
     counts = prior["counts"]
     test_prose_figures(fig)
+    test_structure(fig)
     n = prior["width"] * prior["height"]
 
     # The prior itself, exactly. These are integer counts, so the sum of the
