@@ -23,6 +23,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -46,6 +47,64 @@ def check(ok, what, detail=""):
         failures += 1
 
 
+def test_prose_figures(fig):
+    """Numbers written into the prose, held to the data they describe.
+
+    The page's own claim is that nothing on it is typed in, and for the figures
+    that is true: they are formatted from figures.json. The prose is not. A
+    handful of quantities are written as literals in render_report.py because
+    they read better inside a sentence, and nothing checked them, so the sentence
+    could go on asserting a ratio the sweep had moved away from.
+
+    The literal is read out of the source and compared to the data rather than
+    restated here, since a test that hardcodes both sides checks nothing.
+    """
+    print("\n[figures written into the prose]")
+    src = io.open(os.path.join(ROOT, "tools", "render_report.py"),
+                  encoding="utf-8").read()
+
+    # Boards per lattice edge, which is what the counting section is named for.
+    m = re.search(r"at (\d+) boards an edge", src)
+    ratio = fig["prior"]["total"] / fig["lattice"]["edges"]
+    check(m is not None and abs(int(m.group(1)) - ratio) < 1.0,
+          "the boards-an-edge heading matches the lattice",
+          "prose {}, data {:.1f}".format(m.group(1) if m else "?", ratio))
+
+    # Centre against corner in the prior, quoted twice as a ratio.
+    m = re.search(r"([0-9]\.[0-9]{2})[ -]to[ -]1", src)
+    counts, total = fig["prior"]["counts"], fig["prior"]["total"]
+    got = (counts[44] / total) / (counts[0] / total)
+    check(m is not None and abs(float(m.group(1)) - got) < 0.005,
+          "the centre-to-corner ratio matches the prior",
+          "prose {}, data {:.3f}".format(m.group(1) if m else "?", got))
+
+    # The suboptimality of max-P(hit) on 4x4 {3,2}, quoted as three integers
+    # over the same configuration count. This is the one number the report calls
+    # exact, so it has to divide out to the gap the objectives sweep reports.
+    m = re.search(r"it (?:takes|spends) (\d+) shots? across the space where optimal "
+                  r"play (?:takes|spends) (\d+)", src)
+    if m is None:
+        check(False, "the 4x4 {3,2} shot totals are quoted in the prose")
+    else:
+        worse, best = int(m.group(1)), int(m.group(2))
+        row = next((o for o in fig["objectives"] if o["instance"] == "4x4 {3,2}"), None)
+        if row is None:
+            check(False, "the objectives sweep still covers 4x4 {3,2}")
+        else:
+            n = row["configurations"]
+            check(abs(worse / n - row["maxProb"]) < 1e-6
+                  and abs(best / n - row["optimal"]) < 1e-6,
+                  "the 4x4 {3,2} totals divide out to the measured optima",
+                  "{}/{} = {:.5f} against {:.5f}, {}/{} = {:.5f} against {:.5f}".format(
+                      worse, n, worse / n, row["maxProb"],
+                      best, n, best / n, row["optimal"]))
+            stated = re.search(r"difference of exactly (\d+)", src)
+            check(stated is not None and int(stated.group(1)) == worse - best,
+                  "and the difference it calls exact is that difference",
+                  "prose {}, {} - {} = {}".format(
+                      stated.group(1) if stated else "?", worse, best, worse - best))
+
+
 def main():
     print("the figure-data contract")
     print("========================")
@@ -60,6 +119,7 @@ def main():
     prior = fig["prior"]
     total = prior["total"]
     counts = prior["counts"]
+    test_prose_figures(fig)
     n = prior["width"] * prior["height"]
 
     # The prior itself, exactly. These are integer counts, so the sum of the
