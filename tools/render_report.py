@@ -32,6 +32,7 @@ DARK_TOKENS = """
     --series-1:    #3987e5;
     --series-2:    #d95926;
     --series-3:    #199e70;
+    --mark:        #f0763a;
     --cell-ink:    #ffffff;
     --cell-ink-hi: #0b0b0b;
     --gapfill:     rgba(57,135,229,0.12);
@@ -59,6 +60,7 @@ def stylesheet():
   --series-1:    #2a78d6;
   --series-2:    #eb6834;
   --series-3:    #1baf7a;
+  --mark:        #d1541f;
   --cell-ink:    #0b0b0b;
   --cell-ink-hi: #ffffff;
   --gapfill:     rgba(42,120,214,0.07);
@@ -728,7 +730,13 @@ def build(data, out_path):
     w("</div><figcaption><b>Blocking sets.</b> Shoot the marked cells and no placement of "
       "that length survives untouched, which is what makes beta(L) the number of shots "
       "guaranteeing first contact with a lone ship of that length. Each set is drawn at "
-      "its minimum size, so the marks can be counted. The DP computes the complement: the "
+      "its minimum size, so the marks can be counted, and each is outlined rather than "
+      "filled so the shading underneath still reads. Every cell is graded light to dark by "
+      "how many placements of that length run through it, on one scale across all four "
+      "boards, so the boards darken with length: a corner is met by two placements whatever "
+      "the ship, one along its row and one down its column, and the centre by ten at length "
+      "five. The key is on the figure and hovering gives the count for any cell. The DP "
+      "computes the complement: the "
       "largest set holding no L cells in a line runs {}, and 100 minus that is beta(L). A "
       "greedy cover reaches that size for lengths 2 and 5 and misses by one and two for 3 "
       "and 4, where the set shown is rebuilt by deciding each cell against the exact "
