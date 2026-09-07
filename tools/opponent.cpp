@@ -453,6 +453,17 @@ int selfTest() {
     }
     check(worstMild < worstFlat,
           "believing a mild bias has the better worst case");
+    // The pair the report quotes, pinned rather than only ordered. The margin
+    // between them, 0.2057 shots, is the number the write-up gives for this
+    // instance, and until now it rested on a transcript captured once: this
+    // self-test computed both figures and checked only which was larger, so a
+    // change that moved them together would have kept the ordering and left the
+    // quoted margin wrong. Exact enumeration, so there is nothing to average and
+    // the values are the values.
+    check(std::abs(worstFlat - 9.2246) < 5e-5 && std::abs(worstMild - 9.0189) < 5e-5,
+          "and they are the worst cases the write-up quotes");
+    check(std::abs((worstFlat - worstMild) - 0.2057) < 1e-4,
+          "so the margin between them is 0.2057 shots");
     std::printf("      worst case: flat %.4f, mild %.4f\n", worstFlat, worstMild);
 
     std::printf("\n%s\n", failures ? "SELF-TEST FAILED" : "all invariants hold");
