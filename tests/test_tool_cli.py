@@ -29,6 +29,31 @@ SKIP = 77
 failures = 0
 
 
+class _TimedOut:
+    """Stands in for a completed process that never completed.
+
+    A subprocess that outruns its timeout raises, and none of these tests caught
+    it, so a loaded machine failed them with a traceback and no statement of
+    what went wrong. Returning a result whose code is non-zero lets the checks
+    below report it the way they report any other failure. 124 is what timeout(1)
+    uses for the same thing.
+    """
+
+    returncode = 124
+
+    def __init__(self, seconds):
+        self.stdout = ""
+        self.stderr = "timed out after {} s".format(seconds)
+
+
+def _run(args, timeout, **kw):
+    try:
+        return subprocess.run(args, capture_output=True, text=True,
+                              timeout=timeout, **kw)
+    except subprocess.TimeoutExpired:
+        return _TimedOut(timeout)
+
+
 def check(ok, what, detail=""):
     global failures
     print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
@@ -67,7 +92,7 @@ def main():
             # export_pool takes the path first, so its count is the second slot.
             args = [exe(tool), pool, arg] if tool == "export_pool" else [exe(tool), arg]
             started = time.time()
-            r = subprocess.run(args, capture_output=True, text=True, timeout=180)
+            r = _run(args, timeout=180)
             elapsed = time.time() - started
 
             check(r.returncode == 2,

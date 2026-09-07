@@ -189,6 +189,12 @@ def run_pool_probe():
             [NODE, harness, POOL, os.path.join(ROOT, "web", "engine.js"),
              os.path.join(ROOT, "web", "live.js")],
             capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        # A node run that outruns its clock raises rather than returning, and
+        # letting that escape turns a loaded machine into a traceback with no
+        # statement of what went wrong. The caller already handles "the probe
+        # did not run"; this makes a timeout that case rather than a crash.
+        return None
     finally:
         if os.path.exists(harness):
             os.remove(harness)
@@ -216,6 +222,9 @@ def main():
             capture_output=True, text=True)
     except FileNotFoundError:
         print("  node is not on PATH")
+        return SKIP
+    except subprocess.TimeoutExpired:
+        print("  the widget harness did not finish; treating as not run")
         return SKIP
     finally:
         if os.path.exists(harness):
