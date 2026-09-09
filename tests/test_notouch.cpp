@@ -10,16 +10,13 @@
 #include "mayflower/constants.hpp"
 #include "mayflower/notouch.hpp"
 #include "mayflower/profile_dp.hpp"
+
+#include "harness.hpp"
 #include "oracle/brute_force.hpp"
 
 namespace {
 
-int failures = 0;
-
-void check(bool ok, const char* what) {
-    std::printf("  %-62s %s\n", what, ok ? "ok" : "FAILED");
-    if (!ok) ++failures;
-}
+using mf::test::check;
 
 struct Case {
     int w, h;
@@ -56,7 +53,12 @@ void testStandardInstance() {
     std::printf("[the standard instance]\n");
     const mayflower::Instance inst;
     const mayflower::CountResult r = mayflower::countNoTouch(inst);
-    check(r.count == mayflower::constants::kOmegaNoTouch,
+    // Pinned as a literal rather than read from constants.hpp. Comparing a
+    // sweep against the header that holds the sweep's own published value is
+    // circular: editing the header to match a changed sweep made this check
+    // pass again. The literal is the value that literal enumeration and two
+    // independent reimplementations agree on.
+    check(r.count == 1925751392ull,
           "10x10 {5,4,3,3,2} no-touching count matches the published constant");
     std::printf("      %llu configurations, peak %zu states, %llu edges\n",
                 static_cast<unsigned long long>(r.count), r.peakStates,
@@ -160,6 +162,19 @@ void testKeyBits() {
           "the standard instance fits the packed key");
     check(mayflower::noTouchKeyBits(mayflower::Instance()) == 49,
           "and needs 49 bits of it");
+
+    // The standard instance sits 15 bits inside the budget, so it cannot detect
+    // a key width that is one bit too generous. That error leaves every count
+    // right and shows up only as a refusal of the tallest board that ought to
+    // fit, so the boundary is pinned from both sides. This fleet has 16
+    // fleet-usage states, an exact power of two, which is the case where an
+    // off-by-one in the index width is visible at all.
+    check(mayflower::noTouchSupports(mayflower::Instance(6, 14, {5, 4, 3, 2})),
+          "the tallest board the extended key holds is accepted");
+    check(mayflower::noTouchKeyBits(mayflower::Instance(6, 14, {5, 4, 3, 2})) == 64,
+          "and it uses the budget exactly");
+    check(!mayflower::noTouchSupports(mayflower::Instance(6, 15, {5, 4, 3, 2})),
+          "one row past it is refused");
 }
 
 }  // namespace
@@ -173,6 +188,5 @@ int main() {
     testMonotone();
     testKeyBits();
     testStandardInstance();
-    std::printf("\n%s\n", failures ? "FAILED" : "all checks passed");
-    return failures ? 1 : 0;
+    return mf::test::report();
 }

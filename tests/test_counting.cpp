@@ -9,31 +9,16 @@
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/profile_dp.hpp"
+
+#include "harness.hpp"
 #include "oracle/brute_force.hpp"
 
 namespace {
 
-int gFailures = 0;
-int gChecks = 0;
-
-void check(bool ok, const std::string& what) {
-    ++gChecks;
-    if (!ok) {
-        ++gFailures;
-        std::printf("  FAIL  %s\n", what.c_str());
-    }
-}
-
-template <typename T>
-void checkEq(T got, T want, const std::string& what) {
-    ++gChecks;
-    if (got != want) {
-        ++gFailures;
-        std::printf("  FAIL  %s: got %llu, want %llu\n", what.c_str(),
-                    static_cast<unsigned long long>(got),
-                    static_cast<unsigned long long>(want));
-    }
-}
+using mf::test::expect;
+using mf::test::gChecks;
+using mf::test::gFailures;
+using mf::test::checkEq;
 
 using mayflower::CellConstraint;
 using mayflower::Instance;
@@ -74,6 +59,12 @@ void testValidationRefusesBadInstances() {
         {10, 10, {-2}, "a negative-length ship"},
         {4, 4, {9}, "a ship longer than either side"},
         {10, 30, {2}, "height past what the profile packs"},
+        // A length-9 ship on a 4x4 is refused for not fitting the board,
+        // which is a different guard entirely. This one fits the board, so
+        // it reaches the three-bit residual bound, which no case above did.
+        {10, 10, {9}, "a length-9 ship on a board wide enough to hold it"},
+        {43, 3, {2}, "129 cells, one past the bound"},
+        {6, 21, {2}, "21 rows, one past what the profile packs"},
     };
     for (const Case& c : bad) {
         ++gChecks;
@@ -84,6 +75,29 @@ void testValidationRefusesBadInstances() {
                         inst.describe().c_str(), inst.cellCount());
         } catch (const std::invalid_argument&) {
             std::printf("  refused: %s\n", c.why);
+        }
+    }
+
+    // Every refusal sits one step past its limit, and these sit exactly on
+    // it. Without both sides a bound that is off by one refuses work it
+    // should accept and no test notices. Length 8 is the case that matters
+    // most: the sweeps pack a residual of maxLen - 1 into three bits, so 8
+    // is the largest length those three bits hold.
+    struct Ok { int w, h; std::vector<int> fleet; const char* why; };
+    const std::vector<Ok> atTheLimit = {
+        {16, 8, {2}, "128 cells, exactly the bound"},
+        {6, 20, {2}, "20 rows, exactly what the profile packs"},
+        {10, 10, {8}, "a length-8 ship, the widest three bits hold"},
+    };
+    for (const Ok& c : atTheLimit) {
+        ++gChecks;
+        try {
+            const mayflower::Instance inst(c.w, c.h, c.fleet);
+            std::printf("  accepted: %-48s %s\n", c.why,
+                        inst.describe().c_str());
+        } catch (const std::invalid_argument& e) {
+            ++gFailures;
+            std::printf("  FAIL  %s was refused (%s)\n", c.why, e.what());
         }
     }
 
@@ -134,7 +148,7 @@ void testMarginalsAgainstBruteForce() {
     std::printf("[marginals vs brute force]\n");
     const Instance inst(5, 5, {3, 2, 2});
     const std::uint64_t total = mayflower::countConfigurations(inst).count;
-    check(total > 0, "non-zero total");
+    expect(total > 0, "non-zero total");
 
     std::uint64_t marginalSum = 0;
     for (int r = 0; r < inst.height; ++r) {
@@ -160,7 +174,7 @@ void testConstraints() {
                                       CellConstraint::Free);
     cells[static_cast<std::size_t>(inst.cellIndex(2, 2))] = CellConstraint::MustBeEmpty;
     const std::uint64_t afterMiss = mayflower::countConfigurations(inst, cells).count;
-    check(afterMiss < base, "a miss strictly reduces the count here");
+    expect(afterMiss < base, "a miss strictly reduces the count here");
 
     cells[static_cast<std::size_t>(inst.cellIndex(2, 2))] = CellConstraint::MustBeOccupied;
     const std::uint64_t afterHit = mayflower::countConfigurations(inst, cells).count;
@@ -168,7 +182,7 @@ void testConstraints() {
 
     cells[static_cast<std::size_t>(inst.cellIndex(0, 0))] = CellConstraint::MustBeEmpty;
     const std::uint64_t afterBoth = mayflower::countConfigurations(inst, cells).count;
-    check(afterBoth <= afterHit, "counts are monotonically non-increasing");
+    expect(afterBoth <= afterHit, "counts are monotonically non-increasing");
 
     std::vector<CellConstraint> allEmpty(static_cast<std::size_t>(inst.cellCount()),
                                          CellConstraint::MustBeEmpty);
@@ -198,7 +212,7 @@ void testIndistinguishableShips() {
     const std::uint64_t dp = mayflower::countConfigurations(inst).count;
     const std::uint64_t bf = oracle::bruteForceCount(5, 5, {3, 3});
     checkEq(dp, bf, "5x5 {3,3}");
-    check(dp * 2 != bf && bf * 2 != dp, "no factor-of-2 discrepancy in either direction");
+    expect(dp * 2 != bf && bf * 2 != dp, "no factor-of-2 discrepancy in either direction");
 }
 
 }  // namespace
@@ -216,6 +230,5 @@ int main() {
     testIndistinguishableShips();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
-    return gFailures == 0 ? 0 : 1;
+    return mf::test::report(dt);
 }

@@ -15,71 +15,38 @@
 #include "mayflower/profile_dp.hpp"
 #include "mayflower/profile_dp_blocked.hpp"
 
+#include "harness.hpp"
+
 namespace {
 
-int gFailures = 0;
-int gChecks = 0;
-
-void check(bool ok, const std::string& what) {
-    ++gChecks;
-    if (!ok) {
-        ++gFailures;
-        std::printf("  FAIL  %s\n", what.c_str());
-    }
-}
-
 using namespace mayflower;
-
-struct Rng {
-    std::uint64_t s;
-    explicit Rng(std::uint64_t seed) : s(seed) {}
-    std::uint64_t next() {
-        s += 0x9E3779B97F4A7C15ull;
-        std::uint64_t z = s;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        return z ^ (z >> 31);
-    }
-    int below(int n) { return static_cast<int>(next() % static_cast<std::uint64_t>(n)); }
-};
+using mf::test::check;
+using mf::test::expect;
+using mf::test::Rng;
 
 // Every rung, against V0, on the same constraints. Counts are integers, so this
 // is exact equality and there is no tolerance to argue about.
 bool agree(const Instance& inst, const Constraints& c, const std::string& label) {
     const std::uint64_t v0 = countConfigurations(inst, c).count;
-    const std::uint64_t v1 = countConfigurationsFast(inst, c).count;
-    ++gChecks;
-    if (v0 != v1) {
-        ++gFailures;
-        std::printf("  FAIL  %s: V0 %llu, V1 %llu\n", label.c_str(),
-                    static_cast<unsigned long long>(v0), static_cast<unsigned long long>(v1));
-        return false;
-    }
 
+    // Prints only on failure. This runs about 980 times, so one line per rung
+    // comparison would hide a failure.
+    const auto same = [&](std::uint64_t got, const std::string& rung) {
+        expect(v0 == got, label + ": V0 against " + rung,
+               "V0 " + std::to_string(v0) + ", " + rung + " " + std::to_string(got));
+        return v0 == got;
+    };
+
+    if (!same(countConfigurationsFast(inst, c).count, "V1")) return false;
     if (!blockedPathSupports(inst)) return true;
 
     // V2 is the radix-partitioned merge at one thread, V3 the same work spread
     // over several. Buckets partition the destination keys, so no two merges
     // touch one counter and the thread count cannot change the answer.
-    const std::uint64_t v2 = countConfigurationsBlocked(inst, c, 1).count;
-    ++gChecks;
-    if (v0 != v2) {
-        ++gFailures;
-        std::printf("  FAIL  %s: V0 %llu, V2 %llu\n", label.c_str(),
-                    static_cast<unsigned long long>(v0), static_cast<unsigned long long>(v2));
-        return false;
-    }
-
+    if (!same(countConfigurationsBlocked(inst, c, 1).count, "V2")) return false;
     for (int threads : {2, 4, 7}) {
         const std::uint64_t v3 = countConfigurationsBlocked(inst, c, threads).count;
-        ++gChecks;
-        if (v0 != v3) {
-            ++gFailures;
-            std::printf("  FAIL  %s: V0 %llu, V3(%d threads) %llu\n", label.c_str(),
-                        static_cast<unsigned long long>(v0), threads,
-                        static_cast<unsigned long long>(v3));
-            return false;
-        }
+        if (!same(v3, "V3(" + std::to_string(threads) + " threads)")) return false;
     }
     return true;
 }
@@ -202,7 +169,25 @@ void testFastPathLimits() {
     check(fastPathSupports(standardInstance()), "the standard instance fits the packed key");
     const Instance tall(4, 20, {4, 3, 2});
     check(!fastPathSupports(tall), "a 20-row board falls outside the packed key");
-    std::printf("  10x10 supported, 20-row board correctly rejected\n");
+
+    // Both predicates count bits against a fixed budget, so the only instances
+    // that distinguish a correct key width from a wrong one sit on the
+    // boundary. A key one bit wider than it needs to be still returns every
+    // count correctly and still packs every field without overlap; what it does
+    // is refuse the widest instance that ought to fit. Neither case above can
+    // see that, because one is well inside the limit and the other well outside
+    // it. Both fleets here have a number of fleet-usage states that is an exact
+    // power of two, which is where an off-by-one in the index width changes the
+    // answer at all.
+    check(fastPathSupports(Instance(6, 14, {4, 3, 2})),
+          "the tallest board the packed key holds is accepted");
+    check(!fastPathSupports(Instance(6, 15, {4, 3, 2})),
+          "and one row past it is refused");
+    check(blockedPathSupports(Instance(6, 17, {5, 4, 3, 2})),
+          "the tallest board the bucketed key holds is accepted");
+    check(!blockedPathSupports(Instance(6, 18, {5, 4, 3, 2})),
+          "and one row past it is refused");
+    std::printf("  10x10 supported, 20-row board refused, both boundaries pinned\n");
 }
 
 }  // namespace
@@ -216,6 +201,5 @@ int main() {
     testFastPathLimits();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
-    return gFailures == 0 ? 0 : 1;
+    return mf::test::report(dt);
 }
