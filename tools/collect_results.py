@@ -29,6 +29,9 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from report_style import Z_95  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -288,7 +291,7 @@ def cross_checks(results):
         a, b = train[n], test[n]
         se = math.sqrt(a["sd"] ** 2 / a["games"] + b["sd"] ** 2 / b["games"])
         diff = a["value"] - b["value"]
-        half = 1.959963985 * se
+        half = Z_95 * se
         if abs(diff) > half:
             apart.append({"instance": n, "difference": round(diff, 4),
                           "interval": [round(diff - half, 4), round(diff + half, 4)]})

@@ -8,12 +8,9 @@ Every figure is complete inline SVG. The page is correct with JavaScript off;
 JavaScript only adds hover readouts.
 """
 
-import html
-import io
-import json
 import math
-import os
-import sys
+
+from report_style import esc  # re-exported: render_report.py imports it from here
 
 # Validated categorical slots (see the palette validator: all six checks pass in
 # both modes, worst adjacent CVD dE 9.2 light / 9.4 dark).
@@ -23,10 +20,6 @@ SERIES = ["--series-1", "--series-2", "--series-3"]
 RAMP = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7",
         "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"]
 BUCKETS = 12
-
-
-def esc(s):
-    return html.escape(str(s), quote=True)
 
 
 def fmt(n, decimals=0):

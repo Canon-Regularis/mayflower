@@ -11,17 +11,15 @@ Writes out/results.html.
 
 from __future__ import annotations
 
-import html
 import io
 import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from report_style import Z_95, esc  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def esc(s):
-    return html.escape(str(s), quote=True)
 
 
 def load():
@@ -373,7 +371,7 @@ def build(d):
             import math as _m
             if t:
                 se = _m.sqrt(t["sd"] ** 2 / t["games"] + r["sd"] ** 2 / r["games"])
-                inside = abs(t["value"] - r["value"]) <= 1.959963985 * se
+                inside = abs(t["value"] - r["value"]) <= Z_95 * se
             else:
                 inside = False
             rows.append([r["note"],
