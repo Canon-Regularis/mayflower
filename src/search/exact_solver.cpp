@@ -1,4 +1,5 @@
 #include "mayflower/exact_solver.hpp"
+#include "mayflower/game.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -85,6 +86,72 @@ struct Branch {
     const std::vector<ConfigId>* support;
     double weight;   // share of the support
     double floor;
+};
+
+// How a chance node turns its branches into a score.
+//
+// Three of these were written as an if chain inside a function that also does
+// move ordering, memoisation and the recursion. Each states the same four
+// things: what the node is worth before any branch is evaluated, how one
+// evaluated branch moves that, the bound a cut is tested against, and the score
+// once every branch is in. As separate types the arithmetic of each is visible
+// in one place instead of interleaved with the other two, and a fourth rule is
+// a new struct rather than another arm of the chain.
+//
+// Deliberately not virtual. This is the hot recursive path, and move ordering
+// alone is worth 158x on the fleet instances, so a virtual call per chance node
+// would be paid millions of times over. The codebase already resolves this kind
+// of choice at compile time through the Emit template parameter that every
+// transitions() takes, so these follow it: selected once at entry, then inlined.
+
+// Pruning::None against a committed hider. Unevaluated branches count for
+// nothing, which leaves the running total a weaker bound that cuts later.
+struct SumWithoutFloors {
+    double acc = 1.0;
+    SumWithoutFloors(double, const Branch*, std::size_t) {}
+    void take(std::size_t, const Branch& b, double exact) { acc += b.weight * exact; }
+    [[nodiscard]] double bound() const { return acc; }
+    [[nodiscard]] double score() const { return acc; }
+};
+
+// A committed hider with floors. The node starts already charged at every
+// branch's admissible floor, so replacing one floor with its exact value only
+// ever raises the total, which is what keeps it a lower bound throughout.
+struct SumWithFloors {
+    double acc;
+    SumWithFloors(double seeded, const Branch*, std::size_t) : acc(seeded) {}
+    void take(std::size_t, const Branch& b, double exact) {
+        acc += b.weight * (exact - b.floor);
+    }
+    [[nodiscard]] double bound() const { return acc; }
+    [[nodiscard]] double score() const { return acc; }
+};
+
+// An adaptive hider answers to hurt most, so the chance node maximises rather
+// than averages. Branches still to come cannot pull a maximum down, so the
+// bound is the largest of what is known and what is still floored.
+struct MaxWithFloors {
+    const Branch* branches = nullptr;
+    std::size_t nb = 0;
+    std::size_t seen = 0;
+    double valueOf[kMaxBranches] = {0};
+
+    MaxWithFloors(double, const Branch* b, std::size_t n) : branches(b), nb(n) {}
+    void take(std::size_t i, const Branch&, double exact) {
+        valueOf[i] = exact;
+        seen = i + 1;
+    }
+    [[nodiscard]] double bound() const {
+        double m = 0;
+        for (std::size_t j = 0; j < nb; ++j)
+            m = std::max(m, j < seen ? valueOf[j] : branches[j].floor);
+        return 1.0 + m;
+    }
+    [[nodiscard]] double score() const {
+        double m = 0;
+        for (std::size_t j = 0; j < nb; ++j) m = std::max(m, valueOf[j]);
+        return 1.0 + m;
+    }
 };
 
 struct StateKey {
@@ -175,6 +242,9 @@ struct Solver {
         return n;
     }
 
+    // The rule is fixed for a whole search, so solve() below picks it once and
+    // the recursion carries it. No node re-reads the enums.
+    template <typename Rule>
     double value(Mask shot, const std::vector<ConfigId>& support, int* bestCell) {
         if (occupancySettled(support)) {
             const Mask remaining = w.occupancy[support.front()] & ~shot;
@@ -248,53 +318,17 @@ struct Solver {
             }
             if (running >= best) { ++cellsPruned; continue; }
 
-            double score;
-            if (pruning == Pruning::None && adversary == Adversary::Committed) {
-                // The original: unevaluated branches count for nothing, so the
-                // partial sum is a weaker bound and cuts later.
-                double partial = 1.0;
-                bool cut = false;
-                for (std::size_t i = 0; i < nb; ++i) {
-                    partial += ordered[i].weight * value(nextShot, *ordered[i].support, nullptr);
-                    if (partial >= best && i + 1 < nb) { cut = true; break; }
-                }
-                if (cut) { ++branchesCut; continue; }
-                score = partial;
-            } else if (adversary == Adversary::Committed) {
-                bool cut = false;
-                for (std::size_t i = 0; i < nb; ++i) {
-                    const Branch& b = ordered[i];
-                    const double exact = value(nextShot, *b.support, nullptr);
-                    running += b.weight * (exact - b.floor);
-                    if (running >= best && i + 1 < nb) {
-                        cut = true;
-                        break;
-                    }
-                }
-                if (cut) { ++branchesCut; continue; }
-                score = running;
-            } else {
-                // The hider answers to hurt most, so the chance node maximises.
-                // Branches still to come cannot pull the maximum down, so the
-                // running bound is the largest of what is known and what is
-                // still floored.
-                double valueOf[kMaxBranches] = {0};
-                bool cut = false;
-                for (std::size_t i = 0; i < nb; ++i) {
-                    valueOf[i] = value(nextShot, *ordered[i].support, nullptr);
-                    double bound = 0;
-                    for (std::size_t j = 0; j < nb; ++j)
-                        bound = std::max(bound, j <= i ? valueOf[j] : ordered[j].floor);
-                    if (1.0 + bound >= best && i + 1 < nb) {
-                        cut = true;
-                        break;
-                    }
-                }
-                if (cut) { ++branchesCut; continue; }
-                double worst = 0;
-                for (std::size_t i = 0; i < nb; ++i) worst = std::max(worst, valueOf[i]);
-                score = 1.0 + worst;
+            // The last branch is never a cut. By then every branch is in, so
+            // the rule holds the exact score rather than a bound on it, and a
+            // branch set that ran to completion was not abandoned.
+            Rule rule(running, ordered, nb);
+            bool cut = false;
+            for (std::size_t i = 0; i < nb; ++i) {
+                rule.take(i, ordered[i], value<Rule>(nextShot, *ordered[i].support, nullptr));
+                if (rule.bound() >= best && i + 1 < nb) { cut = true; break; }
             }
+            if (cut) { ++branchesCut; continue; }
+            const double score = rule.score();
 
             if (score < best) {
                 best = score;
@@ -313,6 +347,16 @@ struct Solver {
         if (bestCell != nullptr) *bestCell = bestAt;
         else memo.emplace(std::move(key), best);
         return best;
+    }
+
+    // The one place the enums are read. Three rules, chosen once, so nothing
+    // on the hot path tests which search this is.
+    double solve(Mask shot, const std::vector<ConfigId>& support, int* bestCell) {
+        if (adversary == Adversary::Adaptive)
+            return value<MaxWithFloors>(shot, support, bestCell);
+        if (pruning == Pruning::None)
+            return value<SumWithoutFloors>(shot, support, bestCell);
+        return value<SumWithFloors>(shot, support, bestCell);
     }
 
     // Nodes where the floor came out above the value it bounds. Reported rather
@@ -340,7 +384,7 @@ ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimi
     solver.auditFloor = auditFloor;
     ExactSolution out;
     out.configurations = w.occupancy.size();
-    out.expectedShots = solver.value(0, all, &out.optimalFirstShot);
+    out.expectedShots = solver.solve(0, all, &out.optimalFirstShot);
     out.memoStates = solver.memo.size();
     out.admissibilityViolations = solver.admissibilityViolations;
     out.nodesExpanded = solver.nodes;
