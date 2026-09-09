@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "mayflower/instance.hpp"
 
 namespace mayflower {
 

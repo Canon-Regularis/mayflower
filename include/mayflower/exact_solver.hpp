@@ -13,8 +13,12 @@
 #include <cstdint>
 #include <vector>
 
-#include "mayflower/game.hpp"
 #include "mayflower/instance.hpp"
+
+// game.hpp was included here to name Policy in one signature, and it is
+// named only by reference, so a declaration is enough. That header pulls in
+// the board bank and the game loop, which nothing in this interface needs.
+namespace mayflower { class Policy; }
 
 namespace mayflower {
 

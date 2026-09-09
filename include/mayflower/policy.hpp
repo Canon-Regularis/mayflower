@@ -18,7 +18,7 @@
 #include "mayflower/game.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/outcomes.hpp"
 
 namespace mayflower {
 
