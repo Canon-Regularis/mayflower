@@ -11,18 +11,13 @@
 #include "mayflower/instance.hpp"
 #include "mayflower/policy.hpp"
 
+#include "harness.hpp"
+
 namespace {
 
-int gFailures = 0;
-int gChecks = 0;
-
-void check(bool ok, const std::string& what) {
-    ++gChecks;
-    if (!ok) {
-        ++gFailures;
-        std::printf("  FAIL  %s\n", what.c_str());
-    }
-}
+using mf::test::expect;
+using mf::test::gChecks;
+using mf::test::gFailures;
 
 using namespace mayflower;
 
@@ -46,15 +41,15 @@ void testOptimumDominatesEveryPolicy() {
         const auto p = exactPolicyExpectation(inst, parity);
         const auto r = exactPolicyExpectation(inst, random);
 
-        check(opt.expectedShots >= inst.shipCells() - 1e-9,
+        expect(opt.expectedShots >= inst.shipCells() - 1e-9,
               inst.describe() + " optimum respects the coverage bound");
-        check(opt.expectedShots <= d.expectedShots + 1e-9,
+        expect(opt.expectedShots <= d.expectedShots + 1e-9,
               inst.describe() + " optimum is at most the density policy");
-        check(opt.expectedShots <= p.expectedShots + 1e-9,
+        expect(opt.expectedShots <= p.expectedShots + 1e-9,
               inst.describe() + " optimum is at most parity hunt/target");
-        check(opt.expectedShots <= r.expectedShots + 1e-9,
+        expect(opt.expectedShots <= r.expectedShots + 1e-9,
               inst.describe() + " optimum is at most the random shooter");
-        check(opt.optimalFirstShot >= 0 && opt.optimalFirstShot < inst.cellCount(),
+        expect(opt.optimalFirstShot >= 0 && opt.optimalFirstShot < inst.cellCount(),
               inst.describe() + " reports a legal first shot");
 
         std::printf("  %-12s optimal %7.4f  density %7.4f  parity %7.4f  random %7.4f\n",
@@ -78,9 +73,9 @@ void testPinnedValues() {
         const Instance inst(pin.w, pin.h, pin.fleet);
         const auto opt = solveOptimal(inst);
         const double totalShots = opt.expectedShots * static_cast<double>(opt.configurations);
-        check(std::abs(totalShots - static_cast<double>(pin.totalShots)) < 1e-6,
+        expect(std::abs(totalShots - static_cast<double>(pin.totalShots)) < 1e-6,
               inst.describe() + " optimum totals " + std::to_string(pin.totalShots) + " shots");
-        check(std::abs(totalShots - std::round(totalShots)) < 1e-6,
+        expect(std::abs(totalShots - std::round(totalShots)) < 1e-6,
               inst.describe() + " total shot count is an integer");
         std::printf("  %-12s %llu shots over %llu configurations = %.6f\n", inst.describe().c_str(),
                     static_cast<unsigned long long>(pin.totalShots),
@@ -93,8 +88,8 @@ void testDeterminism() {
     const Instance inst(4, 3, {2});
     const auto a = solveOptimal(inst);
     const auto b = solveOptimal(inst);
-    check(a.expectedShots == b.expectedShots, "repeated solves agree bit for bit");
-    check(a.optimalFirstShot == b.optimalFirstShot, "the optimal first shot is stable");
+    expect(a.expectedShots == b.expectedShots, "repeated solves agree bit for bit");
+    expect(a.optimalFirstShot == b.optimalFirstShot, "the optimal first shot is stable");
     std::printf("  two solves agree exactly\n");
 }
 
@@ -107,7 +102,7 @@ void testRefusesOversizedInstances() {
     } catch (const std::exception&) {
         threw = true;
     }
-    check(threw, "the exact solver refuses the full 10x10 instance instead of hanging");
+    expect(threw, "the exact solver refuses the full 10x10 instance instead of hanging");
     std::printf("  10x10 is refused up front\n");
 }
 
@@ -144,7 +139,7 @@ void testFloorIsAdmissible() {
         for (const auto level : {mayflower::Pruning::Bounds, mayflower::Pruning::Star1}) {
             const auto sol = mayflower::solveOptimal(
                 inst, 60000, mayflower::Adversary::Committed, level, /*auditFloor=*/true);
-            check(sol.admissibilityViolations == 0,
+            expect(sol.admissibilityViolations == 0,
                   inst.describe() + ": the floor never exceeds the value it bounds");
             if (sol.admissibilityViolations != 0)
                 std::printf("      %llu nodes where floorOf came out above the exact value\n",
@@ -169,9 +164,9 @@ void testDegenerateInstances() {
     for (const Settled& c : settled) {
         const mayflower::Instance inst(c.w, c.h, c.fleet);
         const auto sol = mayflower::solveOptimal(inst);
-        check(std::abs(sol.expectedShots - c.shots) < 1e-9,
+        expect(std::abs(sol.expectedShots - c.shots) < 1e-9,
               inst.describe() + ": every cell must be shot");
-        check(sol.optimalFirstShot >= 0 && sol.optimalFirstShot < inst.cellCount(),
+        expect(sol.optimalFirstShot >= 0 && sol.optimalFirstShot < inst.cellCount(),
               inst.describe() + ": names a real opening rather than -1");
     }
 
@@ -213,15 +208,19 @@ void testPruningLevelsAgree() {
         const mayflower::Instance inst(c.w, c.h, c.fleet);
         double shots[3] = {0, 0, 0};
         int first[3] = {-1, -1, -1};   // recorded, deliberately not compared
+        std::uint64_t nodes[3] = {0, 0, 0};
+        std::uint64_t cut[3] = {0, 0, 0};
         for (int i = 0; i < 3; ++i) {
             const auto sol = mayflower::solveOptimal(inst, 60000,
                                                     mayflower::Adversary::Committed, levels[i]);
             shots[i] = sol.expectedShots;
             first[i] = sol.optimalFirstShot;
+            nodes[i] = sol.nodesExpanded;
+            cut[i] = sol.branchesCut;
         }
         const bool sameValue = std::abs(shots[0] - shots[1]) < 1e-12
                             && std::abs(shots[0] - shots[2]) < 1e-12;
-        check(sameValue, inst.describe() + ": every pruning level returns one optimum");
+        expect(sameValue, inst.describe() + ": every pruning level returns one optimum");
         if (!sameValue)
             std::printf("      %s %.10f, %s %.10f, %s %.10f\n",
                         names[0], shots[0], names[1], shots[1], names[2], shots[2]);
@@ -229,7 +228,53 @@ void testPruningLevelsAgree() {
         // levels may legitimately name different cells: on 3x3 {2} five of the
         // nine cells open at 4.5, and None and Star1 pick different ones.
         (void)first;
+
+        // Agreeing on the answer says nothing about whether the bounds removed
+        // any work, and removing work is the only reason the levels exist. A
+        // change that stops the pruning leaves every answer correct and costs
+        // only time, which the comparison above cannot see. Wall-clock is the
+        // wrong instrument here, having already picked the wrong default twice
+        // from single runs taken on a busy machine. These counts are exact and
+        // do not vary with the machine.
+        expect(nodes[0] > nodes[1],
+               inst.describe() + ": Bounds expands fewer nodes than None");
+        expect(nodes[1] > nodes[2],
+               inst.describe() + ": Star1 expands fewer nodes than Bounds");
+        // A stronger bound reaches the incumbent sooner, so it abandons more
+        // chance branches part-way rather than fewer. This also pins what
+        // counts as abandoned, since a branch set that ran to completion was
+        // not abandoned at all.
+        expect(cut[0] < cut[1],
+               inst.describe() + ": Bounds abandons more branches than None");
     }
+}
+
+// Every case above runs the committed adversary, so none of them reach the
+// adaptive chance-node bound, which is a separate piece of code with its own
+// cell test and its own branch cut. Both can be switched off without changing
+// one answer: the optima here are integers, so the running bound meets the
+// incumbent exactly, and a comparison that stops being inclusive prunes
+// nothing at all.
+void testAdaptivePruningStaysOn() {
+    std::printf("[the adaptive bound still prunes]\n");
+    struct Case { int w, h; std::vector<int> fleet; };
+    const Case cases[] = {{3, 3, {2}}, {4, 3, {2}}, {4, 4, {3}}};
+    const mayflower::Pruning levels[] = {
+        mayflower::Pruning::None, mayflower::Pruning::Bounds, mayflower::Pruning::Star1,
+    };
+    const char* names[] = {"None", "Bounds", "Star1"};
+
+    for (const Case& c : cases) {
+        const mayflower::Instance inst(c.w, c.h, c.fleet);
+        for (int i = 0; i < 3; ++i) {
+            const auto sol = mayflower::solveOptimal(inst, 60000,
+                                                    mayflower::Adversary::Adaptive, levels[i]);
+            const std::string what = inst.describe() + " adaptive " + names[i];
+            expect(sol.cellsPruned > 0, what + ": the cell bound rejects candidates");
+            expect(sol.branchesCut > 0, what + ": the branch bound cuts branches");
+        }
+    }
+    std::printf("  both adaptive mechanisms fire at every level\n");
 }
 
 }  // namespace
@@ -244,6 +289,7 @@ int main() {
     testFloorIsAdmissible();
     testDegenerateInstances();
     testPruningLevelsAgree();
+    testAdaptivePruningStaysOn();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);

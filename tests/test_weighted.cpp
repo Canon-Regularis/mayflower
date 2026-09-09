@@ -13,31 +13,17 @@
 #include "mayflower/constants.hpp"
 #include "mayflower/profile_dp.hpp"
 #include "mayflower/weighted.hpp"
+
+#include "harness.hpp"
 #include "oracle/brute_force.hpp"
 
 namespace {
 
-int failures = 0;
-
-void check(bool ok, const std::string& what) {
-    std::printf("  %-64s %s\n", what.c_str(), ok ? "ok" : "FAILED");
-    if (!ok) ++failures;
-}
+using mf::test::Rng;
+using mf::test::check;
 
 // splitmix64, so weights are reproducible from a seed alone and another
 // implementation can be pointed at the same numbers.
-struct Rng {
-    std::uint64_t s;
-    explicit Rng(std::uint64_t seed) : s(seed) {}
-    std::uint64_t next() {
-        s += 0x9E3779B97F4A7C15ull;
-        std::uint64_t z = s;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        return z ^ (z >> 31);
-    }
-    double unit() { return static_cast<double>(next() >> 11) / 9007199254740992.0; }
-};
 
 // Draw order is fixed: all occupied weights, all empty weights, then the
 // horizontal placement weights length-major, then the vertical ones.
@@ -155,7 +141,12 @@ void testUnweightedBridge() {
 
     const mayflower::Instance std10;
     const auto wr = mayflower::weightedCount(std10, mayflower::Weights::uniform());
-    check(wr.total == static_cast<double>(mayflower::constants::kOmega0),
+    // Pinned as a literal rather than read from constants.hpp. Comparing a
+    // sweep against the header that holds the sweep's own published value is
+    // circular: editing the header to match a changed sweep made this check
+    // pass again. The literal is the value that literal enumeration and two
+    // independent reimplementations agree on.
+    check(wr.total == 15046987768.0,
           "10x10 {5,4,3,3,2}: 15,046,987,768 exactly");
     check(!wr.rescaled, "and no layer needed rescaling");
     check(wr.exact, "and the run certifies itself exact");
@@ -171,6 +162,27 @@ void testUnweightedBridge() {
     check(wr.maxLayerSum < limit, "largest layer sum stays below 2^53");
     std::printf("      largest layer sum %.6g, which is 2^%.2f, against 2^53\n",
                 wr.maxLayerSum, std::log2(wr.maxLayerSum));
+
+
+    // Only one side of that guard has ever run. Every instance in this file
+    // sits six orders of magnitude below the limit, so a build that dropped
+    // maxLayerSum from the exactness test would pass all of it while
+    // advertising a result that had already lost configurations. The limit is
+    // reachable on a legal instance: a board may carry 128 cells and the fleet
+    // count is not capped, so ten 2-ships on 16x8 push the layer sum several
+    // times past it.
+    const mayflower::Instance crowded(16, 8, {2, 2, 2, 2, 2, 2, 2, 2, 2, 2});
+    const auto big = mayflower::weightedCount(crowded, mayflower::Weights::uniform());
+    check(big.maxLayerSum > limit,
+          "16x8 with ten 2-ships carries a layer sum past 2^53");
+    check(!big.exact, "so the run refuses to certify itself exact");
+    // Pinned so the refusal cannot pass for one of the other reasons: the
+    // weights are trivial and nothing rescaled or underflowed, which leaves the
+    // layer sum as the only thing standing between this and an exact claim.
+    check(!big.rescaled && !big.underflowed,
+          "and the layer sum is what withholds it, not a rescale or an underflow");
+    std::printf("      that layer sum is %.6g, which is 2^%.2f, %.2f times the limit\n",
+                big.maxLayerSum, std::log2(big.maxLayerSum), big.maxLayerSum / limit);
 }
 
 void testAgainstEnumeration() {
@@ -600,6 +612,5 @@ int main() {
     testMarginalsRefuseWhatTheyCannotHold();
     testLogPlacementScoresSaturate();
     testRejectsBadInput();
-    std::printf("\n%s\n", failures ? "FAILED" : "all checks passed");
-    return failures ? 1 : 0;
+    return mf::test::report();
 }
