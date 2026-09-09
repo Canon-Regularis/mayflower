@@ -41,6 +41,10 @@ endif()
 
 add_library(mayflower_core
   src/core/profile_dp.cpp
+  src/core/constraints.cpp
+  src/core/flows.cpp
+  src/core/outcomes.cpp
+  src/core/sampler.cpp
   src/core/notouch.cpp
   src/core/weighted.cpp
   src/core/profile_dp_blocked.cpp
@@ -66,9 +70,38 @@ foreach(hdr IN LISTS MF_PUBLIC_HEADERS)
   file(WRITE ${gen} "#include \"mayflower/${hdr_name}.hpp\"\n")
   list(APPEND MF_HEADER_TUS ${gen})
 endforeach()
+# The sweeps' shared vocabulary lives in src/core/detail and is included by five
+# translation units that order their includes differently, so the same argument
+# applies to it: a detail header that only compiles after something else has to
+# fail here rather than in whichever sweep happens to include it first.
+file(GLOB MF_DETAIL_HEADERS CONFIGURE_DEPENDS
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/detail/*.hpp)
+foreach(hdr IN LISTS MF_DETAIL_HEADERS)
+  get_filename_component(hdr_name ${hdr} NAME_WE)
+  set(gen ${CMAKE_CURRENT_BINARY_DIR}/header_selftest/detail_${hdr_name}.cpp)
+  file(WRITE ${gen} "#include \"detail/${hdr_name}.hpp\"\n")
+  list(APPEND MF_HEADER_TUS ${gen})
+endforeach()
+
 add_library(mayflower_headers OBJECT ${MF_HEADER_TUS})
 target_link_libraries(mayflower_headers PRIVATE mf_flags)
-target_include_directories(mayflower_headers PRIVATE include)
+target_include_directories(mayflower_headers PRIVATE include src/core)
+
+# The oracle is the independent check the differential suite rests on: eight
+# tests compare a sweep against it, and the comparison is only evidence while it
+# shares no code with the engine. That was stated in a comment at the top of
+# tests/oracle/brute_force.hpp and nothing enforced it, while the test targets
+# themselves carry both tests/ and include/ on the search path.
+#
+# Compiled here with only tests/ on the include path, so an include of mayflower/
+# added to the oracle fails the build. This uses the same mechanism as the header
+# self test above and costs one translation unit.
+set(MF_ORACLE_TU ${CMAKE_CURRENT_BINARY_DIR}/oracle_selftest/brute_force.cpp)
+file(WRITE ${MF_ORACLE_TU} "#include \"oracle/brute_force.hpp\"
+")
+add_library(mayflower_oracle_isolated OBJECT ${MF_ORACLE_TU})
+target_link_libraries(mayflower_oracle_isolated PRIVATE mf_flags)
+target_include_directories(mayflower_oracle_isolated PRIVATE tests)
 target_link_libraries(mayflower_core PUBLIC mf_flags Threads::Threads)
 
 add_executable(omega0 tools/omega0.cpp)
@@ -92,14 +125,41 @@ target_link_libraries(optimal PRIVATE mayflower_core)
 add_executable(opponent tools/opponent.cpp)
 target_link_libraries(opponent PRIVATE mayflower_core)
 
-add_test(NAME opponent COMMAND opponent selftest)
-set_tests_properties(opponent PROPERTIES LABELS "fast")
+# One declaration per test.
+#
+# Each test was previously two statements: add_test, then set_tests_properties
+# giving the label and any other properties. That is 42 pairs, and the second
+# statement repeated the test name, so the two could disagree. Six combinations
+# of properties occurred across the 42; this function covers all of them.
+#
+# SKIPPABLE rather than SKIP_RETURN_CODE 77. The value was 77 in every case, and
+# it is the ctest convention for "the input this test reads is absent". Naming
+# the condition removes eleven copies of the number.
+function(mf_test name)
+  cmake_parse_arguments(T "SKIPPABLE" "LABEL;TIMEOUT;WORKDIR" "COMMAND" ${ARGN})
+  if(NOT T_LABEL)
+    message(FATAL_ERROR "mf_test(${name}) has no LABEL; ctest -L would never select it")
+  endif()
+  add_test(NAME ${name} COMMAND ${T_COMMAND})
+  set(props LABELS "${T_LABEL}")
+  if(T_TIMEOUT)
+    list(APPEND props TIMEOUT ${T_TIMEOUT})
+  endif()
+  if(T_SKIPPABLE)
+    list(APPEND props SKIP_RETURN_CODE 77)
+  endif()
+  if(T_WORKDIR)
+    list(APPEND props WORKING_DIRECTORY ${T_WORKDIR})
+  endif()
+  set_tests_properties(${name} PROPERTIES ${props})
+endfunction()
+
+mf_test(opponent COMMAND opponent selftest LABEL fast)
 
 add_executable(maxcover tools/maxcover.cpp)
 target_link_libraries(maxcover PRIVATE mayflower_core)
 
-add_test(NAME maxcover COMMAND maxcover selftest)
-set_tests_properties(maxcover PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(maxcover COMMAND maxcover selftest LABEL pr TIMEOUT 900)
 
 add_executable(weighted tools/weighted.cpp)
 target_link_libraries(weighted PRIVATE mayflower_core)
@@ -107,8 +167,7 @@ target_link_libraries(weighted PRIVATE mayflower_core)
 add_executable(m9 tools/m9.cpp)
 target_link_libraries(m9 PRIVATE mayflower_core)
 
-add_test(NAME m9 COMMAND m9 selftest)
-set_tests_properties(m9 PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(m9 COMMAND m9 selftest LABEL pr TIMEOUT 900)
 
 add_executable(spectrum tools/spectrum.cpp)
 target_link_libraries(spectrum PRIVATE mayflower_core)
@@ -156,32 +215,27 @@ target_link_libraries(test_exact PRIVATE mayflower_core)
 
 add_executable(test_uniformity tests/test_uniformity.cpp)
 target_link_libraries(test_uniformity PRIVATE mayflower_core)
-add_test(NAME uniformity COMMAND test_uniformity 300000)
-set_tests_properties(uniformity PROPERTIES LABELS "nightly" TIMEOUT 3600)
+mf_test(uniformity COMMAND test_uniformity 300000 LABEL nightly TIMEOUT 3600)
 
 add_executable(test_parallel tests/test_parallel.cpp)
 target_link_libraries(test_parallel PRIVATE mayflower_core)
-add_test(NAME parallel COMMAND test_parallel)
-set_tests_properties(parallel PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(parallel COMMAND test_parallel LABEL pr TIMEOUT 900)
 
 # Degenerate fleets and shapes. Four of the five sweeps were wrong on a fleet of
 # length-1 ships, which the ladder never used and both oracles always handled.
 add_executable(test_degenerate tests/test_degenerate.cpp)
 target_include_directories(test_degenerate PRIVATE tests)
 target_link_libraries(test_degenerate PRIVATE mayflower_core)
-add_test(NAME degenerate COMMAND test_degenerate)
-set_tests_properties(degenerate PROPERTIES LABELS "fast")
+mf_test(degenerate COMMAND test_degenerate LABEL fast)
 
 add_executable(test_gated tests/test_gated.cpp)
 target_include_directories(test_gated PRIVATE tests)
 target_link_libraries(test_gated PRIVATE mayflower_core)
-add_test(NAME gated COMMAND test_gated)
-set_tests_properties(gated PROPERTIES LABELS "fast")
+mf_test(gated COMMAND test_gated LABEL fast)
 
 add_executable(test_folds tests/test_folds.cpp)
 target_link_libraries(test_folds PRIVATE mayflower_core)
-add_test(NAME folds COMMAND test_folds)
-set_tests_properties(folds PROPERTIES LABELS "fast")
+mf_test(folds COMMAND test_folds LABEL fast)
 
 # Random instances against literal enumeration. The hand-written case lists all
 # used ships of length two or more for a long time, which is the one input where
@@ -191,68 +245,71 @@ set_tests_properties(folds PROPERTIES LABELS "fast")
 add_executable(test_fuzz tests/test_fuzz.cpp)
 target_include_directories(test_fuzz PRIVATE tests)
 target_link_libraries(test_fuzz PRIVATE mayflower_core)
-add_test(NAME fuzz COMMAND test_fuzz 250 0x5EED)
-set_tests_properties(fuzz PROPERTIES LABELS "fast")
+mf_test(fuzz COMMAND test_fuzz 250 0x5EED LABEL fast)
 
 # A wider draw on a different seed, for the slower gate.
-add_test(NAME fuzz_wide COMMAND test_fuzz 1200 0xA17E)
-set_tests_properties(fuzz_wide PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(fuzz_wide COMMAND test_fuzz 1200 0xA17E LABEL pr TIMEOUT 900)
 
 # Every number in docs/BENCHMARKS.md assumes the pin took. SetThreadAffinityMask
 # reporting success is not the same as the thread having moved, so this asks the
 # OS which processor the thread is on rather than trusting the return code.
 add_executable(test_platform tests/test_platform.cpp)
 target_link_libraries(test_platform PRIVATE mayflower_core)
-add_test(NAME platform COMMAND test_platform)
-set_tests_properties(platform PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+mf_test(platform COMMAND test_platform LABEL fast SKIPPABLE)
 
 if(Python3_Interpreter_FOUND)
-add_test(NAME stats COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick)
-set_tests_properties(stats PROPERTIES LABELS "fast")
+mf_test(stats
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick
+  LABEL fast)
 
 # The belief frames the scrubber replays have no other reader, so their
 # invariants are checked here rather than by the thing that draws them.
-add_test(NAME report_data COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_report_data.py)
-set_tests_properties(report_data PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+mf_test(report_data
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_report_data.py
+  LABEL fast
+  SKIPPABLE)
 
 # Two tools computing one quantity have to agree, and the collector is where
 # that is checked. It also fails if a tool changes a table this parses.
-add_test(NAME results COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/tools/collect_results.py --check)
-set_tests_properties(results PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+mf_test(results
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/collect_results.py --check
+  LABEL fast
+  SKIPPABLE)
 
 # The live widget scans web/pool.bin for its opening posterior and three readers
 # took its contents on trust. Decoded here with the formula export_pool
 # documents, so the two disagreeing is a failure rather than a wrong heatmap.
-add_test(NAME pool COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_pool.py)
-set_tests_properties(pool PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+mf_test(pool
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_pool.py
+  LABEL fast
+  SKIPPABLE)
 
 # The refusal that protects the pre-registered TEST fold. selfplay was not a
 # registered test at all, so the only guard on the sealed data was unchecked.
-add_test(NAME selfplay_fold COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_selfplay_fold.py)
-set_tests_properties(selfplay_fold PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
-                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+mf_test(selfplay_fold
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_selfplay_fold.py
+  LABEL fast
+  SKIPPABLE
+  WORKDIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 # The other half of that guard: the script that mints the token. run_headline.py
 # decides whether TEST may be read, and nothing executed it, so both of its gates
 # and the parser that turns a run into the recorded result were unchecked. The
 # test replaces selfplay, because the real path reads TEST and writes the log.
-add_test(NAME run_headline COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_run_headline.py)
-set_tests_properties(run_headline PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
-                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+mf_test(run_headline
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_run_headline.py
+  LABEL fast
+  SKIPPABLE
+  WORKDIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 # The dossier renderer, six hundred lines that nothing executed. It concatenates
 # strings, so it cannot fail on a page that came out wrong: the page is checked
 # against the collected results instead of against fixed text.
-add_test(NAME render_results COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_render_results.py)
-set_tests_properties(render_results PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
-                     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+mf_test(render_results
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_render_results.py
+  LABEL fast
+  SKIPPABLE
+  WORKDIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 # The live widget's exact regime, and a game played through it. It has two
 # regimes and every other probe hands it the whole pool, so the branch that runs
@@ -263,67 +320,72 @@ set_tests_properties(render_results PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77
 # where it overran its own subprocess clock and turned red on time rather than on
 # anything it measured. The widget is deterministic, so nothing but the clock can
 # vary, and a gate that a loaded runner can fail is worse than a slower one.
-add_test(NAME live_exact COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE}
-         ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_live_exact.py)
-set_tests_properties(live_exact PROPERTIES LABELS "nightly" SKIP_RETURN_CODE 77
-                     TIMEOUT 3600 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+mf_test(live_exact
+  COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE} ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_live_exact.py
+  LABEL nightly
+  TIMEOUT 3600
+  SKIPPABLE
+  WORKDIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 # The tools are too slow to run in a suite; their entry points are not. atoi
 # turns a bad argument into 0, and each tool then divides by that count or writes
 # an artefact from it. export_pool emptied web/pool.bin and exited 0.
-add_test(NAME tool_cli COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tool_cli.py)
-set_tests_properties(tool_cli PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+mf_test(tool_cli
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tool_cli.py
+  LABEL fast
+  SKIPPABLE)
 
 # The same three tools, run for real and read. Each builds the unranking sampler
 # for the standard instance first, about twenty-five seconds whatever size is
 # asked for, so this sits in the slower gate.
-add_test(NAME tools_output COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tools_output.py)
-set_tests_properties(tools_output PROPERTIES LABELS "pr" SKIP_RETURN_CODE 77 TIMEOUT 900)
+mf_test(tools_output
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tools_output.py
+  LABEL pr
+  TIMEOUT 900
+  SKIPPABLE)
 
 # The order-aware reference the browser engine is validated against. It printed
 # its ladder and returned success whatever the numbers were, so a drifted oracle
 # would have blessed a wrong engine.
-add_test(NAME oracle COMMAND ${Python3_EXECUTABLE}
-         ${CMAKE_CURRENT_SOURCE_DIR}/python/oracle.py --order-dependence)
-set_tests_properties(oracle PROPERTIES LABELS "fast")
+mf_test(oracle
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/oracle.py --order-dependence
+  LABEL fast)
 endif()
 
 # The JavaScript engine is a third implementation of the sweep, and the report's
 # live widget is the only thing that runs it. Checked against the Python oracle,
 # which shares no code with either it or the C++.
 if(Python3_Interpreter_FOUND AND MF_NODE)
-add_test(NAME engine_js COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE}
-         ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_engine_js.py)
-set_tests_properties(engine_js PROPERTIES LABELS "fast")
+mf_test(engine_js
+  COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE} ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_engine_js.py
+  LABEL fast)
 
 # The belief scrubber is shipped inside the report and nothing ran it. Driven
 # against a minimal DOM and a clock the test advances by hand, so a three-second
 # period costs no wall time. Needs the recorded frames, so it skips without them.
-add_test(NAME scrubber_js COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE}
-         ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scrubber_js.py)
-set_tests_properties(scrubber_js PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+mf_test(scrubber_js
+  COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE} ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_scrubber_js.py
+  LABEL fast
+  SKIPPABLE)
 
 # The live widget runs the sweep in the page and nothing ran it either. Its
 # playback chained timeouts without keeping the handle, so a pause left one
 # scheduled and resuming inside the period ran two chains at once.
-add_test(NAME live_js COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE}
-         ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_live_js.py)
-set_tests_properties(live_js PROPERTIES LABELS "fast" SKIP_RETURN_CODE 77)
+mf_test(live_js
+  COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE} ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_live_js.py
+  LABEL fast
+  SKIPPABLE)
 endif()
 
 add_executable(test_weighted tests/test_weighted.cpp)
 target_include_directories(test_weighted PRIVATE tests)
 target_link_libraries(test_weighted PRIVATE mayflower_core)
-add_test(NAME weighted COMMAND test_weighted)
-set_tests_properties(weighted PROPERTIES LABELS "fast")
+mf_test(weighted COMMAND test_weighted LABEL fast)
 
 add_executable(test_notouch tests/test_notouch.cpp)
 target_include_directories(test_notouch PRIVATE tests)
 target_link_libraries(test_notouch PRIVATE mayflower_core)
-add_test(NAME notouch COMMAND test_notouch)
-set_tests_properties(notouch PROPERTIES LABELS "fast")
+mf_test(notouch COMMAND test_notouch LABEL fast)
 
 add_executable(test_ladder tests/test_ladder.cpp)
 target_include_directories(test_ladder PRIVATE tests)
@@ -333,51 +395,42 @@ add_executable(test_spectrum tests/test_spectrum.cpp)
 target_include_directories(test_spectrum PRIVATE tests)
 target_link_libraries(test_spectrum PRIVATE mayflower_core)
 
-add_test(NAME counting COMMAND test_counting)
-set_tests_properties(counting PROPERTIES LABELS "fast" TIMEOUT 300)
+mf_test(counting COMMAND test_counting LABEL fast TIMEOUT 300)
 
-add_test(NAME observations COMMAND test_observations)
-set_tests_properties(observations PROPERTIES LABELS "fast" TIMEOUT 300)
+mf_test(observations COMMAND test_observations LABEL fast TIMEOUT 300)
 
-add_test(NAME sampler COMMAND test_sampler)
-set_tests_properties(sampler PROPERTIES LABELS "fast" TIMEOUT 600)
+mf_test(sampler COMMAND test_sampler LABEL fast TIMEOUT 600)
 
-add_test(NAME outcomes COMMAND test_outcomes)
-set_tests_properties(outcomes PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(outcomes COMMAND test_outcomes LABEL pr TIMEOUT 900)
 
-add_test(NAME harness COMMAND test_harness)
-set_tests_properties(harness PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(harness COMMAND test_harness LABEL pr TIMEOUT 900)
 
-add_test(NAME bounds COMMAND test_bounds)
-set_tests_properties(bounds PROPERTIES LABELS "pr" TIMEOUT 1800)
+mf_test(bounds COMMAND test_bounds LABEL pr TIMEOUT 1800)
 
-add_test(NAME bounds_tool COMMAND bounds)
-set_tests_properties(bounds_tool PROPERTIES LABELS "pr" TIMEOUT 1800)
+mf_test(bounds_tool COMMAND bounds LABEL pr TIMEOUT 1800)
 
-add_test(NAME exact COMMAND test_exact)
-set_tests_properties(exact PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(exact COMMAND test_exact LABEL pr TIMEOUT 900)
 
-add_test(NAME ladder COMMAND test_ladder)
-set_tests_properties(ladder PROPERTIES LABELS "pr" TIMEOUT 900)
+# Labelled fast rather than pr. This is the only test asserting that V0, V1, V2
+# and V3 return bit identical counts, which is the property a change to any sweep
+# breaks first. The only other fast test covering the sweeps broadly is test_fuzz,
+# which uses boards of side five or less. This test takes 6.5 s.
+mf_test(ladder COMMAND test_ladder LABEL fast TIMEOUT 900)
 
-add_test(NAME spectrum COMMAND test_spectrum)
-set_tests_properties(spectrum PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(spectrum COMMAND test_spectrum LABEL pr TIMEOUT 900)
 
-add_test(NAME spectrum_tool COMMAND spectrum)
-set_tests_properties(spectrum_tool PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(spectrum_tool COMMAND spectrum LABEL pr TIMEOUT 900)
 
 if(Python3_Interpreter_FOUND)
-  add_test(NAME bond_dimension
-           COMMAND ${Python3_EXECUTABLE} bond_dimension.py --quick
-           WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/python)
-  set_tests_properties(bond_dimension PROPERTIES LABELS "fast" TIMEOUT 300)
+  mf_test(bond_dimension
+    COMMAND ${Python3_EXECUTABLE} bond_dimension.py --quick
+    LABEL fast
+    TIMEOUT 300
+    WORKDIR ${CMAKE_SOURCE_DIR}/python)
 endif()
 
-add_test(NAME omega0 COMMAND omega0)
-set_tests_properties(omega0 PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(omega0 COMMAND omega0 LABEL pr TIMEOUT 900)
 
-add_test(NAME marginals COMMAND marginals)
-set_tests_properties(marginals PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(marginals COMMAND marginals LABEL pr TIMEOUT 900)
 
-add_test(NAME sample COMMAND sample)
-set_tests_properties(sample PROPERTIES LABELS "pr" TIMEOUT 900)
+mf_test(sample COMMAND sample LABEL pr TIMEOUT 900)
