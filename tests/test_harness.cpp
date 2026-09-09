@@ -13,18 +13,13 @@
 #include "mayflower/instance.hpp"
 #include "mayflower/policy.hpp"
 
+#include "harness.hpp"
+
 namespace {
 
-int gFailures = 0;
-int gChecks = 0;
-
-void check(bool ok, const std::string& what) {
-    ++gChecks;
-    if (!ok) {
-        ++gFailures;
-        std::printf("  FAIL  %s\n", what.c_str());
-    }
-}
+using mf::test::expect;
+using mf::test::gChecks;
+using mf::test::gFailures;
 
 using namespace mayflower;
 
@@ -53,7 +48,7 @@ void testRandomShooterClosedForm() {
         const double theory = static_cast<double>(inst.shipCells()) * (inst.cellCount() + 1) /
                               (inst.shipCells() + 1);
         const double half = 1.96 * sd / std::sqrt(static_cast<double>(games));
-        check(std::abs(mean - theory) < half * 1.5,
+        expect(std::abs(mean - theory) < half * 1.5,
               inst.describe() + " random shooter matches k(N+1)/(k+1)");
         std::printf("  %-16s measured %.4f +/- %.4f, theory %.4f\n", inst.describe().c_str(), mean,
                     half, theory);
@@ -77,11 +72,11 @@ void testPolicyLegality() {
         for (int i = 0; i < 300; ++i) {
             const auto result = playGame(inst, bank.board(static_cast<std::uint64_t>(i)), *p,
                                          static_cast<std::uint64_t>(i));
-            check(result.shots >= constants::kCoverageBound,
+            expect(result.shots >= constants::kCoverageBound,
                   std::string(p->name()) + " never finishes below the coverage bound");
-            check(result.shots <= inst.cellCount(),
+            expect(result.shots <= inst.cellCount(),
                   std::string(p->name()) + " never exceeds the board size");
-            check(result.shots - result.misses == inst.shipCells(),
+            expect(result.shots - result.misses == inst.shipCells(),
                   std::string(p->name()) + " hits exactly the ship cells");
             worst = std::max(worst, result.shots);
             best = std::min(best, result.shots);
@@ -147,7 +142,7 @@ void testDeterminism() {
             const auto board = bank.board(static_cast<std::uint64_t>(i));
             const int a = playGame(inst, board, *p, static_cast<std::uint64_t>(i)).shots;
             const int b = playGame(inst, board, *p, static_cast<std::uint64_t>(i)).shots;
-            check(a == b, std::string(p->name()) + " is reproducible for a given seed");
+            expect(a == b, std::string(p->name()) + " is reproducible for a given seed");
         }
     }
     std::printf("  all policies reproduce their shot counts\n");

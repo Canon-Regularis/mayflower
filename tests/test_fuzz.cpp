@@ -18,6 +18,8 @@
 #include "mayflower/profile_dp.hpp"
 #include "mayflower/profile_dp_blocked.hpp"
 #include "mayflower/weighted.hpp"
+
+#include "harness.hpp"
 #include "oracle/brute_force.hpp"
 
 #include <algorithm>
@@ -32,8 +34,8 @@ namespace {
 
 using namespace mayflower;
 
-int gFailures = 0;
-int gChecks = 0;
+using mf::test::gChecks;
+using mf::test::gFailures;
 
 void fail(const std::string& what) {
     std::printf("  FAIL  %s\n", what.c_str());
@@ -205,9 +207,9 @@ int main(int argc, char** argv) {
     const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("  %d instances, %d with a record, %d with a SUNK, %d holding a length-1 ship\n",
                 instances, withHistory, withSunk, withLength1);
-    std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
-    if (gFailures)
+    const int rc = mf::test::report(dt);
+    if (rc != 0)
         std::printf("replay with: test_fuzz %d 0x%llX\n", trials,
                     static_cast<unsigned long long>(seed));
-    return gFailures == 0 ? 0 : 1;
+    return rc;
 }

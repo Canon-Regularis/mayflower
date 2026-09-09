@@ -24,51 +24,17 @@ import sys
 import tempfile
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKIP = 77
-failures = 0
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
 
 
-class _TimedOut:
-    """Stands in for a completed process that never completed.
-
-    A subprocess that outruns its timeout raises, and none of these tests caught
-    it, so a loaded machine failed them with a traceback and no statement of
-    what went wrong. Returning a result whose code is non-zero lets the checks
-    below report it the way they report any other failure. 124 is what timeout(1)
-    uses for the same thing.
-    """
-
-    returncode = 124
-
-    def __init__(self, seconds):
-        self.stdout = ""
-        self.stderr = "timed out after {} s".format(seconds)
 
 
-def _run(args, timeout, **kw):
-    try:
-        return subprocess.run(args, capture_output=True, text=True,
-                              timeout=timeout, **kw)
-    except subprocess.TimeoutExpired:
-        return _TimedOut(timeout)
 
 
-def check(ok, what, detail=""):
-    global failures
-    print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
-    if detail:
-        print("      " + detail)
-    if not ok:
-        failures += 1
 
 
-def exe(name):
-    for candidate in (name + ".exe", name):
-        p = os.path.join(ROOT, "build", candidate)
-        if os.path.exists(p):
-            return p
-    return None
+
 
 
 BAD = ("0", "-5", "abc", "")
@@ -92,7 +58,7 @@ def main():
             # export_pool takes the path first, so its count is the second slot.
             args = [exe(tool), pool, arg] if tool == "export_pool" else [exe(tool), arg]
             started = time.time()
-            r = _run(args, timeout=180)
+            r = run(args, timeout=180)
             elapsed = time.time() - started
 
             check(r.returncode == 2,
@@ -112,8 +78,7 @@ def main():
           "export_pool writes no pool at all when it refuses",
           "left {} bytes".format(os.path.getsize(pool)) if os.path.exists(pool) else "")
 
-    print("\n" + ("FAILED" if failures else "all checks passed"))
-    return 1 if failures else 0
+    return report()
 
 
 if __name__ == "__main__":

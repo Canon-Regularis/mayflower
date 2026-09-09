@@ -21,43 +21,15 @@ import re
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKIP = 77
-failures = 0
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
 
 
-class _TimedOut:
-    """Stands in for a completed process that never completed.
-
-    A subprocess that outruns its timeout raises, and none of these tests caught
-    it, so a loaded machine failed them with a traceback and no statement of
-    what went wrong. Returning a result whose code is non-zero lets the checks
-    below report it the way they report any other failure. 124 is what timeout(1)
-    uses for the same thing.
-    """
-
-    returncode = 124
-
-    def __init__(self, seconds):
-        self.stdout = ""
-        self.stderr = "timed out after {} s".format(seconds)
 
 
-def _run(args, timeout, **kw):
-    try:
-        return subprocess.run(args, capture_output=True, text=True,
-                              timeout=timeout, **kw)
-    except subprocess.TimeoutExpired:
-        return _TimedOut(timeout)
 
 
-def check(ok, what, detail=""):
-    global failures
-    print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
-    if detail and not ok:
-        print("      " + detail)
-    if not ok:
-        failures += 1
+
 
 
 def digits(s):
@@ -78,7 +50,7 @@ def main():
     out = os.path.join(ROOT, "out", "results.html")
     before = io.open(out, "rb").read() if os.path.exists(out) else None
 
-    r = _run([sys.executable, os.path.join(ROOT, "tools", "render_results.py")], timeout=300, cwd=ROOT)
+    r = run([sys.executable, os.path.join(ROOT, "tools", "render_results.py")], timeout=300, cwd=ROOT)
     check(r.returncode == 0, "the renderer succeeds", r.stderr.strip()[-160:])
     if not os.path.exists(out):
         check(False, "it wrote a page at all")
@@ -141,15 +113,14 @@ def main():
     # Same input, same page: the dossier is regenerated for every release and a
     # renderer that reordered a dict would churn the diff without changing a
     # number.
-    again = _run([sys.executable, os.path.join(ROOT, "tools", "render_results.py")], timeout=300, cwd=ROOT)
+    again = run([sys.executable, os.path.join(ROOT, "tools", "render_results.py")], timeout=300, cwd=ROOT)
     check(again.returncode == 0 and io.open(out, encoding="utf-8").read() == page,
           "rendering twice gives the same page")
 
     if before is not None and io.open(out, "rb").read() != before:
         io.open(out, "wb").write(before)
 
-    print("\n" + ("FAILED" if failures else "all checks passed"))
-    return 1 if failures else 0
+    return report()
 
 
 if __name__ == "__main__":

@@ -27,19 +27,15 @@
 #include "mayflower/profile_dp.hpp"
 #include "mayflower/profile_dp_blocked.hpp"
 #include "mayflower/weighted.hpp"
+
+#include "harness.hpp"
 #include "oracle/brute_force.hpp"
 
 namespace {
 
 using namespace mayflower;
 
-int failures = 0;
-
-void check(bool ok, const std::string& what, const std::string& detail = "") {
-    std::printf("  %-58s %s\n", what.c_str(), ok ? "ok" : "FAILED");
-    if (!detail.empty()) std::printf("      %s\n", detail.c_str());
-    if (!ok) ++failures;
-}
+using mf::test::check;
 
 // C(n, k) in exact integers, small enough that u64 never strains.
 std::uint64_t binomial(int n, int k) {
@@ -252,6 +248,5 @@ int main() {
     testDegenerateShapes();
     testCertificateCoversTheAnswer();
     testOversizedKeys();
-    std::printf("\n%s\n", failures ? "FAILED" : "all checks passed");
-    return failures ? 1 : 0;
+    return mf::test::report();
 }

@@ -27,22 +27,15 @@ import os
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+
 NODE = os.environ.get("MF_NODE", "node")
 POOL = os.path.join(ROOT, "web", "pool.bin")
-SKIP = 77
 # Generous, because contention is the only thing that varies here.
 TIMEOUT = 1800
-failures = 0
 
 
-def check(ok, what, detail=""):
-    global failures
-    print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
-    if detail and not ok:
-        print("      " + detail)
-    if not ok:
-        failures += 1
 
 EXACT_HARNESS = r"""
 const fs = require('fs');
@@ -258,8 +251,7 @@ def main():
               "and sinks a ship, which is what exercises the SUNK rejection",
               "no sunk cell on the final board")
 
-    print("\n" + ("FAILED" if failures else "all checks passed"))
-    return 1 if failures else 0
+    return report()
 
 
 if __name__ == "__main__":

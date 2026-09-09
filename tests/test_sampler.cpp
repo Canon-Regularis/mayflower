@@ -12,31 +12,16 @@
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
 #include "mayflower/profile_dp.hpp"
+
+#include "harness.hpp"
 #include "oracle/brute_force.hpp"
 
 namespace {
 
-int gFailures = 0;
-int gChecks = 0;
-
-void check(bool ok, const std::string& what) {
-    ++gChecks;
-    if (!ok) {
-        ++gFailures;
-        std::printf("  FAIL  %s\n", what.c_str());
-    }
-}
-
-template <typename T>
-void checkEq(T got, T want, const std::string& what) {
-    ++gChecks;
-    if (got != want) {
-        ++gFailures;
-        std::printf("  FAIL  %s: got %llu, want %llu\n", what.c_str(),
-                    static_cast<unsigned long long>(got),
-                    static_cast<unsigned long long>(want));
-    }
-}
+using mf::test::expect;
+using mf::test::gChecks;
+using mf::test::gFailures;
+using mf::test::checkEq;
 
 using mayflower::Instance;
 using mayflower::History;
@@ -142,7 +127,7 @@ void testUnrankBijection() {
 
         checkEq(static_cast<std::uint64_t>(got.size()), static_cast<std::uint64_t>(want.size()),
                 "board count " + inst.describe());
-        check(got == want, "unrank enumerates exactly the configuration set, once each: " +
+        expect(got == want, "unrank enumerates exactly the configuration set, once each: " +
                                inst.describe());
 
         // Distinctness follows from the set equality above plus equal sizes, but
@@ -168,7 +153,7 @@ void testFleetComposition() {
         std::sort(lengths.begin(), lengths.end());
         std::vector<int> want = inst.fleet;
         std::sort(want.begin(), want.end());
-        check(lengths == want, "sampled fleet matches at rank " + std::to_string(r));
+        expect(lengths == want, "sampled fleet matches at rank " + std::to_string(r));
     }
     std::printf("  %llu ranks sampled, every one realises {2,3,3,4}\n",
                 static_cast<unsigned long long>((total + 996) / 997));
@@ -192,7 +177,7 @@ void testSamplingUnderObservations() {
     const std::uint64_t total = sampler.total();
     checkEq(total, mayflower::countConfigurations(inst, constraints).count,
             "constrained sampler total");
-    check(total > 0, "history is feasible");
+    expect(total > 0, "history is feasible");
 
     const std::vector<int> shots = {1 * W + 1, 0 * W + 3, 2 * W + 1, 3 * W + 1};
     const std::vector<oracle::Observation> observed = {
@@ -203,7 +188,7 @@ void testSamplingUnderObservations() {
     for (std::uint64_t r = 0; r < total; ++r) {
         const auto board = toMasks(sampler.unrank(r), W);
         if (oracle::simulate(board, shots) != observed) {
-            check(false, "sampled board at rank " + std::to_string(r) + " replays the history");
+            expect(false, "sampled board at rank " + std::to_string(r) + " replays the history");
             break;
         }
     }
@@ -217,7 +202,7 @@ void testSamplingUnderObservations() {
     std::vector<oracle::BoardShips> want;
     for (const auto& b : oracle::enumerateBoards(W, H, fleet))
         if (oracle::simulate(b, shots) == observed) want.push_back(b);
-    check(canonical(std::move(produced)) == canonical(std::move(want)),
+    expect(canonical(std::move(produced)) == canonical(std::move(want)),
           "constrained support matches the oracle posterior");
 }
 
@@ -242,7 +227,7 @@ void testSamplerAgreesWithMarginals() {
     std::uint64_t exactTotal = 0;
     const auto exact = mayflower::occupancyMap(inst, exactTotal);
     checkEq(exactTotal, total, "totals agree");
-    check(counted == exact, "occupancy counted over all ranks equals the exact marginals");
+    expect(counted == exact, "occupancy counted over all ranks equals the exact marginals");
     std::printf("  all %d cells agree across %llu enumerated ranks\n", inst.cellCount(),
                 static_cast<unsigned long long>(total));
 }

@@ -19,37 +19,24 @@ import os
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKIP = 77
-
-failures = 0
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
 
 
-def check(ok, what, detail=""):
-    global failures
-    print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
-    if detail:
-        print("      " + detail)
-    if not ok:
-        failures += 1
 
 
-def exe():
-    for name in ("selfplay.exe", "selfplay"):
-        p = os.path.join(ROOT, "build", name)
-        if os.path.exists(p):
-            return p
-    return None
+
+
 
 
 def run(args, timeout=60):
-    return subprocess.run([exe()] + args, capture_output=True, text=True, timeout=timeout)
+    return subprocess.run([exe("selfplay")] + args, capture_output=True, text=True, timeout=timeout)
 
 
 def main():
     print("the seal on the TEST fold")
     print("=========================")
-    if exe() is None:
+    if exe("selfplay") is None:
         print("  build/selfplay is missing; build first")
         return SKIP
 
@@ -100,8 +87,7 @@ def main():
     dt = time.time() - t0
     check(dt < 5.0, "refusal costs no setup", "{:.2f} s at 20,000 games".format(dt))
 
-    print("\n" + ("FAILED" if failures else "all checks passed"))
-    return 1 if failures else 0
+    return report()
 
 
 if __name__ == "__main__":

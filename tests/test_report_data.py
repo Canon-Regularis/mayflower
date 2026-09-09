@@ -26,25 +26,18 @@ import os
 import re
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+
 FIGURES = os.path.join(ROOT, "out", "figures.json")
 
 SHIP_CELLS = 17
 MISS = 0
 
 # ctest reads this as "Skipped" via SKIP_RETURN_CODE.
-SKIP = 77
-
-failures = 0
 
 
-def check(ok, what, detail=""):
-    global failures
-    print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
-    if detail:
-        print("      " + detail)
-    if not ok:
-        failures += 1
+
 
 
 def test_blocking_hover():
@@ -349,9 +342,9 @@ def main():
         # stays visible instead of turning green on an empty run.
         print("  out/figures.json is missing; run tools/report_data first")
         # The blocking checks above need none of it, so a failure in them is a
-        # failure even here. Returning SKIP unconditionally would have buried
-        # them in exactly the legs where out/ is absent, which is every per-push
-        # leg, and ctest would have reported the whole thing green.
+        # failure even here. Returning SKIP unconditionally would hide them in
+        # the legs where out/ is absent, which is every per push leg, and ctest
+        # would report the run as passing.
         return 1 if failures else SKIP
 
     fig = json.load(io.open(FIGURES, encoding="utf-8"))
@@ -438,8 +431,7 @@ def main():
         check(not loose, "the information rule's waste fits inside its loss",
               "outside on {}".format(loose))
 
-    print("\n" + ("FAILED" if failures else "all checks passed"))
-    return 1 if failures else 0
+    return report()
 
 
 if __name__ == "__main__":

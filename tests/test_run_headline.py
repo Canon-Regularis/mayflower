@@ -21,21 +21,11 @@ import re
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "python"))
-
-SKIP = 77
-failures = 0
-
-
-def check(ok, what, detail=""):
-    global failures
-    print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
-    if detail and not ok:
-        print("      " + detail)
-    if not ok:
-        failures += 1
 
 
 import run_headline  # noqa: E402
@@ -174,7 +164,7 @@ def test_provenance():
               "got {!r}; git said {!r}".format(c, why))
 
     # A headline number from a tree with uncommitted changes is not reproducible
-    # from the commit alone, so the marker is the part that carries the warning.
+    # from the commit alone, so the marker carries that warning.
     # Checked against the tree as it actually is, either way round, because the
     # sha pattern above accepts the marker without requiring it.
     if have_git:
@@ -219,8 +209,7 @@ def main():
     test_train_needs_no_token()
     test_parser()
     test_provenance()
-    print("\n" + ("FAILED" if failures else "all checks passed"))
-    return 1 if failures else 0
+    return report()
 
 
 if __name__ == "__main__":

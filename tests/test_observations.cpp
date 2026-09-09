@@ -9,49 +9,23 @@
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
 #include "mayflower/profile_dp.hpp"
+
+#include "harness.hpp"
 #include "oracle/brute_force.hpp"
 
 namespace {
 
-int gFailures = 0;
-int gChecks = 0;
-
-void check(bool ok, const std::string& what) {
-    ++gChecks;
-    if (!ok) {
-        ++gFailures;
-        std::printf("  FAIL  %s\n", what.c_str());
-    }
-}
-
-template <typename T>
-void checkEq(T got, T want, const std::string& what) {
-    ++gChecks;
-    if (got != want) {
-        ++gFailures;
-        std::printf("  FAIL  %s: got %llu, want %llu\n", what.c_str(),
-                    static_cast<unsigned long long>(got),
-                    static_cast<unsigned long long>(want));
-    }
-}
+using mf::test::Rng;
+using mf::test::expect;
+using mf::test::gChecks;
+using mf::test::gFailures;
+using mf::test::checkEq;
 
 using mayflower::Constraints;
 using mayflower::History;
 using mayflower::Instance;
 using mayflower::Outcome;
 
-struct Rng {
-    std::uint64_t s;
-    explicit Rng(std::uint64_t seed) : s(seed) {}
-    std::uint64_t next() {
-        s += 0x9E3779B97F4A7C15ull;
-        std::uint64_t z = s;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        return z ^ (z >> 31);
-    }
-    int below(int n) { return static_cast<int>(next() % static_cast<std::uint64_t>(n)); }
-};
 
 std::uint64_t dpCount(const Instance& inst, const History& h) {
     return mayflower::countConfigurations(inst, mayflower::constraintsFrom(inst, h)).count;
@@ -162,7 +136,7 @@ void testSunkAgainstOracle() {
         const std::uint64_t want = oracle::posteriorCount(boards, shots, observed);
         const std::uint64_t got = dpCount(inst, h);
         checkEq(got, want, "history #" + std::to_string(t));
-        check(want > 0, "the true board is always in Omega (history #" + std::to_string(t) + ")");
+        expect(want > 0, "the true board is always in Omega (history #" + std::to_string(t) + ")");
     }
     std::printf("  %d random histories, %d of them containing a sink\n", trials, withSink);
 }
@@ -207,7 +181,7 @@ void testOrderDependence() {
     const std::uint64_t b = dpCount(inst, orderB);
     checkEq(a, std::uint64_t{41}, "order A posterior");
     checkEq(b, std::uint64_t{53}, "order B posterior");
-    check(a != b, "set-invariance is falsified: same shots, different order, different count");
+    expect(a != b, "set-invariance is falsified: same shots, different order, different count");
     std::printf("  order A = %llu, order B = %llu, same shot multiset\n",
                 static_cast<unsigned long long>(a), static_cast<unsigned long long>(b));
 
@@ -242,7 +216,7 @@ void testSunkIsInformative() {
 
     const std::uint64_t p = dpCount(inst, plain);
     const std::uint64_t s = dpCount(inst, sunk);
-    check(s < p, "announcing a sink strictly narrows the posterior");
+    expect(s < p, "announcing a sink strictly narrows the posterior");
     std::printf("  two hits: %llu, same two cells with a sunk 2-ship: %llu\n",
                 static_cast<unsigned long long>(p), static_cast<unsigned long long>(s));
 
@@ -303,7 +277,7 @@ void testMarginalsUnderObservations() {
     std::uint64_t total = 0;
     const auto map = mayflower::occupancyMap(inst, c, total);
     checkEq(total, mayflower::countConfigurations(inst, c).count, "total under observations");
-    check(total > 0, "history is feasible");
+    expect(total > 0, "history is feasible");
 
     std::uint64_t sum = 0;
     for (std::size_t i = 0; i < map.size(); ++i) sum += map[i];
@@ -332,6 +306,5 @@ int main() {
     testMarginalsUnderObservations();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
-    return gFailures == 0 ? 0 : 1;
+    return mf::test::report(dt);
 }

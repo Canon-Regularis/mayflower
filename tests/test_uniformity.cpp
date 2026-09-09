@@ -31,17 +31,13 @@
 #include "mayflower/instance.hpp"
 #include "mayflower/profile_dp.hpp"
 
+#include "harness.hpp"
+
 namespace {
 
 using namespace mayflower;
 
-int failures = 0;
-
-void check(bool ok, const std::string& what, const std::string& detail = "") {
-    std::printf("  %-58s %s\n", what.c_str(), ok ? "ok" : "FAILED");
-    if (!detail.empty()) std::printf("      %s\n", detail.c_str());
-    if (!ok) ++failures;
-}
+using mf::test::check;
 
 }  // namespace
 
@@ -142,6 +138,5 @@ int main(int argc, char** argv) {
     std::snprintf(buf, sizeof buf, "largest transpose asymmetry %.2f sigma", worstOrbit);
     check(worstOrbit < 5.0, "the draw respects the board's transpose symmetry", buf);
 
-    std::printf("\n%s\n", failures ? "FAILED" : "all checks passed");
-    return failures ? 1 : 0;
+    return mf::test::report();
 }

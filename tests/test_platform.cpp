@@ -26,6 +26,8 @@
 #include <string>
 #include <vector>
 
+#include "harness.hpp"
+
 namespace {
 
 // Everything below is Windows-only, the helpers included. Left outside the
@@ -34,15 +36,9 @@ namespace {
 // Linux legs.
 #ifdef _WIN32
 
-int gFailures = 0;
-int gChecks = 0;
-
-void check(bool ok, const std::string& what, const std::string& detail = "") {
-    ++gChecks;
-    std::printf("  %-62s %s\n", what.c_str(), ok ? "ok" : "FAILED");
-    if (!detail.empty()) std::printf("      %s\n", detail.c_str());
-    if (!ok) ++gFailures;
-}
+using mf::test::check;
+using mf::test::gChecks;
+using mf::test::gFailures;
 
 using namespace mayflower;
 
@@ -247,7 +243,6 @@ int main() {
     testUnpinRestoresEveryProcessor();
     testInvalidPinsAreRefused();
     testClassSelection();
-    std::printf("\n%d checks, %d failures\n", gChecks, gFailures);
-    return gFailures == 0 ? 0 : 1;
+    return mf::test::report();
 #endif
 }

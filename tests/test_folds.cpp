@@ -14,15 +14,11 @@
 
 #include "mayflower/folds.hpp"
 
+#include "harness.hpp"
+
 namespace {
 
-int failures = 0;
-
-void check(bool ok, const std::string& what, const std::string& detail = "") {
-    std::printf("  %-58s %s\n", what.c_str(), ok ? "ok" : "FAILED");
-    if (!detail.empty()) std::printf("      %s\n", detail.c_str());
-    if (!ok) ++failures;
-}
+using mf::test::check;
 
 using namespace mayflower;
 
@@ -108,6 +104,5 @@ int main() {
     testPinned();
     testStability();
     testNames();
-    std::printf("\n%s\n", failures ? "FAILED" : "all checks passed");
-    return failures ? 1 : 0;
+    return mf::test::report();
 }

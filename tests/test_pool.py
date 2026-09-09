@@ -20,7 +20,9 @@ import json
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+
 POOL = os.path.join(ROOT, "web", "pool.bin")
 FIGURES = os.path.join(ROOT, "out", "figures.json")
 
@@ -29,17 +31,8 @@ CELLS = W * H
 LENS = [5, 4, 3, 3, 2]
 SHIP_CELLS = sum(LENS)
 
-SKIP = 77
-failures = 0
 
 
-def check(ok, what, detail=""):
-    global failures
-    print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
-    if detail:
-        print("      " + detail)
-    if not ok:
-        failures += 1
 
 
 def placement_table(L):
@@ -148,8 +141,7 @@ def main():
     else:
         print("  out/figures.json absent, skipping the prior comparison")
 
-    print("\n" + ("FAILED" if failures else "all checks passed"))
-    return 1 if failures else 0
+    return report()
 
 
 if __name__ == "__main__":

@@ -21,22 +21,15 @@ import os
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+
 NODE = os.environ.get("MF_NODE", "node")
 POOL = os.path.join(ROOT, "web", "pool.bin")
 
-SKIP = 77
-
-failures = 0
 
 
-def check(ok, what, detail=""):
-    global failures
-    print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
-    if detail:
-        print("      " + detail)
-    if not ok:
-        failures += 1
+
 
 
 # A DOM only as wide as live.js touches, plus a clock the test drives by hand.
@@ -266,8 +259,7 @@ def main():
               "accepted: {}".format(", ".join(accepted)))
 
 
-    print("\n" + ("FAILED" if failures else "all checks passed"))
-    return 1 if failures else 0
+    return report()
 
 
 if __name__ == "__main__":

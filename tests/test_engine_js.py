@@ -26,7 +26,14 @@ import re
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP  # noqa: E402
+
+# This file keeps its own counters. They are function local and returned to the
+# caller rather than a mutated module global, so this is a different pattern from
+# the other ten tests, not a copy of theirs. Converting a 491 line differential
+# test to the shared counter carries more risk than the change is worth. Only the
+# column width is aligned, so the suite prints a consistent format.
 sys.path.insert(0, os.path.join(ROOT, "python"))
 
 import oracle  # noqa: E402
@@ -219,7 +226,7 @@ def check_widget_handoff():
     m = re.search(r"if \(survivors\.length >= SWITCH_TO_EXACT([^)]*)\) \{", src)
     extra = m.group(1).strip() if m else "MISSING"
     ok = m is not None and extra == ""
-    print("  {:<56} {}".format(
+    print("  {:<58} {}".format(
         "the handoff keys on the survivor count and nothing else",
         "ok" if ok else "FAILED"))
     if not ok:
@@ -237,7 +244,7 @@ def check_widget_handoff():
             history.append((c, SUNK_ if last else HIT_, LENS[j] if last else 0))
 
     alive = survivors_for(raw, n, history)
-    print("  {:<56} {}".format(
+    print("  {:<58} {}".format(
         "a five-shot opening can leave {} of {:,} alive".format(alive, n),
         "ok" if alive < threshold else "FAILED"))
     if alive >= threshold:
@@ -287,7 +294,7 @@ def check_widget_handoff():
                 counts[c] += 1
     sampled = [c / kept for c in counts] if kept else [0.0] * 100
     worst = max(abs(sampled[i] - exact[i]) for i in range(100))
-    print("  {:<56} {}".format(
+    print("  {:<58} {}".format(
         "the sampled posterior is off by {:.2f} there".format(worst),
         "ok" if worst > 0.10 else "FAILED"))
     if worst <= 0.10:
@@ -432,13 +439,13 @@ def main():
             print("  MISMATCH {}: javascript {}, oracle {}".format(label, got[i],
                                                                    expected[i]))
 
-    print("  {:<56} {}".format(
+    print("  {:<58} {}".format(
         "{}/{} cases agree with literal enumeration".format(len(got) - mismatches,
                                                             len(got)),
         "ok" if mismatches == 0 else "FAILED"))
     if mismatches:
         failures += 1
-    print("  {:<56} {}".format(
+    print("  {:<58} {}".format(
         "{} of the histories carried a SUNK".format(withSunk),
         "ok" if withSunk > 0 else "FAILED"))
     if withSunk == 0:
@@ -452,18 +459,18 @@ def main():
     refused = probe_out.get("refused") if probe_out else None
     legal = probe_out.get("legal") if probe_out else None
     if refused is None:
-        print("  {:<56} {}".format("the validation probe runs", "FAILED"))
+        print("  {:<58} {}".format("the validation probe runs", "FAILED"))
         print("      " + str(legal)[:160])
         failures += 1
     else:
         accepted = [r[len("ACCEPTED:"):] for r in refused if r.startswith("ACCEPTED:")]
-        print("  {:<56} {}".format(
+        print("  {:<58} {}".format(
             "{} degenerate instances refused".format(len(refused) - len(accepted)),
             "ok" if not accepted else "FAILED"))
         if accepted:
             print("      accepted: " + ", ".join(accepted))
             failures += 1
-        print("  {:<56} {}".format(
+        print("  {:<58} {}".format(
             "a legal instance still builds", "ok" if legal else "FAILED"))
         if not legal:
             failures += 1
@@ -472,13 +479,13 @@ def main():
     if refused is not None:
         rec = probe_out.get("recordsRefused", [])
         taken = [r[len("ACCEPTED:"):] for r in rec if r.startswith("ACCEPTED:")]
-        print("  {:<56} {}".format(
+        print("  {:<58} {}".format(
             "{} malformed records refused".format(len(rec) - len(taken)),
             "ok" if not taken else "FAILED"))
         if taken:
             print("      accepted: " + ", ".join(taken))
             failures += 1
-        print("  {:<56} {}".format(
+        print("  {:<58} {}".format(
             "a legitimate shot still narrows the posterior",
             "ok" if probe_out.get("constrains") else "FAILED"))
         if not probe_out.get("constrains"):

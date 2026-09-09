@@ -10,14 +10,11 @@
 
 #include "mayflower/spectrum.hpp"
 
+#include "harness.hpp"
+
 namespace {
 
-int gFailures = 0, gChecks = 0;
-
-void check(bool ok, const std::string& what) {
-    ++gChecks;
-    if (!ok) { ++gFailures; std::printf("  FAIL  %s\n", what.c_str()); }
-}
+using mf::test::expect;
 
 // Every packing of an H x W patch with non-overlapping k-mers, counted by
 // literal enumeration over cell subsets. Independent of the transfer sweep.
@@ -61,7 +58,7 @@ void testAgainstBruteForce() {
         const double dp = mayflower::partitionFunction(c.H, c.W, c.k, c.z);
         const double bf = bruteForcePartition(c.H, c.W, c.k, c.z);
         const bool ok = bf >= 0 && std::abs(dp - bf) <= 1e-6 * std::max(1.0, bf);
-        check(ok, std::to_string(c.H) + "x" + std::to_string(c.W) + " k=" +
+        expect(ok, std::to_string(c.H) + "x" + std::to_string(c.W) + " k=" +
                       std::to_string(c.k) + " z=" + std::to_string(c.z));
         std::printf("  %dx%d k=%d z=%.1f   sweep %.6g   brute %.6g   %s\n", c.H, c.W, c.k,
                     c.z, dp, bf, ok ? "match" : "MISMATCH");
@@ -86,7 +83,7 @@ void testMonomerClosedForm() {
             }
         }
     }
-    check(worst < 1e-9, "Z for monomers is (1+z)^(H*W) on every strip tried");
+    expect(worst < 1e-9, "Z for monomers is (1+z)^(H*W) on every strip tried");
     std::printf("  largest relative departure %.3e over 48 cases\n", worst);
 
     // lambda is the growth per column, not per site, so a height-H strip of
@@ -94,7 +91,7 @@ void testMonomerClosedForm() {
     for (int H = 1; H <= 4; ++H) {
         const auto sp = mayflower::transferSpectrum(H, 1, 1.0);
         const double want = std::pow(2.0, H);
-        check(std::abs(sp.lambdaMax - want) < 1e-8,
+        expect(std::abs(sp.lambdaMax - want) < 1e-8,
               "lambda_max for monomers on a height-" + std::to_string(H) +
                   " strip is 2^" + std::to_string(H));
     }
@@ -105,14 +102,14 @@ void testFibonacciStrip() {
     double a = 1, b = 1;   // F(1)=1, F(2)=1 with Z(0)=1, Z(1)=1
     for (int W = 1; W <= 12; ++W) {
         const double z = mayflower::partitionFunction(1, W, 2, 1.0);
-        check(std::abs(z - b) < 1e-9, "Z(1x" + std::to_string(W) + ") = " + std::to_string(b));
+        expect(std::abs(z - b) < 1e-9, "Z(1x" + std::to_string(W) + ") = " + std::to_string(b));
         const double nxt = a + b; a = b; b = nxt;
     }
     std::printf("  Z(1xW) for W=1..12 follows 1,2,3,5,8,... exactly\n");
     // and the growth rate is the golden ratio
     const auto s = mayflower::transferSpectrum(1, 2, 1.0);
     const double phi = (1 + std::sqrt(5.0)) / 2;
-    check(std::abs(s.lambdaMax - phi) < 1e-8,
+    expect(std::abs(s.lambdaMax - phi) < 1e-8,
           "growth rate of the 1-row dimer strip is the golden ratio");
     std::printf("  lambda_max = %.10f, golden ratio %.10f\n", s.lambdaMax, phi);
 }
@@ -129,7 +126,7 @@ void testGrowthMatchesRatio() {
         const double z2 = mayflower::partitionFunction(c.H, 49, c.k, 1.0);
         const double ratio = z2 / z1;
         const bool ok = std::abs(ratio - s.lambdaMax) <= 1e-7 * s.lambdaMax;
-        check(ok, "H=" + std::to_string(c.H) + " k=" + std::to_string(c.k) + " ratio matches");
+        expect(ok, "H=" + std::to_string(c.H) + " k=" + std::to_string(c.k) + " ratio matches");
         std::printf("  H=%d k=%d   lambda %.10f   Z(49)/Z(48) %.10f   xi %.2f cols%s  %s\n",
                     c.H, c.k, s.lambdaMax, ratio, s.correlationLength,
                     s.alternating ? ", alternating" : "", ok ? "" : "MISMATCH");
@@ -147,7 +144,7 @@ void testDimerEntropyLimit() {
         if (h > 2) extrapolated = h * s.freeEnergyPerSite - (h - 1) * previous;
         previous = s.freeEnergyPerSite;
     }
-    check(std::abs(extrapolated - 0.6627989727) < 2e-5,
+    expect(std::abs(extrapolated - 0.6627989727) < 2e-5,
           "extrapolated dimer entropy matches the monomer-dimer constant");
     std::printf("  extrapolated %.7f, published 0.6627989727, difference %.1e\n",
                 extrapolated, std::abs(extrapolated - 0.6627989727));
@@ -159,14 +156,14 @@ void testMonotonicity() {
     double last = -1;
     for (double z : {0.25, 0.5, 1.0, 2.0, 4.0}) {
         const auto s = mayflower::transferSpectrum(5, 3, z);
-        check(s.lambdaMax > last, "lambda increases with fugacity at z=" + std::to_string(z));
-        check(s.density >= 0 && s.density <= 1.0001, "density stays in [0,1]");
+        expect(s.lambdaMax > last, "lambda increases with fugacity at z=" + std::to_string(z));
+        expect(s.density >= 0 && s.density <= 1.0001, "density stays in [0,1]");
         last = s.lambdaMax;
     }
     // Longer rods pack a strip less freely at the same fugacity.
     const auto k2 = mayflower::transferSpectrum(6, 2, 1.0);
     const auto k4 = mayflower::transferSpectrum(6, 4, 1.0);
-    check(k2.lambdaMax > k4.lambdaMax, "dimers beat 4-mers for packings at z=1");
+    expect(k2.lambdaMax > k4.lambdaMax, "dimers beat 4-mers for packings at z=1");
     std::printf("  H=6 z=1: k=2 lambda %.4f density %.3f, k=4 lambda %.4f density %.3f\n",
                 k2.lambdaMax, k2.density, k4.lambdaMax, k4.density);
 }
@@ -182,6 +179,5 @@ int main() {
     testDimerEntropyLimit();
     testMonotonicity();
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
-    return gFailures == 0 ? 0 : 1;
+    return mf::test::report(dt);
 }

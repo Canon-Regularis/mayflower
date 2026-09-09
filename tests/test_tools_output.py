@@ -22,57 +22,21 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKIP = 77
-failures = 0
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+
 
 W = H = 10
 LENS = [5, 4, 3, 3, 2]
 SHIP_CELLS = sum(LENS)
 
 
-class _TimedOut:
-    """Stands in for a completed process that never completed.
-
-    A subprocess that outruns its timeout raises, and none of these tests caught
-    it, so a loaded machine failed them with a traceback and no statement of
-    what went wrong. Returning a result whose code is non-zero lets the checks
-    below report it the way they report any other failure. 124 is what timeout(1)
-    uses for the same thing.
-    """
-
-    returncode = 124
-
-    def __init__(self, seconds):
-        self.stdout = ""
-        self.stderr = "timed out after {} s".format(seconds)
 
 
-def _run(args, timeout, **kw):
-    try:
-        return subprocess.run(args, capture_output=True, text=True,
-                              timeout=timeout, **kw)
-    except subprocess.TimeoutExpired:
-        return _TimedOut(timeout)
 
 
-def check(ok, what, detail=""):
-    """Detail only on failure: these read as diagnoses, and printing one under a
-    passing line ("43.767 not in [41.8, 45.7]  ok") reads as a contradiction."""
-    global failures
-    print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
-    if detail and not ok:
-        print("      " + detail)
-    if not ok:
-        failures += 1
 
 
-def exe(name):
-    for candidate in (name + ".exe", name):
-        p = os.path.join(ROOT, "build", candidate)
-        if os.path.exists(p):
-            return p
-    return None
 
 
 def placement_cells(idx, L):
@@ -92,7 +56,7 @@ def test_export_pool():
     tmp = tempfile.mkdtemp()
     out = os.path.join(tmp, "pool.bin")
     wanted = 64
-    r = _run([exe("export_pool"), out, str(wanted), "0xC0FFEE"], timeout=600)
+    r = run([exe("export_pool"), out, str(wanted), "0xC0FFEE"], timeout=600)
     check(r.returncode == 0, "the generator succeeds", r.stderr.strip()[:70])
     if not os.path.exists(out):
         check(False, "it wrote a pool at all")
@@ -138,12 +102,12 @@ def test_export_pool():
     # The same key must give the same pool, or the pool is not reproducible and
     # nothing downstream that quotes it can be replayed.
     again = os.path.join(tmp, "pool2.bin")
-    _run([exe("export_pool"), again, str(wanted), "0xC0FFEE"], timeout=600)
+    run([exe("export_pool"), again, str(wanted), "0xC0FFEE"], timeout=600)
     check(os.path.exists(again) and io.open(again, "rb").read() == raw,
           "the same key reproduces the same pool byte for byte")
 
     other = os.path.join(tmp, "pool3.bin")
-    _run([exe("export_pool"), other, str(wanted), "0xBEEF"], timeout=600)
+    run([exe("export_pool"), other, str(wanted), "0xBEEF"], timeout=600)
     check(os.path.exists(other) and io.open(other, "rb").read() != raw,
           "and a different key gives a different pool")
 
@@ -152,7 +116,7 @@ def test_selfplay():
     """Run it and hold its summary to what the numbers must satisfy."""
     print("\n[selfplay reports a consistent summary]")
     games = 60
-    r = _run([exe("selfplay"), str(games), "0", "train"], timeout=900)
+    r = run([exe("selfplay"), str(games), "0", "train"], timeout=900)
     check(r.returncode == 0, "the run succeeds", r.stderr.strip()[:70])
     text = r.stdout
 
@@ -219,7 +183,7 @@ def test_selfplay():
 def test_optimal_pruning():
     """The pruning ladder, whose last column is the claim that matters."""
     print("\n[optimal's pruning ladder agrees with itself]")
-    r = _run([exe("optimal"), "pruning"], timeout=900)
+    r = run([exe("optimal"), "pruning"], timeout=900)
     check(r.returncode == 0, "the ladder runs", r.stderr.strip()[:70])
     text = r.stdout
 
@@ -253,8 +217,7 @@ def main():
     test_selfplay()
     test_optimal_pruning()
 
-    print("\n" + ("FAILED" if failures else "all checks passed"))
-    return 1 if failures else 0
+    return report()
 
 
 if __name__ == "__main__":

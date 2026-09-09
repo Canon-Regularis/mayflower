@@ -17,30 +17,15 @@
 #include "mayflower/profile_dp.hpp"
 #include "mayflower/profile_dp_blocked.hpp"
 
+#include "harness.hpp"
+
 namespace {
 
 using namespace mayflower;
 
-int failures = 0;
+using mf::test::Rng;
+using mf::test::check;
 
-void check(bool ok, const std::string& what, const std::string& detail = "") {
-    std::printf("  %-58s %s\n", what.c_str(), ok ? "ok" : "FAILED");
-    if (!detail.empty()) std::printf("      %s\n", detail.c_str());
-    if (!ok) ++failures;
-}
-
-struct Rng {
-    std::uint64_t s;
-    explicit Rng(std::uint64_t seed) : s(seed) {}
-    std::uint64_t next() {
-        s += 0x9E3779B97F4A7C15ull;
-        std::uint64_t z = s;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        return z ^ (z >> 31);
-    }
-    int below(int n) { return static_cast<int>(next() % static_cast<std::uint64_t>(n)); }
-};
 
 // One answer, however many threads produced it and however often.
 void testRepeatedAgreement() {
@@ -124,6 +109,5 @@ int main() {
     testRepeatedAgreement();
     testConstrainedAgreement();
     testDegenerateThreadCounts();
-    std::printf("\n%s\n", failures ? "FAILED" : "all checks passed");
-    return failures ? 1 : 0;
+    return mf::test::report();
 }
