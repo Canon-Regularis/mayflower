@@ -1,5 +1,10 @@
 #include "mayflower/weighted.hpp"
 
+#include "detail/fleet_counter.hpp"
+#include "detail/placement_gate.hpp"
+#include "detail/hashing.hpp"
+#include "detail/profile_key.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -10,62 +15,17 @@
 namespace mayflower {
 namespace {
 
-inline std::uint64_t mix(std::uint64_t x) {
-    x += 0x9E3779B97F4A7C15ull;
-    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
-    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
-    return x ^ (x >> 31);
-}
+using detail::splitmix64;
+using detail::startsHorizontal;
+using detail::startsVertical;
 
-struct Key {
-    std::uint64_t ext = 0;
-    std::uint32_t aux = 0;
-    friend bool operator==(const Key& a, const Key& b) {
-        return a.ext == b.ext && a.aux == b.aux;
-    }
-};
+using detail::auxFleet;
+using detail::auxVrem;
+using detail::extDigit;
+using detail::Key;
+using detail::packAux;
 
-constexpr std::uint32_t packAux(int vrem, int fleetIdx) {
-    return static_cast<std::uint32_t>(vrem) | (static_cast<std::uint32_t>(fleetIdx) << 3);
-}
-constexpr int auxVrem(std::uint32_t aux) { return static_cast<int>(aux & 7u); }
-constexpr int auxFleet(std::uint32_t aux) { return static_cast<int>(aux >> 3); }
-constexpr int extDigit(std::uint64_t ext, int row) {
-    return static_cast<int>((ext >> (3 * row)) & 7u);
-}
-
-// Mirrors the counter in profile_dp.cpp.
-struct FleetCounter {
-    std::vector<int> lengths;
-    std::vector<int> caps;
-    std::vector<int> radixStride;
-    int stateCount = 1;
-    int fullIndex = 0;
-    std::vector<int> addTable;
-
-    explicit FleetCounter(const Instance& inst)
-        : lengths(inst.distinctLengths()), caps(inst.multiplicities()) {
-        radixStride.resize(lengths.size());
-        int stride = 1;
-        for (std::size_t i = 0; i < lengths.size(); ++i) {
-            radixStride[i] = stride;
-            stride *= caps[i] + 1;
-        }
-        stateCount = stride;
-        fullIndex = stateCount - 1;
-        addTable.assign(static_cast<std::size_t>(stateCount) * lengths.size(), -1);
-        for (int s = 0; s < stateCount; ++s)
-            for (std::size_t li = 0; li < lengths.size(); ++li) {
-                const int used = (s / radixStride[li]) % (caps[li] + 1);
-                addTable[static_cast<std::size_t>(s) * lengths.size() + li] =
-                    (used < caps[li]) ? s + radixStride[li] : -1;
-            }
-    }
-
-    [[nodiscard]] int afterStarting(int state, std::size_t li) const {
-        return addTable[static_cast<std::size_t>(state) * lengths.size() + li];
-    }
-};
+using detail::FleetCounter;
 
 // Same shape as ProfileMap, carrying a double instead of a count.
 class WeightMap {
@@ -160,7 +120,7 @@ public:
 
 private:
     [[nodiscard]] std::size_t probe(const Key& key) const {
-        return mix(key.ext ^ (std::uint64_t{key.aux} * 0x9E3779B1u)) & mask_;
+        return splitmix64(key.ext ^ (std::uint64_t{key.aux} * 0x9E3779B1u)) & mask_;
     }
 
     void grow() {
@@ -253,7 +213,7 @@ inline void transitions(const Key& key, const CellCtx& ctx, const FleetCounter& 
         const int L = fc.lengths[li];
         const int nf = fc.afterStarting(fleet, li);
         if (nf < 0) continue;
-        if (ctx.col + L <= W && (ctx.allowH == nullptr || ctx.allowH[li])) {
+        if (startsHorizontal(ctx.col, L, W, ctx.allowH, li)) {
             const double w = ctx.startH ? ctx.occupied * ctx.startH[li] : ctx.occupied;
             emit(Key{key.ext | (static_cast<std::uint64_t>(L - 1) << ctx.shift),
                      packAux(0, nf)},
@@ -261,7 +221,7 @@ inline void transitions(const Key& key, const CellCtx& ctx, const FleetCounter& 
         }
         // A length-1 ship has one placement, not two, so only the horizontal
         // branch emits it. Real fleets start at 2 and never reach this.
-        if (L > 1 && ctx.row + L <= H && (ctx.allowV == nullptr || ctx.allowV[li])) {
+        if (startsVertical(ctx.row, L, H, ctx.allowV, li)) {
             const double w = ctx.startV ? ctx.occupied * ctx.startV[li] : ctx.occupied;
             emit(Key{key.ext, packAux(L - 1, nf)}, w, false);
         }

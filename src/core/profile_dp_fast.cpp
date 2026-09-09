@@ -16,7 +16,7 @@
 //    settles both liveness and key equality at once. Clearing a layer is an
 //    epoch increment instead of a walk, and V0's std::vector<bool> occupancy
 //    array disappears along with its bit addressing. The epoch starts at 1, so a
-//    zero-filled table reads as empty.
+//    zero-filled table is then correctly treated as empty.
 //
 // 3. The table is sized once from the known peak layer, so no rehash occurs
 //    mid-sweep.
@@ -30,19 +30,23 @@
 
 #include "mayflower/profile_dp.hpp"
 
+#include "detail/hashing.hpp"
+#include "detail/profile_key.hpp"
+
 namespace mayflower {
 namespace {
+
+using detail::fleetIndexBits;
+using detail::kExtBits;
+using detail::kExtMask;
+using detail::kVremBits;
+using detail::vremAt;
 
 constexpr int kEpochBits = 16;
 constexpr int kBatch = 32;
 constexpr std::uint64_t kInvalidDelta = ~std::uint64_t{0};
 
-inline std::uint64_t mix(std::uint64_t x) {
-    x *= 0xBF58476D1CE4E5B9ull;
-    x ^= x >> 31;
-    x *= 0x94D049BB133111EBull;
-    return x ^ (x >> 29);
-}
+using detail::fastMix;
 
 class FastMap {
 public:
@@ -74,7 +78,7 @@ public:
     [[nodiscard]] std::size_t size() const { return dense_.size(); }
 
     [[nodiscard]] inline std::size_t slotFor(std::uint64_t key) const {
-        return mix(key) & mask_;
+        return fastMix(key) & mask_;
     }
 
     inline void prefetch(std::size_t slot) const {
@@ -124,13 +128,11 @@ private:
 }  // namespace
 
 bool fastPathSupports(const Instance& inst) {
-    const std::vector<int> lengths = inst.distinctLengths();
     const std::vector<int> caps = inst.multiplicities();
     int fleetStates = 1;
     for (int c : caps) fleetStates *= c + 1;
-    int fleetBits = 0;
-    while ((1 << fleetBits) < fleetStates) ++fleetBits;
-    const int stateBits = 3 * inst.height + 3 + fleetBits;
+    const int stateBits =
+        kExtBits * inst.height + kVremBits + fleetIndexBits(fleetStates);
     return stateBits <= 64 - kEpochBits;
 }
 
@@ -153,12 +155,9 @@ CountResult countConfigurationsFast(const Instance& inst, const Constraints& con
         stride[static_cast<std::size_t>(i)] = fleetStates;
         fleetStates *= caps[static_cast<std::size_t>(i)] + 1;
     }
-    int fleetBits = 0;
-    while ((1 << fleetBits) < fleetStates) ++fleetBits;
-
-    const int vremShift = 3 * H;
-    const int fleetShift = vremShift + 3;
-    const int stateBits = fleetShift + fleetBits;
+    const int vremShift = kExtBits * H;
+    const int fleetShift = vremShift + kVremBits;
+    const int stateBits = fleetShift + fleetIndexBits(fleetStates);
     const int fullFleet = fleetStates - 1;
 
     // Fleet transitions as key deltas, so starting a ship is one addition.
@@ -195,7 +194,7 @@ CountResult countConfigurationsFast(const Instance& inst, const Constraints& con
             const CellConstraint cc = constraints.cells[cell];
             const bool mustBeEmpty = cc == CellConstraint::MustBeEmpty;
             const bool mustBeOccupied = cc == CellConstraint::MustBeOccupied;
-            const int extShift = 3 * row;
+            const int extShift = kExtBits * row;
             const std::uint64_t extUnit = std::uint64_t{1} << extShift;
             const std::uint64_t vremUnit = std::uint64_t{1} << vremShift;
             const std::uint8_t* allowH =
@@ -253,8 +252,11 @@ CountResult countConfigurationsFast(const Instance& inst, const Constraints& con
             };
 
             cur.forEach([&](std::uint64_t key, std::uint64_t count) {
-                const int d = static_cast<int>((key >> extShift) & 7u);
-                const int vrem = static_cast<int>((key >> vremShift) & 7u);
+                // extShift is hoisted out of the state loop, which is this
+                // rung's fusion, so the digit is read here rather than through
+                // extDigit. The width is the header's.
+                const int d = static_cast<int>((key >> extShift) & kExtMask);
+                const int vrem = vremAt(key, vremShift);
 
                 if (d > 0) {
                     if (vrem > 0 || mustBeEmpty) return;

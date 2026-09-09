@@ -1,7 +1,11 @@
 #include "mayflower/notouch.hpp"
 
+#include "detail/fleet_counter.hpp"
+#include "detail/profile_key.hpp"
+#include "detail/placement_gate.hpp"
+#include "detail/hashing.hpp"
+
 #include <algorithm>
-#include <bit>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -9,49 +13,22 @@
 namespace mayflower {
 namespace {
 
-inline std::uint64_t mix(std::uint64_t x) {
-    x += 0x9E3779B97F4A7C15ull;
-    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
-    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
-    return x ^ (x >> 31);
-}
+using detail::splitmix64;
+using detail::startsHorizontal;
+using detail::startsVertical;
 
-// Mirrors the counter in profile_dp.cpp. Decrementing at ship START keeps ship
-// identity out of the profile, so indistinguishable lengths need no division.
-struct FleetCounter {
-    std::vector<int> lengths;
-    std::vector<int> caps;
-    std::vector<int> radixStride;
-    int stateCount = 1;
-    int fullIndex = 0;
-    std::vector<int> addTable;
+using detail::extDigit;
+using detail::FleetCounter;
+using detail::fleetIndexBits;
+using detail::kExtBits;
+using detail::kVremBits;
+using detail::setExtDigit;
+using detail::setVremAt;
+using detail::vremAt;
 
-    explicit FleetCounter(const Instance& inst)
-        : lengths(inst.distinctLengths()), caps(inst.multiplicities()) {
-        radixStride.resize(lengths.size());
-        int stride = 1;
-        for (std::size_t i = 0; i < lengths.size(); ++i) {
-            radixStride[i] = stride;
-            stride *= caps[i] + 1;
-        }
-        stateCount = stride;
-        fullIndex = stateCount - 1;
-
-        addTable.assign(static_cast<std::size_t>(stateCount) * lengths.size(), -1);
-        for (int s = 0; s < stateCount; ++s)
-            for (std::size_t li = 0; li < lengths.size(); ++li) {
-                const int used = (s / radixStride[li]) % (caps[li] + 1);
-                addTable[static_cast<std::size_t>(s) * lengths.size() + li] =
-                    (used < caps[li]) ? s + radixStride[li] : -1;
-            }
-    }
-
-    [[nodiscard]] int afterStarting(int state, std::size_t li) const {
-        return addTable[static_cast<std::size_t>(state) * lengths.size() + li];
-    }
-};
-
-// Field offsets inside the packed key.
+// Field offsets inside the packed key. The widths are shared and live in
+// detail/profile_key.hpp; the column word and the carry bit sitting between ext
+// and vrem are this sweep's alone, which is why vremShift is not kExtBits * H.
 struct Layout {
     int height = 0;
     int colShift = 0;
@@ -64,15 +41,11 @@ struct Layout {
 
     Layout(const Instance& inst, const FleetCounter& fc) {
         height = inst.height;
-        colShift = 3 * height;
+        colShift = kExtBits * height;
         carryShift = colShift + height;
         vremShift = carryShift + 1;
-        fleetShift = vremShift + 3;
-        const int fleetBits =
-            fc.stateCount <= 1
-                ? 0
-                : 64 - std::countl_zero(static_cast<std::uint64_t>(fc.stateCount - 1));
-        bits = fleetShift + fleetBits;
+        fleetShift = vremShift + kVremBits;
+        bits = fleetShift + fleetIndexBits(fc.stateCount);
         // The masks are only meaningful for a key that fits, and callers ask
         // whether it fits by building this and reading `bits`. Height 20 is a
         // legal instance and puts fleetShift at 84, so an unguarded shift here
@@ -84,12 +57,9 @@ struct Layout {
                                       : (std::uint64_t{1} << fleetShift) - 1;
     }
 
-    [[nodiscard]] int ext(std::uint64_t k, int row) const {
-        return static_cast<int>((k >> (3 * row)) & 7u);
-    }
+    [[nodiscard]] int ext(std::uint64_t k, int row) const { return extDigit(k, row); }
     [[nodiscard]] std::uint64_t setExt(std::uint64_t k, int row, int v) const {
-        const int sh = 3 * row;
-        return (k & ~(std::uint64_t{7} << sh)) | (static_cast<std::uint64_t>(v) << sh);
+        return setExtDigit(k, row, v);
     }
     [[nodiscard]] bool colBit(std::uint64_t k, int row) const {
         return ((k >> (colShift + row)) & 1u) != 0;
@@ -105,12 +75,9 @@ struct Layout {
         const std::uint64_t m = std::uint64_t{1} << carryShift;
         return b ? (k | m) : (k & ~m);
     }
-    [[nodiscard]] int vrem(std::uint64_t k) const {
-        return static_cast<int>((k >> vremShift) & 7u);
-    }
+    [[nodiscard]] int vrem(std::uint64_t k) const { return vremAt(k, vremShift); }
     [[nodiscard]] std::uint64_t setVrem(std::uint64_t k, int v) const {
-        return (k & ~(std::uint64_t{7} << vremShift)) |
-               (static_cast<std::uint64_t>(v) << vremShift);
+        return setVremAt(k, vremShift, v);
     }
     [[nodiscard]] int fleet(std::uint64_t k) const {
         return static_cast<int>(k >> fleetShift);
@@ -145,7 +112,7 @@ public:
     [[nodiscard]] std::size_t size() const { return dense_.size(); }
 
     void add(std::uint64_t key, std::uint64_t count) {
-        std::size_t slot = mix(key) & mask_;
+        std::size_t slot = splitmix64(key) & mask_;
         while (true) {
             if (!used_[slot]) {
                 if (dense_.size() * 10 >= capacity_ * 7) {
@@ -260,13 +227,13 @@ inline void transitions(std::uint64_t key, const CellCtx& ctx, const FleetCounte
         const int L = fc.lengths[li];
         const int nf = fc.afterStarting(fleet, li);
         if (nf < 0) continue;
-        if (ctx.col + L <= W && (ctx.allowH == nullptr || ctx.allowH[li])) {
+        if (startsHorizontal(ctx.col, L, W, ctx.allowH, li)) {
             std::uint64_t k = lay.setExt(key, r, L - 1);
             emit(finish(lay.setFleet(k, nf), true));
         }
         // A length-1 ship has one placement, not two, so only the horizontal
         // branch emits it. Real fleets start at 2 and never reach this.
-        if (L > 1 && ctx.row + L <= H && (ctx.allowV == nullptr || ctx.allowV[li])) {
+        if (startsVertical(ctx.row, L, H, ctx.allowV, li)) {
             std::uint64_t k = lay.setVrem(key, L - 1);
             emit(finish(lay.setFleet(k, nf), true));
         }
