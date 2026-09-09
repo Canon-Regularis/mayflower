@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from build_report import (RAMP, blocking_boards, board_heatmap, bound_ladder, collapse,
+from build_report import (BUCKETS, RAMP, blocking_boards, board_heatmap, bound_ladder, collapse,
                           opening_book,
                           esc, layer_profile, objective_bars, orbit_map, order_dependence,
                           scaling, survival)
@@ -459,7 +459,8 @@ def build(data, out_path):
       "the sampled marginal is good to 0.025 and the sweep has become cheap enough to run "
       "between clicks. The readout names the estimator in "
       "use.</p></div>")
-    w('<div class="livewrap" id="live" data-pool="' + POOL_B64 + '">')
+    w('<div class="livewrap" id="live" data-pool="' + POOL_B64 +
+      '" data-omega="' + str(omega) + '" data-buckets="' + str(BUCKETS) + '">')
     w('<div class="livegrid"><div class="liveboard"></div>')
     w('<div><div class="livestats"></div><div class="livebtns">'
       '<button data-act="step">Fire</button>'
@@ -786,7 +787,8 @@ def build(data, out_path):
           "from a miss into the cells that remain, and a sinking announcement flattening "
           "a whole region at once because the ship it accounted for is now placed.</p>")
         w("</div>")
-        w('<figure><div class="plate"><div id="scrub" data-frames=\'' +
+        w('<figure><div class="plate"><div id="scrub" data-buckets="' + str(BUCKETS) +
+          '" data-frames=\'' +
           json.dumps(payload, separators=(",", ":")).replace("'", "&#39;") + '\'></div>')
         w("</div><figcaption><b>Belief scrubber.</b> Exact cell marginals after every "
           "shot of one game, quantised to a byte per cell. One colour scale spans the "

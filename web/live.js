@@ -28,6 +28,12 @@
   if (!root) return;
 
   // ---- pool ---------------------------------------------------------------
+  // Constants this widget must not own. constants.hpp is the single source
+  // for the hypothesis space and tools/build_report.py for the ramp width, so
+  // both arrive on the element instead of being retyped here.
+  const OMEGA0 = Number(root.dataset.omega);
+  const BUCKETS = Number(root.dataset.buckets);
+
   const raw = atob(root.dataset.pool);
   const pool = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) pool[i] = raw.charCodeAt(i);
@@ -100,18 +106,21 @@
   // running beside the new one, each toggle adding another recompute per tick.
   let playTimer = null;
 
-  const MISSV = 0, HITV = 1, SUNKV = 2;
+  // engine.js exports these and render_report publishes them on
+  // window.MayflowerEngine. A second declaration here is a second place for
+  // them to drift away from the engine that produces them.
+  const { MISS, HIT, SUNK } = window.MayflowerEngine;
 
   function consistent(bi) {
     loadBoard(bi);
     const rem = [5, 4, 3, 3, 2];
     for (const s of history) {
       const o = ownerOf(s.cell);
-      if (o < 0) { if (s.outcome !== MISSV) return false; continue; }
-      if (s.outcome === MISSV) return false;
+      if (o < 0) { if (s.outcome !== MISS) return false; continue; }
+      if (s.outcome === MISS) return false;
       if (--rem[o] === 0) {
-        if (s.outcome !== SUNKV || s.length !== LENS[o]) return false;
-      } else if (s.outcome !== HITV) return false;
+        if (s.outcome !== SUNK || s.length !== LENS[o]) return false;
+      } else if (s.outcome !== HIT) return false;
     }
     return true;
   }
@@ -129,7 +138,7 @@
       }
       const n = survivors.length || 1;
       for (let c = 0; c < CELLS; c++) posterior[c] /= n;
-      omega = survivors.length / NBOARDS * 15046987768;
+      omega = survivors.length / NBOARDS * OMEGA0;
       return;
     }
     // Sample spent: run the exact sweep, which is cheap by now.
@@ -161,15 +170,15 @@
 
     loadBoard(truth);
     const o = ownerOf(best);
-    if (o < 0) history.push({ cell: best, outcome: MISSV });
+    if (o < 0) history.push({ cell: best, outcome: MISS });
     else {
       let hits = 1;
-      for (const s of history) if (s.outcome !== MISSV) { loadBoard(truth); if (ownerOf(s.cell) === o) hits++; }
+      for (const s of history) if (s.outcome !== MISS) { loadBoard(truth); if (ownerOf(s.cell) === o) hits++; }
       loadBoard(truth);
-      if (hits === LENS[o]) history.push({ cell: best, outcome: SUNKV, length: LENS[o] });
-      else history.push({ cell: best, outcome: HITV });
+      if (hits === LENS[o]) history.push({ cell: best, outcome: SUNK, length: LENS[o] });
+      else history.push({ cell: best, outcome: HIT });
     }
-    const hitCount = history.filter(s => s.outcome !== MISSV).length;
+    const hitCount = history.filter(s => s.outcome !== MISS).length;
     if (hitCount >= 17) { finished = true; playing = false; }
     recompute();
     render();
@@ -194,11 +203,11 @@
     for (let c = 0; c < CELLS; c++) {
       const s = shotAt.get(c);
       const p = posterior[c];
-      const bucket = Math.min(12, Math.max(0, Math.round(p / hi * 12)));
+      const bucket = Math.min(BUCKETS, Math.max(0, Math.round(p / hi * BUCKETS)));
       let cls = "lc", label = "";
       if (s) {
-        cls += s.outcome === MISSV ? " miss" : (s.outcome === SUNKV ? " sunk" : " hit");
-        label = s.outcome === MISSV ? "." : (s.outcome === SUNKV ? "x" : "o");
+        cls += s.outcome === MISS ? " miss" : (s.outcome === SUNK ? " sunk" : " hit");
+        label = s.outcome === MISS ? "." : (s.outcome === SUNK ? "x" : "o");
       } else {
         label = p > 0 ? (p * 100).toFixed(0) : "";
       }
@@ -209,7 +218,7 @@
     }
     boardEl.innerHTML = html;
 
-    const hits = history.filter(s => s.outcome !== MISSV).length;
+    const hits = history.filter(s => s.outcome !== MISS).length;
     statEl.innerHTML =
       `<div><span class="lk">shots</span><span class="lv">${history.length}</span></div>` +
       `<div><span class="lk">hits</span><span class="lv">${hits} / 17</span></div>` +

@@ -13,28 +13,14 @@
 #include "mayflower/certify.hpp"
 #include "mayflower/constants.hpp"
 
+#include "harness.hpp"
+
 namespace {
 
-int gFailures = 0;
-int gChecks = 0;
-
-void check(bool ok, const std::string& what) {
-    ++gChecks;
-    if (!ok) {
-        ++gFailures;
-        std::printf("  FAIL  %s\n", what.c_str());
-    }
-}
-
-template <typename T>
-void checkEq(T got, T want, const std::string& what) {
-    ++gChecks;
-    if (got != want) {
-        ++gFailures;
-        std::printf("  FAIL  %s: got %lld, want %lld\n", what.c_str(),
-                    static_cast<long long>(got), static_cast<long long>(want));
-    }
-}
+using mf::test::expect;
+using mf::test::gChecks;
+using mf::test::gFailures;
+using mf::test::checkEq;
 
 // Exhaustive: the largest cell set with no L consecutive cells in any line.
 int bruteForceFreeSet(int W, int H, int L) {
@@ -136,9 +122,9 @@ void testWaterFillingIsSound() {
     // must never fall below the coverage bound minus rounding.
     const std::vector<int> fleet = {5, 4, 3, 3, 2};
     const auto wf = mayflower::waterFillingBound(fleet, mayflower::constants::kOmega0, 100);
-    check(wf.bound >= 0.0, "bound is non-negative");
-    check(wf.bound <= 100.0, "bound cannot exceed the board size");
-    check(wf.shipCells == 17, "ship-cell count");
+    expect(wf.bound >= 0.0, "bound is non-negative");
+    expect(wf.bound <= 100.0, "bound cannot exceed the board size");
+    expect(wf.shipCells == 17, "ship-cell count");
     std::printf("  K = %llu, bound = %.4f shots, saturates at depth %d\n",
                 static_cast<unsigned long long>(wf.hitTranscripts), wf.bound, wf.saturatesAt);
 }
@@ -184,14 +170,14 @@ void testPublishedBoundsArePinned() {
     const auto wf = mayflower::waterFillingBound(fleet, mayflower::constants::kOmega0, 100);
     checkEq(wf.hitTranscripts, std::uint64_t{28560},
             "and the bound is built from that same K");
-    check(std::abs(wf.bound - 24.0876) < 5e-5,
+    expect(std::abs(wf.bound - 24.0876) < 5e-5,
           "the water-filling bound is 24.0876 shots");
     if (std::abs(wf.bound - 24.0876) >= 5e-5)
         std::printf("      got %.6f\n", wf.bound);
     checkEq(wf.saturatesAt, 25, "and it stops contributing at depth 25");
 
     // The rung must clear the trivial one it is meant to improve on.
-    check(wf.bound > static_cast<double>(mayflower::constants::kCoverageBound),
+    expect(wf.bound > static_cast<double>(mayflower::constants::kCoverageBound),
           "and it beats the coverage bound it is quoted against");
     std::printf("  K = %llu, bound = %.4f shots, saturates at %d\n",
                 static_cast<unsigned long long>(k), wf.bound, wf.saturatesAt);
@@ -226,14 +212,14 @@ void testWitnessesAreValid() {
     for (int L : {1, 2, 3, 4, 5}) {
         const auto found = mayflower::blockingWitness(10, 10, L);
         const std::vector<int>& witness = found.cells;
-        check(witnessBlocksEverything(10, 10, L, witness),
+        expect(witnessBlocksEverything(10, 10, L, witness),
               "witness for L=" + std::to_string(L) + " meets every placement");
         const auto exact = mayflower::blockingNumber(10, 10, L);
-        check(static_cast<int>(witness.size()) >= exact.blocking,
+        expect(static_cast<int>(witness.size()) >= exact.blocking,
               "witness is no smaller than beta(L)");
         // The flag has to describe the set rather than the intention behind it,
         // since the figure labels the drawing from it.
-        check(found.optimal == (static_cast<int>(witness.size()) == exact.blocking),
+        expect(found.optimal == (static_cast<int>(witness.size()) == exact.blocking),
               "the optimal flag matches the set it came with");
         std::printf("  L=%d  beta %2d, witness %2zu cells%s%s\n", L, exact.blocking,
                     witness.size(), found.optimal ? " (minimum)" : " (greedy, not minimum)",
@@ -265,6 +251,5 @@ int main() {
     testWaterFillingIsSound();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
-    return gFailures == 0 ? 0 : 1;
+    return mf::test::report(dt);
 }

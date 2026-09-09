@@ -85,8 +85,8 @@ difference of exactly 41.
 
 ## Quick start
 
-From a clean checkout to the report open in a browser. Timings are from the machine 
-I developed this project on - your results may differ by a relative margin.
+From a clean checkout to the report open in a browser. Timings are from the
+machine I developed this project on, so your results may differ.
 
 ```sh
 git clone https://github.com/Canon-Regularis/mayflower && cd mayflower

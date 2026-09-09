@@ -20,22 +20,15 @@ import os
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+
 NODE = os.environ.get("MF_NODE", "node")
 FIGURES = os.path.join(ROOT, "out", "figures.json")
 
-SKIP = 77
-
-failures = 0
 
 
-def check(ok, what, detail=""):
-    global failures
-    print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
-    if detail:
-        print("      " + detail)
-    if not ok:
-        failures += 1
+
 
 
 # A DOM only as wide as scrubber.js actually touches, plus a clock the test
@@ -316,8 +309,45 @@ def main():
         check(all(v["built"] == 0 for v in verdicts.values()),
               "and no board is painted when it refuses")
 
-    print("\n" + ("FAILED" if failures else "all checks passed"))
-    return 1 if failures else 0
+    check_glyphs_agree()
+
+    return report()
+
+
+def check_glyphs_agree():
+    """The scrubber and the live engine draw boards on the same page.
+
+    They disagreed: the scrubber drew a miss as "o", a hit as "x" and a sunk
+    shot as "+", while the live engine drew ".", "o" and "x". A reader who
+    learned the vocabulary from one widget read the other one wrong, and the
+    scrubber's own header comment claimed the two matched. Nothing compared
+    them, which is why it went unnoticed, so the comparison is made here.
+    """
+    live = io.open(os.path.join(ROOT, "web", "live.js"), encoding="utf-8").read()
+    scrub = io.open(os.path.join(ROOT, "web", "scrubber.js"), encoding="utf-8").read()
+
+    # Each widget names its outcomes differently, so the mapping is pinned
+    # rather than the expression: miss is a dot, a hit is an open ring, and the
+    # shot that sank a ship is a cross.
+    live_map = [('MISS ? "."', "miss is a dot"),
+                ('SUNK ? "x"', "a sunk shot is a cross"),
+                (': "o")', "a hit is an open ring")]
+    for (needle, what) in live_map:
+        check(needle in live, "live.js: " + what)
+
+    scrub_map = 'o === 0 ? "." : o === 1 ? "o" : o === 2 ? "x"'
+    check(scrub_map in scrub,
+          "scrubber.js draws the same three glyphs in the same roles",
+          scrub_map)
+
+    # The ramp has one home, tools/build_report.py, and reaches both widgets as
+    # CSS custom properties that render_report reverses for dark mode. A literal
+    # copy of the stops renders identically in both themes while every other
+    # figure inverts, which is what the scrubber used to do.
+    check("#cde2fb" not in scrub, "and carries no literal copy of the ramp stops")
+    check("var(--ramp-" in scrub, "reading the ramp from the page instead")
+    check("15046987768" not in live,
+          "live.js takes the hypothesis space from the page, not a literal")
 
 
 if __name__ == "__main__":

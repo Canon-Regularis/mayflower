@@ -5,18 +5,21 @@
 // nothing is recounted in the browser: scrubbing is a lookup and stays smooth
 // under the keyboard.
 //
-// The board is the same widget used everywhere else on the page, with the same
-// glyph vocabulary: open ring for a miss, filled disc for a hit, cross for the
-// shot that sank a ship, and a solid green outline for the hidden truth once it is
-// revealed.
+// The board is the same widget used everywhere else on the page and draws the
+// same glyphs as web/live.js: a dot for a miss, an open ring for a hit, a cross
+// for the shot that sank a ship, and a solid green outline for the hidden truth
+// once it is revealed. The two widgets sit on one page, so a reader who learns
+// the vocabulary from one must be able to read the other.
 
 (function () {
   const root = document.getElementById("scrub");
   if (!root) return;
 
-  const RAMP = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7",
-                "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281",
-                "#0d366b"];
+  // The ramp is defined once, by tools/build_report.py, and emitted as CSS
+  // custom properties that render_report reverses for dark mode. A literal copy
+  // of the stops here would render the same colours in both themes while every
+  // other figure on the page inverted.
+  const BUCKETS = Number(root.dataset.buckets);
 
   const data = JSON.parse(root.dataset.frames);
   const W = data.width, H = data.height, CELLS = W * H;
@@ -140,8 +143,8 @@
     // Fixed limits across every turn, so frames are comparable to each other.
     // A per-frame rescale would make the collapse invisible, which is the one
     // thing this figure exists to show.
-    const idx = Math.min(RAMP.length - 1, Math.max(0, Math.round(p * (RAMP.length - 1) * 2.2)));
-    return RAMP[idx];
+    const idx = Math.min(BUCKETS, Math.max(0, Math.round(p * BUCKETS * 2.2)));
+    return "var(--ramp-" + idx + ")";
   }
 
   const shotAt = new Array(CELLS).fill(-1);
@@ -160,7 +163,7 @@
         const el = cellEls[i];
         const o = shotAt[i];
         el.className = "lc" + (o === 0 ? " miss" : o === 1 ? " hit" : o === 2 ? " sunk" : "");
-        el.textContent = o === 0 ? "o" : o === 1 ? "x" : o === 2 ? "+" : "";
+        el.textContent = o === 0 ? "." : o === 1 ? "o" : o === 2 ? "x" : "";
         el.style.background = o >= 0 ? "" : colourFor(p);
         el.style.outline = revealed && truth[i] ? "2px solid var(--series-3)" : "";
         el.style.outlineOffset = revealed && truth[i] ? "-3px" : "";

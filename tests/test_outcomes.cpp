@@ -10,31 +10,14 @@
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
 #include "mayflower/profile_dp.hpp"
+
+#include "harness.hpp"
 #include "oracle/brute_force.hpp"
 
 namespace {
 
-int gFailures = 0;
-int gChecks = 0;
-
-void check(bool ok, const std::string& what) {
-    ++gChecks;
-    if (!ok) {
-        ++gFailures;
-        std::printf("  FAIL  %s\n", what.c_str());
-    }
-}
-
-template <typename T>
-void checkEq(T got, T want, const std::string& what) {
-    ++gChecks;
-    if (got != want) {
-        ++gFailures;
-        std::printf("  FAIL  %s: got %llu, want %llu\n", what.c_str(),
-                    static_cast<unsigned long long>(got),
-                    static_cast<unsigned long long>(want));
-    }
-}
+using mf::test::expect;
+using mf::test::checkEq;
 
 using mayflower::History;
 using mayflower::Instance;
@@ -147,7 +130,7 @@ void testOutcomesAgainstOracle() {
         for (int cell = 0; cell < W * H; ++cell) {
             const OutcomeDistribution& d = dist[static_cast<std::size_t>(cell)];
             if (h.shot(cell)) {
-                check(!d.shootable, std::string(sc.label) + ": shot cells are not shootable");
+                expect(!d.shootable, std::string(sc.label) + ": shot cells are not shootable");
                 continue;
             }
             OutcomeDistribution want;
@@ -187,30 +170,35 @@ void testTurnZeroChannelIsBinary() {
     const History empty(inst);
     std::uint64_t total = 0;
     const auto dist = mayflower::outcomeDistribution(inst, empty, total);
-    checkEq(total, mayflower::constants::kOmega0, "turn-0 |Omega|");
+    // Pinned as a literal rather than read from constants.hpp. Comparing a
+    // sweep against the header that holds the sweep's own published value is
+    // circular: editing the header to match a changed sweep made this check
+    // pass again. The literal is the value that literal enumeration and two
+    // independent reimplementations agree on.
+    checkEq(total, std::uint64_t{15046987768ull}, "turn-0 |Omega|");
 
     double bestP = -1.0, bestIG = -1.0;
     int tiedOnP = 0, tiedOnIG = 0;
     for (int cell = 0; cell < inst.cellCount(); ++cell) {
         const auto& d = dist[static_cast<std::size_t>(cell)];
-        check(d.shootable, "every cell is shootable at turn 0");
+        expect(d.shootable, "every cell is shootable at turn 0");
         std::uint64_t sunkTotal = 0;
         for (std::uint64_t v : d.sunk) sunkTotal += v;
         checkEq(sunkTotal, std::uint64_t{0}, "no sink is possible on the first shot");
 
         const double p = d.hitProbability();
         const double hb = (p > 0.0 && p < 1.0) ? -(p * std::log2(p) + (1 - p) * std::log2(1 - p)) : 0.0;
-        check(std::abs(d.informationBits() - hb) < 1e-12,
+        expect(std::abs(d.informationBits() - hb) < 1e-12,
               "information gain equals the binary entropy at turn 0");
         if (p > bestP + 1e-15) { bestP = p; tiedOnP = 1; }
         else if (std::abs(p - bestP) < 1e-15) ++tiedOnP;
         if (d.informationBits() > bestIG + 1e-15) { bestIG = d.informationBits(); tiedOnIG = 1; }
         else if (std::abs(d.informationBits() - bestIG) < 1e-15) ++tiedOnIG;
     }
-    check(std::abs(bestP - 0.213599) < 1e-5, "best turn-0 hit probability is 0.2136");
+    expect(std::abs(bestP - 0.213599) < 1e-5, "best turn-0 hit probability is 0.2136");
     checkEq(tiedOnP, 4, "four cells tie on hit probability");
     checkEq(tiedOnIG, 4, "the same four tie on information gain");
-    check(bestP < 0.5, "the peak stays on the increasing branch of the binary entropy");
+    expect(bestP < 0.5, "the peak stays on the increasing branch of the binary entropy");
     std::printf("  max P(hit) = %.6f over %d tied cells, IG = %.6f bits, no sinks possible\n",
                 bestP, tiedOnP, bestIG);
 }
@@ -253,8 +241,8 @@ void testSunkOutcomesEnterTheEntropy() {
         const double got = d.informationBits();
         worst = std::max(worst, std::abs(want - got));
     }
-    check(withSink > 0, "a wounded ship makes some cell able to announce a sink");
-    check(worst < 1e-12, "information gain sums over the whole outcome alphabet");
+    expect(withSink > 0, "a wounded ship makes some cell able to announce a sink");
+    expect(worst < 1e-12, "information gain sums over the whole outcome alphabet");
     std::printf("  %d cells can sink, largest departure %.3e bits\n", withSink, worst);
 }
 
@@ -269,6 +257,5 @@ int main() {
     testSunkOutcomesEnterTheEntropy();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
-    return gFailures == 0 ? 0 : 1;
+    return mf::test::report(dt);
 }
