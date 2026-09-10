@@ -93,7 +93,7 @@ git clone https://github.com/Canon-Regularis/mayflower && cd mayflower
 
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   #  11 s
 cmake --build build                                       #  51 s
-ctest --test-dir build -L fast                            #  33 s, 15 tests
+ctest --test-dir build -L fast                            #  78 s, 26 tests
 
 ./build/omega0            # 15,046,987,768 and 1,925,751,392, plus the lattice
 ./build/bounds            # the ladder, and the interval [24.088, 44.369]
