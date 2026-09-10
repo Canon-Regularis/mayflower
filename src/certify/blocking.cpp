@@ -129,7 +129,7 @@ BlockingResult blockingNumber(int width, int height, int length) {
 // Greedy cover: repeatedly shoot the cell meeting the most still-unmet
 // placements. It is an upper bound on beta(L) and on this board it happens to
 // reach it for lengths 2 and 5 and to miss by one and two for 3 and 4.
-std::vector<int> greedyCover(int width, int height, int length) {
+static std::vector<int> greedyCover(int width, int height, int length) {
     std::vector<std::vector<int>> placements;
     for (int r = 0; r < height; ++r)
         for (int c = 0; c + length <= width; ++c) {
@@ -177,7 +177,7 @@ std::vector<int> greedyCover(int width, int height, int length) {
 //
 // One DP run per cell. The caller decides whether that is affordable, since the
 // DP's own cost is what makes it so.
-std::vector<int> minimumCover(int width, int height, int length, int target) {
+static std::vector<int> minimumCover(int width, int height, int length, int target) {
     std::vector<Decision> fixed(static_cast<std::size_t>(width * height), Decision::Either);
     for (int cell = 0; cell < width * height; ++cell) {
         fixed[static_cast<std::size_t>(cell)] = Decision::Free;
