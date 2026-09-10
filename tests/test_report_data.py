@@ -27,7 +27,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+from _harness import ROOT, SKIP, check, exe, failures, report, run  # noqa: E402
 
 FIGURES = os.path.join(ROOT, "out", "figures.json")
 
@@ -345,7 +345,13 @@ def main():
         # failure even here. Returning SKIP unconditionally would hide them in
         # the legs where out/ is absent, which is every per push leg, and ctest
         # would report the run as passing.
-        return 1 if failures else SKIP
+        # failures() is a function, so `if failures` would test a function
+        # object, which is always true, and every legitimate skip would become a
+        # failure. The name was dropped from the import above during the harness
+        # conversion, and only this branch reads it, so nothing caught it: out/
+        # is gitignored, which means CI takes this path on every push and a
+        # local run never does.
+        return 1 if failures() else SKIP
 
     fig = json.load(io.open(FIGURES, encoding="utf-8"))
     prior = fig["prior"]
