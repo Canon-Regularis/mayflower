@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "commit": "fe804b8",
+ "commit": "8e77fc3",
  "note": "Every value is read from a tool's own output, never transcribed. Text tables are parsed against their exact headers, so a tool changing its output breaks this rather than corrupting it.",
  "counts": {
   "results": 118,
@@ -56,6 +56,35 @@
     "maxcover"
    ],
    "instances": 6,
+   "agree": true,
+   "disagreements": []
+  },
+  {
+   "quantity": "the transcripts match the live sweep",
+   "sources": [
+    "docs",
+    "out/figures.json"
+   ],
+   "instances": 11,
+   "agree": true,
+   "disagreements": []
+  },
+  {
+   "quantity": "orderings that hold by definition",
+   "sources": [
+    "every family"
+   ],
+   "instances": 35,
+   "agree": true,
+   "disagreements": []
+  },
+  {
+   "quantity": "waste is a subset of the misses",
+   "sources": [
+    "objective",
+    "waste"
+   ],
+   "instances": 18,
    "agree": true,
    "disagreements": []
   }

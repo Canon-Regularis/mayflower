@@ -257,25 +257,10 @@ def constants(results):
 
 # --- consistency ----------------------------------------------------------
 
-def cross_checks(results):
-    """Quantities two tools compute independently. Disagreement means a bug."""
-    checks = []
 
-    def pick(family, key):
-        return {r["instance"]: r[key] for r in results
-                if r["family"] == family and key in r and r[key] is not None}
-
-    pairs = [
-        ("adaptive optimum", pick("adaptivity", "adaptive"), pick("maxcover", "adaptive"),
-         "m9 adaptivity", "maxcover"),
-        ("non-adaptive optimum", pick("adaptivity", "value"), pick("maxcover", "nonAdaptive"),
-         "m9 adaptivity", "maxcover"),
-        ("committed E[T]", pick("adversary", "committed"), pick("adaptivity", "adaptive"),
-         "m9 adversary", "m9 adaptivity"),
-        ("configurations", pick("adaptivity", "configurations"),
-         pick("maxcover", "configurations"), "m9 adaptivity", "maxcover"),
-    ]
-
+def _train_against_test(results):
+    """TRAIN against TEST on the same policy, measured on disjoint boards."""
+    out = []
     # TRAIN against TEST, measured by the same tool at the same size on disjoint
     # boards. These are independent samples, so the sound question is whether the
     # difference is distinguishable from zero, not whether one mean happens to
@@ -296,16 +281,43 @@ def cross_checks(results):
             apart.append({"instance": n, "difference": round(diff, 4),
                           "interval": [round(diff - half, 4), round(diff + half, 4)]})
     if shared:
-        checks.append({"quantity": "TRAIN and TEST agree on the same policy",
+        out.append({"quantity": "TRAIN and TEST agree on the same policy",
                        "sources": ["selfplay TRAIN", "selfplay TEST"],
                        "instances": len(shared), "agree": not apart,
                        "disagreements": apart})
+    return out
+
+
+def _pairs_agree(results):
+    """Quantities two different tools compute on the same instances."""
+    out = []
+    def pick(family, key):
+        return {r["instance"]: r[key] for r in results
+                if r["family"] == family and key in r and r[key] is not None}
+
+    pairs = [
+        ("adaptive optimum", pick("adaptivity", "adaptive"), pick("maxcover", "adaptive"),
+         "m9 adaptivity", "maxcover"),
+        ("non-adaptive optimum", pick("adaptivity", "value"), pick("maxcover", "nonAdaptive"),
+         "m9 adaptivity", "maxcover"),
+        ("committed E[T]", pick("adversary", "committed"), pick("adaptivity", "adaptive"),
+         "m9 adversary", "m9 adaptivity"),
+        ("configurations", pick("adaptivity", "configurations"),
+         pick("maxcover", "configurations"), "m9 adaptivity", "maxcover"),
+    ]
+
     for label, a, b, sa, sb in pairs:
         shared = sorted(set(a) & set(b))
         bad = [i for i in shared if abs(a[i] - b[i]) > 1e-9]
-        checks.append({"quantity": label, "sources": [sa, sb],
+        out.append({"quantity": label, "sources": [sa, sb],
                        "instances": len(shared), "agree": not bad,
                        "disagreements": [{"instance": i, sa: a[i], sb: b[i]} for i in bad]})
+    return out
+
+
+def _transcripts_against_sweep(results):
+    """The captured transcripts against the sweep that is regenerated each build."""
+    out = []
     # The captured transcripts against the live sweep. Every check above
     # compares one doc to another doc: docs/M9_RESULTS.txt and docs/MAXCOVER.txt
     # were captured together, so a pair that went stale together agrees with
@@ -331,10 +343,29 @@ def cross_checks(results):
             stale.append({"instance": r["instance"], "family": r["family"],
                           "transcript": got, "out/figures.json": live[r["instance"]]})
     if checked:
-        checks.append({"quantity": "the transcripts match the live sweep",
+        out.append({"quantity": "the transcripts match the live sweep",
                        "sources": ["docs", "out/figures.json"], "instances": checked,
                        "agree": not stale, "disagreements": stale})
+    return out
 
+
+def _by_instance(results):
+    """Every metric, keyed by instance then metric name.
+
+    Built once and passed to the two checks that read it. It used to be a
+    local shared by the tail of one long function, which is the kind of
+    coupling a split has to make explicit rather than inherit."""
+    per_instance = {}
+    for r in results:
+        per_instance.setdefault(r["instance"], {})[r["metric"]] = r["value"]
+
+    return per_instance
+
+
+def _orderings_by_definition(results, per_instance):
+    """Orderings that hold by definition, between families rather than within one."""
+    out = []
+    compared, off = 0, []
     # Orderings that hold by definition, between families rather than within
     # one. The optimal policy is optimal, a lower bound bounds, a worst case is
     # no better than an average, and feedback cannot hurt. Each side is produced
@@ -350,11 +381,6 @@ def cross_checks(results):
         ("worst case W*", "ge", OPT),
         ("non-adaptive optimum", "ge", OPT),
     ]
-    per_instance = {}
-    for r in results:
-        per_instance.setdefault(r["instance"], {})[r["metric"]] = r["value"]
-
-    compared, off = 0, []
     for inst in sorted(per_instance):
         m = per_instance[inst]
         for left, rel, right in rules:
@@ -369,10 +395,15 @@ def cross_checks(results):
                                 left, ">=" if rel == "ge" else "<=", right),
                             left: m[left], right: m[right]})
     if compared:
-        checks.append({"quantity": "orderings that hold by definition",
+        out.append({"quantity": "orderings that hold by definition",
                        "sources": ["every family"], "instances": compared,
                        "agree": not off, "disagreements": off})
+    return out
 
+
+def _waste_within_misses(results, per_instance):
+    """Waste counts misses, so it cannot exceed the misses a game has."""
+    out = []
     # Waste is a subset of the misses, not a separate quantity: it counts the
     # misses taken after the board was already determined, and a game takes
     # E[T] - shipCells misses in total. The two come from different sweeps, so
@@ -410,13 +441,27 @@ def cross_checks(results):
                              "misses available": round(misses, 4),
                              "claim": "waste <= E[T] - shipCells"})
     if counted:
-        checks.append({"quantity": "waste is a subset of the misses",
+        out.append({"quantity": "waste is a subset of the misses",
                        "sources": ["objective", "waste"], "instances": counted,
                        "agree": not over, "disagreements": over})
+    return out
 
 
+def cross_checks(results):
+    """Quantities two tools compute independently. Disagreement means a bug.
+
+    One function per check. The call order is load bearing: render_results.py
+    renders this list in order and experiments/results.json is written with
+    sort_keys=False, so reordering here moves the page and the file.
+    """
+    checks = []
+    checks += _train_against_test(results)
+    checks += _pairs_agree(results)
+    checks += _transcripts_against_sweep(results)
+    per_instance = _by_instance(results)
+    checks += _orderings_by_definition(results, per_instance)
+    checks += _waste_within_misses(results, per_instance)
     return checks
-
 
 def git_commit():
     try:
