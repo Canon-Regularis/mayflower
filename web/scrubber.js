@@ -165,8 +165,14 @@
         el.className = "lc" + (o === 0 ? " miss" : o === 1 ? " hit" : o === 2 ? " sunk" : "");
         el.textContent = o === 0 ? "." : o === 1 ? "o" : o === 2 ? "x" : "";
         el.style.background = o >= 0 ? "" : colourFor(p);
-        el.style.outline = revealed && truth[i] ? "2px solid var(--series-3)" : "";
-        el.style.outlineOffset = revealed && truth[i] ? "-3px" : "";
+        // web/live.js suppresses the reveal outline on a cell already shot,
+        // because a hit there already reads as a hit. This drew it anyway, so
+        // the two boards on one page disagreed about what a revealed ship
+        // looks like: at turn 20 six shot ship cells were outlined here and
+        // none there.
+        const ghost = revealed && truth[i] && o < 0;
+        el.style.outline = ghost ? "2px solid var(--series-3)" : "";
+        el.style.outlineOffset = ghost ? "-3px" : "";
         el.setAttribute("aria-label",
           String.fromCharCode(65 + c) + (r + 1) + ", " + (p * 100).toFixed(1) + " percent");
         cellsHtml += "<td>" + (p * 100).toFixed(1) + "</td>";

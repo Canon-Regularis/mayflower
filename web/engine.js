@@ -45,6 +45,15 @@ export function makeInstance(width, height, fleet) {
   const stride = [];
   let fleetStates = 1;
   for (let i = 0; i < lengths.length; i++) { stride.push(fleetStates); fleetStates *= caps[i] + 1; }
+  // aux packs the fleet index beside vrem in AUX_SHIFT bits, so a fleet with
+  // more usage states than that has nowhere to go. Above the cap this engine
+  // returned a wrong count rather than refusing, which is exactly the silent
+  // zero the checks above were written to prevent. The C++ is unaffected:
+  // its aux is a uint32 leaving 2^29 states, and fastPathSupports measures
+  // the packed width separately.
+  if (fleetStates > AUX_MASK + 1)
+    throw new RangeError(
+      `fleet needs ${fleetStates} usage states, more than the ${AUX_MASK + 1} the key holds`);
   return {
     width, height, fleet, lengths, caps, stride, fleetStates,
     cells: width * height,
@@ -107,7 +116,27 @@ export const FREE = 0, EMPTY = 1, OCCUPIED = 2;
 
 // Enumerate the successors of one state at one cell. Emission order is fixed,
 // which is what keeps results reproducible.
-function expand(inst, ext, aux, row, mustEmpty, mustOcc, allowH, allowV, col, emit) {
+/**
+ * Everything the transition needs about one cell.
+ *
+ * These six values were passed positionally at four call sites, and the two
+ * gate lookups were recomputed beside each of them. The C++ calls this CellCtx
+ * and builds it once per cell; see src/core/detail/cell_ctx.hpp.
+ */
+function cellCtx(inst, cells, gate, row, col) {
+  const c = row * inst.width + col;
+  const cc = cells[c];
+  return {
+    row, col,
+    mustEmpty: cc === EMPTY,
+    mustOcc: cc === OCCUPIED,
+    allowH: gate ? gate.h[c] : null,
+    allowV: gate ? gate.v[c] : null,
+  };
+}
+
+function expand(inst, ext, aux, ctx, emit) {
+  const { row, col, mustEmpty, mustOcc, allowH, allowV } = ctx;
   const nL = inst.lengths.length;
   const vrem = aux >> AUX_SHIFT;
   const fleet = aux & AUX_MASK;
@@ -155,12 +184,12 @@ export function count(inst, cells, gate) {
     for (let row = 0; row < inst.height; row++) {
       const c = row * inst.width + col;
       const cc = cells[c];
-      const aH = gate ? gate.h[c] : null, aV = gate ? gate.v[c] : null;
+      const ctx = cellCtx(inst, cells, gate, row, col);
       next.clear();
       for (let k = 0; k < cur.n; k++) {
         const i = cur.dense[k];
         const e = cur.ext[i], a = cur.aux[i], n = cur.cnt[i];
-        expand(inst, e, a, row, cc === EMPTY, cc === OCCUPIED, aH, aV, col,
+        expand(inst, e, a, ctx,
                (ne, na) => next.add(ne, na, n));
       }
       const t = cur; cur = next; next = t;
@@ -194,12 +223,12 @@ export function marginals(inst, cells, gate) {
   for (let col = 0; col < W; col++) {
     for (let row = 0; row < H; row++) {
       const c = row * W + col, cc = cells[c];
-      const aH = gate ? gate.h[c] : null, aV = gate ? gate.v[c] : null;
+      const ctx = cellCtx(inst, cells, gate, row, col);
       next.clear();
       for (let k = 0; k < cur.n; k++) {
         const i = cur.dense[k];
         const e = cur.ext[i], a = cur.aux[i], n = cur.cnt[i];
-        expand(inst, e, a, row, cc === EMPTY, cc === OCCUPIED, aH, aV, col,
+        expand(inst, e, a, ctx,
                (ne, na) => next.add(ne, na, n));
       }
       const t = cur; cur = next; next = t;
@@ -229,26 +258,26 @@ export function marginals(inst, cells, gate) {
     for (let row = 0; row < H; row++) {
       fLayers[row] = a.snapshot();
       const c = row * W + col, cc = cells[c];
-      const aH = gate ? gate.h[c] : null, aV = gate ? gate.v[c] : null;
+      const ctx = cellCtx(inst, cells, gate, row, col);
       b.clear();
       for (let k = 0; k < a.n; k++) {
         const i = a.dense[k];
         const e = a.ext[i], au = a.aux[i], n = a.cnt[i];
-        expand(inst, e, au, row, cc === EMPTY, cc === OCCUPIED, aH, aV, col,
+        expand(inst, e, au, ctx,
                (ne, na) => b.add(ne, na, n));
       }
       const t = a; a = b; b = t;
     }
     for (let row = H - 1; row >= 0; row--) {
       const c = row * W + col, cc = cells[c];
-      const aH = gate ? gate.h[c] : null, aV = gate ? gate.v[c] : null;
+      const ctx = cellCtx(inst, cells, gate, row, col);
       const F = fLayers[row];
       let emptyFlow = 0;
       bCur.clear();
       for (let k = 0; k < F.ext.length; k++) {
         const e = F.ext[k], au = F.aux[k], n = F.cnt[k];
         let completions = 0;
-        expand(inst, e, au, row, cc === EMPTY, cc === OCCUPIED, aH, aV, col, (ne, na) => {
+        expand(inst, e, au, ctx, (ne, na) => {
           const bb = bNext.get(ne, na);
           completions += bb;
           if (ne === e && na === au) emptyFlow += n * bb;   // the identity edge
