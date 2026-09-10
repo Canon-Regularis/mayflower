@@ -30,6 +30,7 @@
 #include "mayflower/game.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/profile_dp.hpp"
+#include "mayflower/random.hpp"
 
 #include "harness.hpp"
 
@@ -137,6 +138,59 @@ int main(int argc, char** argv) {
         }
     std::snprintf(buf, sizeof buf, "largest transpose asymmetry %.2f sigma", worstOrbit);
     check(worstOrbit < 5.0, "the draw respects the board's transpose symmetry", buf);
+
+    // The stream itself, pinned.
+    //
+    // Everything above is a property that holds for any decent generator: the
+    // boards are well formed, every cell sits within five sigma of its exact
+    // marginal, the draw respects the transpose symmetry. So a change to the
+    // hash gives different draws that are just as uniform, the whole suite stays
+    // green, and every sampled number in the report has moved. Four planted
+    // faults in random.hpp survived in exactly that way.
+    //
+    // Reproducibility is the property at risk here, not uniformity. Common
+    // random numbers only work if one seed gives one sequence tomorrow, and
+    // web/pool.bin is a committed artefact this stream produced. So the values
+    // are pinned the way folds.hpp's vector is, and for the same reason: two
+    // things that must agree forever need a witness.
+    {
+        std::printf("[the stream is reproducible]\n");
+        const std::uint64_t pinned[8] = {
+            16294208416658607535ull, 7960286522194355700ull, 487617019471545679ull,
+            17909611376780542444ull, 1961750202426094747ull, 6038094601263162090ull,
+            3207296026000306913ull, 14232521865600346940ull};
+        mayflower::Rng r(0);
+        bool same = true;
+        for (const std::uint64_t expected : pinned) same = same && r.next() == expected;
+        check(same, "Rng(0) reproduces its first eight draws");
+
+        check(mayflower::keyedSeed(0, mayflower::kPolicyStreamKey) == 9370218965779684112ull,
+              "the policy stream key derives the same first seed");
+
+        char pin[64];
+        std::snprintf(pin, sizeof pin, "%.17g", mayflower::Rng(0).unit());
+        check(std::string(pin) == "0.88331080821364261",
+              "and unit() matches to the last digit", pin);
+
+        // The draw that fills web/pool.bin, which is committed and decoded by
+        // the browser widget.
+        check(mayflower::Rng(1).belowUnbiased(15046987768ull) == 6252514233ull,
+              "the unbiased draw over the whole space is unchanged");
+
+        // That draw does not reach the rejection branch, and pinning a value
+        // that never executes the code it is meant to protect proves nothing:
+        // deleting the loop left the case above passing. Over the full space
+        // the ragged tail is about 8e-10 of the range, so a draw lands in it
+        // roughly once in a billion.
+        //
+        // A bound just above 2^63 makes the tail half the range instead. Seed
+        // 0's first draw is 16294208416658607535, above the limit of
+        // 9223372036854775808, so a correct implementation discards it and
+        // returns the second. One that takes the remainder of the first
+        // returns 7070836379803831726 and is caught here.
+        check(mayflower::Rng(0).belowUnbiased((1ull << 63) + 1) == 7960286522194355700ull,
+              "and a draw in the ragged tail is rejected rather than folded");
+    }
 
     return mf::test::report();
 }
