@@ -18,31 +18,16 @@
 #include "mayflower/game.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
+#include "mayflower/random.hpp"
 #include "mayflower/outcomes.hpp"
 
 namespace mayflower {
 
 namespace detail {
 
-struct Stream {
-    std::uint64_t s = 0;
-    explicit Stream(std::uint64_t seed = 0) : s(seed) {}
-    std::uint64_t next() {
-        s += 0x9E3779B97F4A7C15ull;
-        std::uint64_t z = s;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        return z ^ (z >> 31);
-    }
-    // Refused rather than divided by. Every policy ends in below(free.size()),
-    // and a policy asked to choose with nothing free reached `% 0`. The harness
-    // never does that, since it stops once the ship cells are gone, but
-    // chooseShot is public and the failure was a crash rather than an error.
-    int below(int n) {
-        if (n <= 0) throw std::invalid_argument("below() needs a positive bound");
-        return static_cast<int>(next() % static_cast<std::uint64_t>(n));
-    }
-};
+// The policy stream. Rng carries the same checked below() this used to define
+// for itself, for the same reason.
+using Stream = mayflower::Rng;
 
 // What a heuristic policy needs from the history.
 //

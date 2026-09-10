@@ -25,6 +25,7 @@
 #include "mayflower/instance.hpp"
 #include "mayflower/policy.hpp"
 #include "mayflower/profile_dp.hpp"
+#include "mayflower/random.hpp"
 
 namespace {
 
@@ -133,12 +134,9 @@ int main(int argc, char** argv) {
     for (int i = 0; i < games; ++i) boards.push_back(bank.board(static_cast<std::uint64_t>(i)));
 
     std::vector<std::uint64_t> policySeeds(static_cast<std::size_t>(games));
-    for (int i = 0; i < games; ++i) {
-        std::uint64_t z = static_cast<std::uint64_t>(i) + UINT64_C(0xD1B54A32D192ED03);
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        policySeeds[static_cast<std::size_t>(i)] = z ^ (z >> 31);
-    }
+    for (int i = 0; i < games; ++i)
+        policySeeds[static_cast<std::size_t>(i)] =
+            keyedSeed(static_cast<std::uint64_t>(i), kPolicyStreamKey);
 
     struct Arm { std::string name; std::unique_ptr<Policy> policy; };
     std::vector<Arm> arms;

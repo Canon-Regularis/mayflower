@@ -19,6 +19,7 @@
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/profile_dp.hpp"
+#include "mayflower/random.hpp"
 
 namespace {
 
@@ -54,19 +55,10 @@ int main(int argc, char** argv) {
     std::vector<std::uint8_t> bytes;
     bytes.reserve(static_cast<std::size_t>(wanted) * order.size());
 
-    std::uint64_t x = key;
-    const std::uint64_t limit = UINT64_MAX - (UINT64_MAX % total) - 1;
+    // One stream across the whole pool, drawn unbiased so no rank is favoured.
+    Rng rng(key);
     for (int i = 0; i < wanted; ++i) {
-        std::uint64_t r;
-        do {
-            x += 0x9E3779B97F4A7C15ull;
-            std::uint64_t z = x;
-            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-            z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-            r = z ^ (z >> 31);
-        } while (r > limit);
-
-        auto ships = sampler.unrank(r % total);
+        auto ships = sampler.unrank(rng.belowUnbiased(total));
         // Emit in a fixed fleet order so the decoder knows each byte's length.
         // Fixed fleet order (5,4,3,3,2) so each byte's length is known by position.
         std::sort(ships.begin(), ships.end(),

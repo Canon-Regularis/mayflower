@@ -17,15 +17,13 @@
 
 #include <cstdint>
 
+#include "mayflower/random.hpp"
+
 namespace mayflower::detail {
 
-// splitmix64's finaliser, with the additive step. The general purpose choice.
-[[nodiscard]] inline std::uint64_t splitmix64(std::uint64_t x) {
-    x += 0x9E3779B97F4A7C15ull;
-    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
-    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
-    return x ^ (x >> 31);
-}
+// The general purpose choice, defined once in mayflower/random.hpp and named
+// here so the sweeps keep calling detail::splitmix64.
+using mayflower::splitmix64;
 
 // Two multiplies and two shifts. Used by the packed key rung, where the mixer
 // sits on the hot path and the keys are already well spread by construction.

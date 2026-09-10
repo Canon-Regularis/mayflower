@@ -19,6 +19,8 @@
 #include <cstdio>
 #include <string>
 
+#include "mayflower/random.hpp"
+
 namespace mf::test {
 
 // One width, so columns line up across the suite rather than per file.
@@ -65,21 +67,9 @@ void checkEq(T got, T want, const std::string& what) {
 }
 
 // splitmix64. Five test files carried this struct verbatim.
-struct Rng {
-    std::uint64_t s;
-    explicit Rng(std::uint64_t seed) : s(seed) {}
-    std::uint64_t next() {
-        s += 0x9E3779B97F4A7C15ull;
-        std::uint64_t z = s;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        return z ^ (z >> 31);
-    }
-    int below(int n) { return static_cast<int>(next() % static_cast<std::uint64_t>(n)); }
-    // The top 53 bits as a double in [0, 1). The same conversion is written
-    // out in folds.hpp, python/stats.py and three tools.
-    double unit() { return static_cast<double>(next() >> 11) / 9007199254740992.0; }
-};
+// The stream, from the one place that defines it. This struct used to be
+// copied into five test files and three tools.
+using mayflower::Rng;
 
 // Prints the tail and returns the process exit code. Pass the elapsed seconds
 // where the test measured them.

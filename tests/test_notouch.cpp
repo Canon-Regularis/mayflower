@@ -93,14 +93,8 @@ void testNeverExceedsTouching() {
 // Constraints must cut the count the same way in both implementations.
 void testConstrained() {
     std::printf("[constrained counts]\n");
-    std::uint64_t seed = 0x9E3779B97F4A7C15ull;
-    const auto next = [&]() {
-        seed += 0x9E3779B97F4A7C15ull;
-        std::uint64_t z = seed;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        return z ^ (z >> 31);
-    };
+    mf::test::Rng rng(0x9E3779B97F4A7C15ull);
+    const auto next = [&]() { return rng.next(); };
 
     int agreed = 0;
     const int trials = 240;

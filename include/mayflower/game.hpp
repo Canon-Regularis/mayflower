@@ -12,7 +12,8 @@
 
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/random.hpp"
+#include "mayflower/sampler.hpp"
 
 namespace mayflower {
 
@@ -125,16 +126,8 @@ public:
 
 private:
     [[nodiscard]] std::uint64_t rankFor(std::uint64_t gameId) const {
-        std::uint64_t x = gameId + key_;
-        const std::uint64_t limit = UINT64_MAX - (UINT64_MAX % total_) - 1;
-        while (true) {
-            x += 0x9E3779B97F4A7C15ull;
-            std::uint64_t z = x;
-            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-            z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-            z ^= z >> 31;
-            if (z <= limit) return z % total_;
-        }
+        // A stream keyed on the game, drawn unbiased so no rank is favoured.
+        return Rng(gameId + key_).belowUnbiased(total_);
     }
 
     Sampler sampler_;

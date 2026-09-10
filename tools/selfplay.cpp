@@ -19,6 +19,7 @@
 #include "mayflower/folds.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/policy.hpp"
+#include "mayflower/random.hpp"
 
 namespace {
 
@@ -190,12 +191,9 @@ int main(int argc, char** argv) {
     // stochastic policy's randomness stays independent of which board it faces.
     // Sharing one counter would tie the two together and bias the estimate.
     std::vector<std::uint64_t> policySeeds(static_cast<std::size_t>(games));
-    for (int i = 0; i < games; ++i) {
-        std::uint64_t z = static_cast<std::uint64_t>(i) + UINT64_C(0xD1B54A32D192ED03);
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        policySeeds[static_cast<std::size_t>(i)] = z ^ (z >> 31);
-    }
+    for (int i = 0; i < games; ++i)
+        policySeeds[static_cast<std::size_t>(i)] =
+            keyedSeed(static_cast<std::uint64_t>(i), kPolicyStreamKey);
 
     std::vector<std::unique_ptr<Policy>> policies;
     std::vector<std::string> names;

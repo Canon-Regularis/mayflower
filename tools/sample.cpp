@@ -13,6 +13,7 @@
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/profile_dp.hpp"
+#include "mayflower/random.hpp"
 
 namespace {
 
@@ -20,24 +21,7 @@ double seconds(std::chrono::steady_clock::time_point t0) {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 }
 
-struct SplitMix {
-    std::uint64_t s;
-    explicit SplitMix(std::uint64_t seed) : s(seed) {}
-    std::uint64_t next() {
-        s += 0x9E3779B97F4A7C15ull;
-        std::uint64_t z = s;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        return z ^ (z >> 31);
-    }
-    // Unbiased draw from [0, n) by rejection on the ragged tail.
-    std::uint64_t below(std::uint64_t n) {
-        const std::uint64_t limit = UINT64_MAX - (UINT64_MAX % n) - 1;
-        std::uint64_t r;
-        do { r = next(); } while (r > limit);
-        return r % n;
-    }
-};
+using mayflower::Rng;
 
 }  // namespace
 
@@ -68,13 +52,13 @@ int main() {
     const std::vector<std::uint64_t> exact = occupancyMap(inst, exactTotal);
 
     const int samples = 200000;
-    SplitMix rng(0x5EED1234u);
+    Rng rng(0x5EED1234u);
     std::vector<std::uint64_t> counted(static_cast<std::size_t>(inst.cellCount()), 0);
     int badFleet = 0, overlaps = 0;
 
     const auto t1 = std::chrono::steady_clock::now();
     for (int i = 0; i < samples; ++i) {
-        const auto ships = sampler.unrank(rng.below(total));
+        const auto ships = sampler.unrank(rng.belowUnbiased(total));
         if (static_cast<int>(ships.size()) != static_cast<int>(inst.fleet.size())) ++badFleet;
 
         std::vector<char> seen(static_cast<std::size_t>(inst.cellCount()), 0);
