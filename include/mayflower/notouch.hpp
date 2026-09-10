@@ -37,7 +37,7 @@
 #include <vector>
 
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/counting.hpp"
 
 namespace mayflower {
 

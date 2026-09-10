@@ -51,7 +51,7 @@
 #include <vector>
 
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
 
 namespace mayflower {
 

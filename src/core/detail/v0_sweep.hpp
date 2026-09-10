@@ -18,11 +18,12 @@
 #include <utility>
 #include <vector>
 
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
 
 #include "fleet_counter.hpp"
 #include "hashing.hpp"
 #include "placement_gate.hpp"
+#include "cell_ctx.hpp"
 #include "profile_key.hpp"
 
 namespace mayflower::detail {
@@ -124,17 +125,6 @@ private:
     std::vector<std::size_t>   dense_;
 };
 
-// Everything the transition function needs about one cell.
-struct CellCtx {
-    int  row = 0;
-    int  col = 0;
-    int  shift = 0;
-    bool mustBeEmpty = false;
-    bool mustBeOccupied = false;
-    const std::uint8_t* allowH = nullptr;   // nLengths entries, or nullptr
-    const std::uint8_t* allowV = nullptr;
-};
-
 enum class Kind : std::uint8_t { HorizContinue, VertContinue, Empty, StartH, StartV };
 
 // The single definition of the transition relation. Forward accumulation,
@@ -179,24 +169,6 @@ inline void transitions(const Key& key, const CellCtx& ctx, const FleetCounter& 
             emit(Key{key.ext, packAux(L - 1, nf)}, Kind::StartV, L);
         }
     }
-}
-
-inline CellCtx makeCtx(const Instance& inst, const Constraints& c, const FleetCounter& fc,
-                int row, int col) {
-    const std::size_t cell = static_cast<std::size_t>(row * inst.width + col);
-    const CellConstraint cc = c.cells[cell];
-    CellCtx ctx;
-    ctx.row = row;
-    ctx.col = col;
-    ctx.shift = 3 * row;
-    ctx.mustBeEmpty = cc == CellConstraint::MustBeEmpty;
-    ctx.mustBeOccupied = cc == CellConstraint::MustBeOccupied;
-    if (c.gated()) {
-        const std::size_t base = cell * fc.lengths.size();
-        ctx.allowH = &c.allowH[base];
-        ctx.allowV = &c.allowV[base];
-    }
-    return ctx;
 }
 
 [[nodiscard]] inline bool accepting(const Key& key, const FleetCounter& fc) {

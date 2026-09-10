@@ -8,6 +8,7 @@
 #include "mayflower/profile_dp.hpp"
 
 #include "detail/v0_sweep.hpp"
+#include "detail/entry.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -117,8 +118,7 @@ Sampler::Sampler(const Instance& inst, const Constraints& constraints)
     : impl_(std::make_unique<Impl>(inst, constraints)) {}
 
 Sampler::Sampler(const Instance& inst) : impl_(nullptr) {
-    Constraints c;
-    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    Constraints c = detail::freeConstraints(inst);
     impl_ = std::make_unique<Impl>(inst, c);
 }
 

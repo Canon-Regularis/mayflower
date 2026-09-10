@@ -4,6 +4,8 @@
 #include "detail/profile_key.hpp"
 #include "detail/placement_gate.hpp"
 #include "detail/hashing.hpp"
+#include "detail/cell_ctx.hpp"
+#include "detail/entry.hpp"
 
 #include <algorithm>
 #include <stdexcept>
@@ -156,30 +158,8 @@ private:
     std::vector<std::size_t> dense_;
 };
 
-struct CellCtx {
-    int row = 0;
-    int col = 0;
-    bool mustBeEmpty = false;
-    bool mustBeOccupied = false;
-    const std::uint8_t* allowH = nullptr;
-    const std::uint8_t* allowV = nullptr;
-};
-
-CellCtx makeCtx(const Instance& inst, const Constraints& c, const FleetCounter& fc,
-                int row, int col) {
-    const std::size_t cell = static_cast<std::size_t>(row * inst.width + col);
-    CellCtx ctx;
-    ctx.row = row;
-    ctx.col = col;
-    ctx.mustBeEmpty = c.cells[cell] == CellConstraint::MustBeEmpty;
-    ctx.mustBeOccupied = c.cells[cell] == CellConstraint::MustBeOccupied;
-    if (c.gated()) {
-        const std::size_t base = cell * fc.lengths.size();
-        ctx.allowH = &c.allowH[base];
-        ctx.allowV = &c.allowV[base];
-    }
-    return ctx;
-}
+using detail::CellCtx;
+using detail::makeCtx;
 
 // The transition relation. See notouch.hpp for the neighbour table this encodes.
 template <typename Emit>
@@ -253,9 +233,7 @@ int noTouchKeyBits(const Instance& inst) {
 bool noTouchSupports(const Instance& inst) { return noTouchKeyBits(inst) <= 64; }
 
 CountResult countNoTouch(const Instance& inst, const Constraints& constraints) {
-    inst.validate();
-    if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
-        throw std::invalid_argument("constraint vector size must equal cellCount()");
+    detail::checkConstraints(inst, constraints);
 
     const int W = inst.width, H = inst.height;
     const FleetCounter fc(inst);
@@ -305,8 +283,7 @@ CountResult countNoTouch(const Instance& inst, const std::vector<CellConstraint>
 }
 
 CountResult countNoTouch(const Instance& inst) {
-    Constraints c;
-    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    Constraints c = detail::freeConstraints(inst);
     return countNoTouch(inst, c);
 }
 

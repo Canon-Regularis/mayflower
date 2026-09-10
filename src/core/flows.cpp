@@ -2,6 +2,7 @@
 #include "mayflower/profile_dp.hpp"
 
 #include "detail/v0_sweep.hpp"
+#include "detail/entry.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -52,9 +53,7 @@ std::size_t placementIndex(const Instance& inst, int row, int col, int lengthInd
 }
 
 LatticeFlows analyse(const Instance& inst, const Constraints& constraints) {
-    inst.validate();
-    if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
-        throw std::invalid_argument("constraint vector size must equal cellCount()");
+    detail::checkConstraints(inst, constraints);
 
     const int W = inst.width, H = inst.height;
     const FleetCounter fc(inst);
@@ -153,8 +152,7 @@ std::vector<std::uint64_t> occupancyMap(const Instance& inst,
 }
 
 std::vector<std::uint64_t> occupancyMap(const Instance& inst, std::uint64_t& total) {
-    Constraints c;
-    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    Constraints c = detail::freeConstraints(inst);
     return occupancyMap(inst, c, total);
 }
 

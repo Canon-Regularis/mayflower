@@ -6,7 +6,6 @@
 // paid for, which is what makes exact information gain affordable.
 #include "mayflower/profile_dp.hpp"
 
-#include "detail/v0_sweep.hpp"
 
 #include <cmath>
 #include <cstdint>

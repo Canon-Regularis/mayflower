@@ -7,7 +7,6 @@
 // notion of time.
 #include "mayflower/profile_dp.hpp"
 
-#include "detail/v0_sweep.hpp"
 
 #include <vector>
 

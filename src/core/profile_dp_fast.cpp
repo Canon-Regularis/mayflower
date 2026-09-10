@@ -32,6 +32,7 @@
 
 #include "detail/hashing.hpp"
 #include "detail/profile_key.hpp"
+#include "detail/entry.hpp"
 
 namespace mayflower {
 namespace {
@@ -138,9 +139,7 @@ bool fastPathSupports(const Instance& inst) {
 
 CountResult countConfigurationsFast(const Instance& inst, const Constraints& constraints,
                                     std::size_t capacityHint) {
-    inst.validate();
-    if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
-        throw std::invalid_argument("constraint vector size must equal cellCount()");
+    detail::checkConstraints(inst, constraints);
     if (!fastPathSupports(inst))
         throw std::invalid_argument("instance does not fit the packed-key fast path");
 
@@ -301,8 +300,7 @@ CountResult countConfigurationsFast(const Instance& inst, const Constraints& con
 }
 
 CountResult countConfigurationsFast(const Instance& inst) {
-    Constraints c;
-    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    Constraints c = detail::freeConstraints(inst);
     return countConfigurationsFast(inst, c, 0);
 }
 

@@ -7,6 +7,7 @@
 #include "mayflower/profile_dp.hpp"
 
 #include "detail/v0_sweep.hpp"
+#include "detail/entry.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -29,9 +30,7 @@ using detail::packAux;
 }  // namespace
 
 CountResult countConfigurations(const Instance& inst, const Constraints& constraints) {
-    inst.validate();
-    if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
-        throw std::invalid_argument("constraint vector size must equal cellCount()");
+    detail::checkConstraints(inst, constraints);
 
     const int W = inst.width, H = inst.height;
     const FleetCounter fc(inst);
@@ -76,14 +75,12 @@ CountResult countConfigurations(const Instance& inst,
 }
 
 CountResult countConfigurations(const Instance& inst) {
-    Constraints c;
-    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    Constraints c = detail::freeConstraints(inst);
     return countConfigurations(inst, c);
 }
 
 std::uint64_t occupancyCount(const Instance& inst, int row, int col) {
-    Constraints c;
-    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    Constraints c = detail::freeConstraints(inst);
     c.cells[static_cast<std::size_t>(row * inst.width + col)] = CellConstraint::MustBeOccupied;
     return countConfigurations(inst, c).count;
 }

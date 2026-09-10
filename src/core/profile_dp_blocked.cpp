@@ -45,12 +45,14 @@
 #include <memory>
 #include <vector>
 
-#include "mayflower/platform.hpp"
 
 #include "detail/fleet_counter.hpp"
 #include "detail/profile_key.hpp"
 #include "detail/placement_gate.hpp"
 #include "detail/hashing.hpp"
+#include "detail/cell_ctx.hpp"
+#include "detail/merge_pool.hpp"
+#include "detail/entry.hpp"
 
 namespace mayflower {
 namespace {
@@ -66,81 +68,7 @@ constexpr std::size_t kRadix = std::size_t{1} << kRadixBits;
 // less time than a barrier round trip gains nothing from being divided.
 constexpr std::uint64_t kParallelFloor = 8000;
 
-// Workers created once per sweep rather than once per cell.
-//
-// The first version of this rung spawned a thread per bucket range per cell.
-// Thread creation measured several milliseconds here, and a sweep has a hundred
-// cells, so V3 was reliably SLOWER than V2: the standard instance scaled to
-// 0.56x at ten threads, and 6x6 took 4.5 s where one thread took 0.008. The
-// work was never the problem. The pool below creates each worker once, and every
-// cell costs one barrier instead of a fresh set of threads.
-//
-// Each worker owns a fixed slice of the bucket range for the whole sweep, so
-// there is no queue and no stealing, and no two workers ever touch one bucket.
-class MergePool {
-public:
-    MergePool(int workers, std::function<void(std::size_t, std::size_t)> job)
-        : job_(std::move(job)) {
-        for (int t = 0; t < workers; ++t) {
-            const std::size_t from = kRadix * static_cast<std::size_t>(t) /
-                                     static_cast<std::size_t>(workers);
-            const std::size_t to = kRadix * static_cast<std::size_t>(t + 1) /
-                                   static_cast<std::size_t>(workers);
-            threads_.emplace_back([this, from, to] { loop(from, to); });
-        }
-        live_ = workers;
-    }
-
-    ~MergePool() {
-        {
-            std::lock_guard<std::mutex> lock(m_);
-            stop_ = true;
-            ++generation_;
-        }
-        work_.notify_all();
-        for (auto& t : threads_) t.join();
-    }
-
-    // Run the job over every slice and return once all of them are finished.
-    void runAll() {
-        {
-            std::lock_guard<std::mutex> lock(m_);
-            pending_ = live_;
-            ++generation_;
-        }
-        work_.notify_all();
-        std::unique_lock<std::mutex> lock(m_);
-        done_.wait(lock, [this] { return pending_ == 0; });
-    }
-
-private:
-    void loop(std::size_t from, std::size_t to) {
-        std::uint64_t seen = 0;
-        while (true) {
-            {
-                std::unique_lock<std::mutex> lock(m_);
-                work_.wait(lock, [this, seen] { return generation_ != seen; });
-                seen = generation_;
-                if (stop_) return;
-            }
-            job_(from, to);
-            {
-                std::lock_guard<std::mutex> lock(m_);
-                --pending_;
-            }
-            done_.notify_one();
-        }
-    }
-
-    std::function<void(std::size_t, std::size_t)> job_;
-    std::vector<std::thread> threads_;
-    std::mutex m_;
-    std::condition_variable work_, done_;
-    std::uint64_t generation_ = 0;
-    int pending_ = 0;
-    int live_ = 0;
-    bool stop_ = false;
-};
+using detail::MergePool;
 
 using detail::extDigit;
 using detail::FleetCounter;
@@ -240,30 +168,8 @@ private:
     std::vector<std::size_t> touched_;
 };
 
-struct CellCtx {
-    int row = 0;
-    int col = 0;
-    bool mustBeEmpty = false;
-    bool mustBeOccupied = false;
-    const std::uint8_t* allowH = nullptr;
-    const std::uint8_t* allowV = nullptr;
-};
-
-CellCtx makeCtx(const Instance& inst, const Constraints& c, const FleetCounter& fc,
-                int row, int col) {
-    const std::size_t cell = static_cast<std::size_t>(row * inst.width + col);
-    CellCtx ctx;
-    ctx.row = row;
-    ctx.col = col;
-    ctx.mustBeEmpty = c.cells[cell] == CellConstraint::MustBeEmpty;
-    ctx.mustBeOccupied = c.cells[cell] == CellConstraint::MustBeOccupied;
-    if (c.gated()) {
-        const std::size_t base = cell * fc.lengths.size();
-        ctx.allowH = &c.allowH[base];
-        ctx.allowV = &c.allowV[base];
-    }
-    return ctx;
-}
+using detail::CellCtx;
+using detail::makeCtx;
 
 // Same relation as profile_dp.cpp, over the packed key.
 template <typename Emit>
@@ -315,9 +221,7 @@ bool blockedPathSupports(const Instance& inst) {
 
 CountResult countConfigurationsBlocked(const Instance& inst, const Constraints& constraints,
                                        int threads) {
-    inst.validate();
-    if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
-        throw std::invalid_argument("constraint vector size must equal cellCount()");
+    detail::checkConstraints(inst, constraints);
     if (!blockedPathSupports(inst))
         throw std::invalid_argument("instance does not fit the blocked path");
     if (threads < 1) threads = 1;
@@ -348,7 +252,7 @@ CountResult countConfigurationsBlocked(const Instance& inst, const Constraints& 
     std::unique_ptr<MergePool> pool;
     if (threads > 1)
         pool = std::make_unique<MergePool>(std::min<int>(threads, static_cast<int>(kRadix)),
-                                           mergeRange);
+                                           kRadix, mergeRange);
 
     for (int col = 0; col < W; ++col) {
         for (int row = 0; row < H; ++row) {
@@ -401,8 +305,7 @@ CountResult countConfigurationsBlocked(const Instance& inst,
 }
 
 CountResult countConfigurationsBlocked(const Instance& inst, int threads) {
-    Constraints c;
-    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    Constraints c = detail::freeConstraints(inst);
     return countConfigurationsBlocked(inst, c, threads);
 }
 

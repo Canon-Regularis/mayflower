@@ -4,6 +4,8 @@
 #include "detail/placement_gate.hpp"
 #include "detail/hashing.hpp"
 #include "detail/profile_key.hpp"
+#include "detail/cell_ctx.hpp"
+#include "detail/entry.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -150,14 +152,8 @@ void loadInto(WeightMap& m, const std::vector<std::pair<Key, double>>& entries) 
     for (const auto& e : entries) m.add(e.first, e.second);
 }
 
-struct CellCtx {
-    int row = 0;
-    int col = 0;
-    int shift = 0;
-    bool mustBeEmpty = false;
-    bool mustBeOccupied = false;
-    const std::uint8_t* allowH = nullptr;
-    const std::uint8_t* allowV = nullptr;
+// The shared context plus what only a weighted sweep needs.
+struct CellCtx : detail::CellCtx {
     // Weight lookups, already resolved for this cell. A null pointer means 1.
     double occupied = 1.0;
     double empty = 1.0;
@@ -169,16 +165,7 @@ CellCtx makeCtx(const Instance& inst, const Constraints& c, const Weights& w,
                 const FleetCounter& fc, int row, int col) {
     const std::size_t cell = static_cast<std::size_t>(row * inst.width + col);
     CellCtx ctx;
-    ctx.row = row;
-    ctx.col = col;
-    ctx.shift = 3 * row;
-    ctx.mustBeEmpty = c.cells[cell] == CellConstraint::MustBeEmpty;
-    ctx.mustBeOccupied = c.cells[cell] == CellConstraint::MustBeOccupied;
-    if (c.gated()) {
-        const std::size_t base = cell * fc.lengths.size();
-        ctx.allowH = &c.allowH[base];
-        ctx.allowV = &c.allowV[base];
-    }
+    detail::fillCellCtx(ctx, inst, c, fc, row, col);
     if (!w.occupied.empty()) ctx.occupied = w.occupied[cell];
     if (!w.empty.empty()) ctx.empty = w.empty[cell];
     const std::size_t base = cell * fc.lengths.size();
@@ -319,9 +306,7 @@ Weights Weights::fromLogPlacementScores(const Instance& inst,
 
 WeightedResult weightedCount(const Instance& inst, const Constraints& constraints,
                              const Weights& weights) {
-    inst.validate();
-    if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
-        throw std::invalid_argument("constraint vector size must equal cellCount()");
+    detail::checkConstraints(inst, constraints);
 
     const int W = inst.width, H = inst.height;
     const FleetCounter fc(inst);
@@ -407,8 +392,7 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
 }
 
 WeightedResult weightedCount(const Instance& inst, const Weights& weights) {
-    Constraints c;
-    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+    Constraints c = detail::freeConstraints(inst);
     return weightedCount(inst, c, weights);
 }
 
@@ -467,9 +451,7 @@ constexpr const char* kUnderflowMessage =
 
 std::vector<double> weightedMarginals(const Instance& inst, const Constraints& constraints,
                                       const Weights& weights) {
-    inst.validate();
-    if (constraints.cells.size() != static_cast<std::size_t>(inst.cellCount()))
-        throw std::invalid_argument("constraint vector size must equal cellCount()");
+    detail::checkConstraints(inst, constraints);
 
     const int W = inst.width, H = inst.height;
     const FleetCounter fc(inst);
