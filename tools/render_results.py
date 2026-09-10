@@ -100,11 +100,18 @@ def ladder(bounds, best):
     out.append('<text x="{:.1f}" y="{}" class="tk" text-anchor="middle">shots</text>'
                .format(x(25), y + 40))
 
+    # The printed value is formatted from the same number that positions the
+    # mark. It used to be a string literal beside it, so a bound that moved slid
+    # its dot and left its label behind, on a page whose first line says nothing
+    # is transcribed. The formats reproduce today's labels exactly.
     marks = [
-        (bounds["entropy"], "entropy", "13.08", "dominated", -58),
-        (bounds["coverage"], "coverage", "17", "exact", -34),
-        (bounds["waterfilling"], "water filling", "24.088", "binding floor", -58),
-        (best, "density policy", "44.369", "best measured", -34),
+        (bounds["entropy"], "entropy", "{:.2f}".format(bounds["entropy"]),
+         "dominated", -58),
+        (bounds["coverage"], "coverage", "{:.0f}".format(bounds["coverage"]),
+         "exact", -34),
+        (bounds["waterfilling"], "water filling",
+         "{:.3f}".format(bounds["waterfilling"]), "binding floor", -58),
+        (best, "density policy", "{:.3f}".format(best), "best measured", -34),
     ]
     for v, label, value, kind, dy in marks:
         cls = "mk-open" if kind == "dominated" else (
