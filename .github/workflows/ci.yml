@@ -90,17 +90,29 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      # Five fast tests are registered only when CMake finds an interpreter, so a
-      # runner without Python or Node would shrink the suite and still report
-      # green. Name them rather than count them, so adding a test does not have to
-      # touch this.
+      # Fifteen tests are registered only when CMake finds Python, and three of
+      # those need Node as well, so a runner missing either would shrink the
+      # suite and still report green. Name them rather than count them, so
+      # adding a test does not have to touch this.
+      #
+      # The check reads the listing, not the exit code. ctest ignores
+      # --no-tests=error in -N mode and exits zero for a pattern that matches
+      # nothing, so the previous form could not fail: it reported success even
+      # when none of them were registered.
       - name: Every interpreter-gated test was registered
         shell: bash
         run: |
-          for t in stats report_data results pool selfplay_fold tool_cli oracle engine_js scrubber_js live_js bond_dimension; do
-            ctest --test-dir build -N -R "^$t$" --no-tests=error >/dev/null \
-              || { echo "$t is missing: CMake did not find its interpreter"; exit 1; }
+          missing=""
+          for t in python_names stats report_data results pool selfplay_fold run_headline \
+                   render_results live_exact tool_cli tools_output oracle \
+                   engine_js scrubber_js live_js bond_dimension; do
+            ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
+              | grep -q "Total Tests: 1" || missing="$missing $t"
           done
+          if [ -n "$missing" ]; then
+            echo "not registered, so CMake found no interpreter for:$missing"
+            exit 1
+          fi
 
       # out/ is generated and not in the repository, so report_data, results and
       # scrubber_js report Skipped here. The nightly workflow generates it and
@@ -145,10 +157,17 @@ jobs:
 
       - name: Every interpreter-gated test was registered
         run: |
-          for t in stats report_data results pool selfplay_fold tool_cli oracle engine_js scrubber_js live_js bond_dimension; do
-            ctest --test-dir build -N -R "^$t$" --no-tests=error >/dev/null \
-              || { echo "$t is missing: CMake did not find its interpreter"; exit 1; }
+          missing=""
+          for t in python_names stats report_data results pool selfplay_fold run_headline \
+                   render_results live_exact tool_cli tools_output oracle \
+                   engine_js scrubber_js live_js bond_dimension; do
+            ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
+              | grep -q "Total Tests: 1" || missing="$missing $t"
           done
+          if [ -n "$missing" ]; then
+            echo "not registered, so CMake found no interpreter for:$missing"
+            exit 1
+          fi
 
       - name: Test
         run: ctest --test-dir build -L fast --output-on-failure --no-tests=error
@@ -229,7 +248,7 @@ jobs:
     # every push to a branch.
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    # -L pr is fourteen tests, twelve at TIMEOUT 900 and two at 1800, so ctest
+    # -L pr is fifteen tests, thirteen at TIMEOUT 900 and two at 1800, so ctest
     # itself may spend 240 minutes before it gives up on its own.
     timeout-minutes: 260
     steps:

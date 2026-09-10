@@ -23,7 +23,7 @@ jobs:
   extended:
     name: extended suite
     runs-on: ubuntu-24.04
-    # -L pr is fourteen tests, twelve at TIMEOUT 900 and two at 1800, so ctest
+    # -L pr is fifteen tests, thirteen at TIMEOUT 900 and two at 1800, so ctest
     # itself may spend 240 minutes before giving up.
     timeout-minutes: 260
     steps:
@@ -58,10 +58,25 @@ jobs:
   uniformity:
     name: uniformity at scale
     runs-on: ubuntu-24.04
-    # test_uniformity carries TIMEOUT 3600 on its own.
-    timeout-minutes: 90
+    # The nightly label selects two tests, not one: test_uniformity and
+    # live_exact, each carrying TIMEOUT 3600. live_exact is recorded as
+    # taking 877 s on a busy runner, so 90 minutes was not enough headroom
+    # for the pair.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
+
+      # live_exact drives node through Python. This job had neither, and
+      # worked only because the runner image happens to ship both: CMake
+      # would otherwise not register the test at all, and nothing would say
+      # so.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
 
       - name: Cache compilation
         uses: hendrikmuhs/ccache-action@v1
@@ -76,13 +91,13 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_FLAGS="$WERROR" \
             $CMAKE_ARGS
-          cmake --build build --target test_uniformity
+          cmake --build build
 
       # 300,000 draws against the exact marginals. A biased board generator would
       # poison every measured statistic in the project without being visible
       # anywhere else, which is why this is checked at scale as well as proved by
       # the exhaustive unrank test.
-      - name: Uniformity
+      - name: The nightly label
         run: ctest --test-dir build -L nightly --output-on-failure --no-tests=error
 
   report-pipeline:
@@ -146,7 +161,9 @@ jobs:
       # what these three are gated on.
       - name: The figure-data contract
         run: |
-          ctest --test-dir build -R '^(report_data|results|scrubber_js)$' \n            --output-on-failure --no-tests=error > figure-data.log 2>&1 \n            || { cat figure-data.log; exit 1; }
+          ctest --test-dir build -R '^(report_data|results|scrubber_js)$' \
+            --output-on-failure --no-tests=error > figure-data.log 2>&1 \
+            || { cat figure-data.log; exit 1; }
           cat figure-data.log
           if grep -q Skipped figure-data.log; then
             echo 'a figure-data test skipped in the job that exists to run it'

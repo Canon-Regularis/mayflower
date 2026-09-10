@@ -75,18 +75,26 @@ endforeach()
 # translation units that order their includes differently, so the same argument
 # applies to it: a detail header that only compiles after something else has to
 # fail here rather than in whichever sweep happens to include it first.
+#
+# src/search/detail holds the same kind of header, shared between the solver
+# and tools/opponent.cpp, so the glob spans every src/*/detail directory
+# rather than naming one. The generated unit includes the path relative to
+# src, which is what both consumers already put on their include path.
 file(GLOB MF_DETAIL_HEADERS CONFIGURE_DEPENDS
-     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/detail/*.hpp)
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/*/detail/*.hpp)
 foreach(hdr IN LISTS MF_DETAIL_HEADERS)
   get_filename_component(hdr_name ${hdr} NAME_WE)
-  set(gen ${CMAKE_CURRENT_BINARY_DIR}/header_selftest/detail_${hdr_name}.cpp)
-  file(WRITE ${gen} "#include \"detail/${hdr_name}.hpp\"\n")
+  file(RELATIVE_PATH hdr_rel ${CMAKE_CURRENT_SOURCE_DIR}/src ${hdr})
+  string(REPLACE "/" "_" hdr_tag ${hdr_rel})
+  string(REPLACE ".hpp" "" hdr_tag ${hdr_tag})
+  set(gen ${CMAKE_CURRENT_BINARY_DIR}/header_selftest/${hdr_tag}.cpp)
+  file(WRITE ${gen} "#include \"${hdr_rel}\"\n")
   list(APPEND MF_HEADER_TUS ${gen})
 endforeach()
 
 add_library(mayflower_headers OBJECT ${MF_HEADER_TUS})
 target_link_libraries(mayflower_headers PRIVATE mf_flags)
-target_include_directories(mayflower_headers PRIVATE include src/core)
+target_include_directories(mayflower_headers PRIVATE include src src/core)
 
 # The oracle is the independent check the differential suite rests on: eight
 # tests compare a sweep against it, and the comparison is only evidence while it
@@ -274,6 +282,14 @@ target_link_libraries(test_platform PRIVATE mayflower_core)
 mf_test(platform COMMAND test_platform LABEL fast SKIPPABLE)
 
 if(Python3_Interpreter_FOUND)
+# An import that loses a name is invisible until the line holding it runs, and
+# the lines least likely to run are the ones most likely to be wrong. CI was red
+# for two days on one such name, in a branch only CI reaches. This reads the
+# syntax, so a branch that never executes is checked anyway.
+mf_test(python_names
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_python_names.py
+  LABEL fast)
+
 mf_test(stats
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick
   LABEL fast)
@@ -327,22 +343,6 @@ mf_test(render_results
   SKIPPABLE
   WORKDIR ${CMAKE_CURRENT_SOURCE_DIR})
 
-# The live widget's exact regime, and a game played through it. It has two
-# regimes and every other probe hands it the whole pool, so the branch that runs
-# the exact sweep was executed by nothing.
-#
-# Nightly rather than per-pull-request. The work is a string of exact sweeps over
-# the 10x10 lattice: about 130 s on an idle machine, and 877 s on a busy one,
-# where it overran its own subprocess clock and turned red on time rather than on
-# anything it measured. The widget is deterministic, so nothing but the clock can
-# vary, and a gate that a loaded runner can fail is worse than a slower one.
-mf_test(live_exact
-  COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE} ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_live_exact.py
-  LABEL nightly
-  TIMEOUT 3600
-  SKIPPABLE
-  WORKDIR ${CMAKE_CURRENT_SOURCE_DIR})
-
 # The tools are too slow to run in a suite; their entry points are not. atoi
 # turns a bad argument into 0, and each tool then divides by that count or writes
 # an artefact from it. export_pool emptied web/pool.bin and exited 0.
@@ -372,6 +372,27 @@ endif()
 # live widget is the only thing that runs it. Checked against the Python oracle,
 # which shares no code with either it or the C++.
 if(Python3_Interpreter_FOUND AND MF_NODE)
+
+# Registered here rather than with the Python-only tests. It drives node
+# like its three siblings below, and in the Python block a machine with
+# Python and no node resolved MF_NODE to MF_NODE-NOTFOUND, the test took
+# that as its interpreter, and subprocess raised FileNotFoundError where
+# every sibling gives a skip.
+# The live widget's exact regime, and a game played through it. It has two
+# regimes and every other probe hands it the whole pool, so the branch that runs
+# the exact sweep was executed by nothing.
+#
+# Nightly rather than per-pull-request. The work is a string of exact sweeps over
+# the 10x10 lattice: about 130 s on an idle machine, and 877 s on a busy one,
+# where it overran its own subprocess clock and turned red on time rather than on
+# anything it measured. The widget is deterministic, so nothing but the clock can
+# vary, and a gate that a loaded runner can fail is worse than a slower one.
+mf_test(live_exact
+  COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE} ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_live_exact.py
+  LABEL nightly
+  TIMEOUT 3600
+  SKIPPABLE
+  WORKDIR ${CMAKE_CURRENT_SOURCE_DIR})
 mf_test(engine_js
   COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE} ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_engine_js.py
   LABEL fast)
