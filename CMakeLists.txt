@@ -52,6 +52,7 @@ add_library(mayflower_core
   src/certify/blocking.cpp
   src/certify/transcripts.cpp
   src/search/exact_solver.cpp
+  src/search/policy_expectation.cpp
   src/platform/bench_platform_win.cpp
   src/lattice/spectrum.cpp)
 target_include_directories(mayflower_core PUBLIC include)
@@ -124,6 +125,10 @@ target_link_libraries(optimal PRIVATE mayflower_core)
 
 add_executable(opponent tools/opponent.cpp)
 target_link_libraries(opponent PRIVATE mayflower_core)
+# opponent.cpp reimplements the exact searcher's board enumeration to study a
+# belief policy, so it shares the searcher's internal outcome encoding rather
+# than carrying a second copy of it.
+target_include_directories(opponent PRIVATE src)
 
 # One declaration per test.
 #
@@ -164,8 +169,19 @@ mf_test(maxcover COMMAND maxcover selftest LABEL pr TIMEOUT 900)
 add_executable(weighted tools/weighted.cpp)
 target_link_libraries(weighted PRIVATE mayflower_core)
 
-add_executable(m9 tools/m9.cpp)
+# One file per mathematical extension. tools/m9.cpp is the dispatcher; the
+# eight experiments and the enumerator they share live under tools/m9.
+add_executable(m9
+  tools/m9.cpp
+  tools/m9/adaptivity.cpp
+  tools/m9/adversary.cpp
+  tools/m9/bimaru.cpp
+  tools/m9/density.cpp
+  tools/m9/noisy.cpp
+  tools/m9/salvo.cpp
+  tools/m9/selftest.cpp)
 target_link_libraries(m9 PRIVATE mayflower_core)
+target_include_directories(m9 PRIVATE tools)
 
 mf_test(m9 COMMAND m9 selftest LABEL pr TIMEOUT 900)
 
