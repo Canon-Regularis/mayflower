@@ -15,7 +15,9 @@ stand in, in three.
 
 from __future__ import annotations
 
+import io
 import os
+import re
 import subprocess
 
 # ctest reads this as "Skipped" through SKIP_RETURN_CODE. It means the artefact
@@ -23,6 +25,38 @@ import subprocess
 SKIP = 77
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def widget_env():
+    """The values tools/render_report.py puts on the two report widgets.
+
+    web/live.js and web/scrubber.js read the ramp width and the size of the
+    hypothesis space off the element instead of carrying their own copies. A
+    headless harness that leaves those attributes out hands them
+    Number(undefined), which is NaN, so every cell paints var(--ramp-NaN) and the
+    live widget reports a hypothesis count of NaN. That is not loud: it silently
+    stopped test_live_exact.py from seeing the sampled regime at all, because its
+    regex for the count cannot match NaN.
+
+    Read from the same places the renderer reads them, so a harness cannot drift
+    from the page. Returned as strings, which is what a real dataset holds.
+    """
+    header = io.open(os.path.join(ROOT, "include", "mayflower", "constants.hpp"),
+                     encoding="utf-8").read()
+    m = re.search(r"kOmega0 = ([0-9']+)ull", header)
+    if not m:
+        raise KeyError("kOmega0 not found in constants.hpp")
+
+    builder = io.open(os.path.join(ROOT, "tools", "build_report.py"),
+                      encoding="utf-8").read()
+    b = re.search(r"^BUCKETS = ([0-9]+)", builder, re.M)
+    if not b:
+        raise KeyError("BUCKETS not found in build_report.py")
+
+    env = dict(os.environ)
+    env["MF_OMEGA"] = m.group(1).replace("'", "")
+    env["MF_BUCKETS"] = b.group(1)
+    return env
 
 _failures = 0
 

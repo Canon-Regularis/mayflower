@@ -18,11 +18,17 @@ import base64
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+from _harness import ROOT, SKIP, check, exe, report, run, widget_env  # noqa: E402
+from _jsdriver import GLYPHS, write_engine_script  # noqa: E402
+
+# The engine as the page inlines it, written once for this process. The
+# harnesses eval it whole, so what they run is what the page runs.
+ENGINE_SCRIPT = write_engine_script()
 
 NODE = os.environ.get("MF_NODE", "node")
 POOL = os.path.join(ROOT, "web", "pool.bin")
@@ -67,6 +73,8 @@ function makeEl(tag) {
 
 const root = makeEl('div');
 root.dataset.pool = fs.readFileSync(process.argv[2]).toString('base64');
+root.dataset.omega = process.env.MF_OMEGA;
+root.dataset.buckets = process.env.MF_BUCKETS;
 const nodes = {
   '.liveboard': makeEl('div'),
   '.livestats': makeEl('div'),
@@ -81,11 +89,10 @@ global.document = { getElementById: (id) => (id === 'live' ? root : null), creat
 global.window = {};
 
 // Inline the engine exactly as tools/render_report.py does.
-let eng = fs.readFileSync(process.argv[3], 'utf8');
-eng = eng.split('export const ').join('const ').split('export function ').join('function ');
-eval('(function(){\n' + eng +
-     '\nwindow.MayflowerEngine = { makeInstance, count, marginals, constrain,' +
-     ' MISS, HIT, SUNK, FREE, EMPTY, OCCUPIED };\n})();');
+// Already a classic script: tests/_jsdriver.py inlines it with the page's
+// own loader, so the harness runs exactly what the page runs.
+const eng = fs.readFileSync(process.argv[3], 'utf8');
+eval(eng);   // load_engine already published the manifest
 
 // A fixed board, so the run is reproducible.
 Math.random = () => 0.4242;
@@ -119,6 +126,12 @@ out.pendingAfterFourMore = pending();
 advance(260);
 out.pendingAfterTick = pending();
 
+// The widget takes its ramp width and its hypothesis space off the
+// element. When the harness omitted them both arrived as undefined and
+// every cell painted var(--ramp-NaN), which nothing here looked at.
+out.boardHtml = nodes['.liveboard'].innerHTML;
+out.statsHtml = stats.innerHTML;
+
 console.log(JSON.stringify(out));
 """
 
@@ -140,12 +153,15 @@ function makeEl(tag) { return { tagName: tag, children: [], listeners: {}, attrs
   addEventListener(k,fn){(this.listeners[k]=this.listeners[k]||[]).push(fn);},
   setAttribute(k,v){this.attrs[k]=v;},
   fire(k,ev){(this.listeners[k]||[]).forEach(fn=>fn(ev||{preventDefault(){}}));} }; }
-let eng = fs.readFileSync(process.argv[3],'utf8')
-  .split('export const ').join('const ').split('export function ').join('function ');
+// Already a classic script: tests/_jsdriver.py inlines it with the page's
+// own loader, so the harness runs exactly what the page runs.
+const eng = fs.readFileSync(process.argv[3],'utf8');
 const live = fs.readFileSync(process.argv[4],'utf8');
 const real = fs.readFileSync(process.argv[2]);
 function build(pool) {
   const root = makeEl('div'); root.dataset.pool = pool.toString('base64');
+  root.dataset.omega = process.env.MF_OMEGA;
+  root.dataset.buckets = process.env.MF_BUCKETS;
   const nodes = {'.liveboard':makeEl('div'),'.livestats':makeEl('div'),
     '[data-act="new"]':makeEl('button'),'[data-act="step"]':makeEl('button'),
     '[data-act="play"]':makeEl('button'),'[data-act="reveal"]':makeEl('button')};
@@ -153,7 +169,7 @@ function build(pool) {
   global.document = { getElementById: id => id==='live'?root:null, createElement: makeEl };
   global.window = {}; Math.random = () => 0.4242;
   try {
-    eval('(function(){\n'+eng+'\nwindow.MayflowerEngine={makeInstance,count,marginals,constrain,MISS,HIT,SUNK,FREE,EMPTY,OCCUPIED};\n})();');
+    eval(eng);   // load_engine already published the manifest
     eval(live);
   } catch (e) { return {refused: false, threw: String(e.message).slice(0,60)}; }
   const said = String(root.textContent || '');
@@ -179,9 +195,9 @@ def run_pool_probe():
     io.open(harness, "w", encoding="utf-8", newline="\n").write(POOL_HARNESS)
     try:
         proc = subprocess.run(
-            [NODE, harness, POOL, os.path.join(ROOT, "web", "engine.js"),
+            [NODE, harness, POOL, ENGINE_SCRIPT,
              os.path.join(ROOT, "web", "live.js")],
-            capture_output=True, text=True, timeout=300)
+            capture_output=True, text=True, timeout=300, env=widget_env())
     except subprocess.TimeoutExpired:
         # A node run that outruns its clock raises rather than returning, and
         # letting that escape turns a loaded machine into a traceback with no
@@ -210,9 +226,9 @@ def main():
     try:
         proc = subprocess.run(
             [NODE, harness, POOL,
-             os.path.join(ROOT, "web", "engine.js"),
+             ENGINE_SCRIPT,
              os.path.join(ROOT, "web", "live.js")],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=widget_env())
     except FileNotFoundError:
         print("  node is not on PATH")
         return SKIP
@@ -242,6 +258,33 @@ def main():
           "{} pending".format(r["pendingAfterFourMore"]))
     check(r["pendingAfterTick"] == 1, "a tick replaces itself rather than multiplying",
           "{} pending after the next tick".format(r["pendingAfterTick"]))
+
+    # The widget reads its ramp width and its hypothesis space off the
+    # element. Every harness here once omitted both, so Number(undefined)
+    # made each cell paint var(--ramp-NaN) and the stats line report a
+    # hypothesis count of NaN, with the whole suite still green. Assert on
+    # what was actually painted, not on the attributes going in.
+    check("NaN" not in r["boardHtml"] and "NaN" not in r["statsHtml"],
+          "nothing the widget paints reads NaN")
+    check("var(--ramp-" in r["boardHtml"],
+          "and the cells take their colour from the page ramp")
+
+    # The other half of the glyph agreement. tests/test_scrubber_js.py makes the
+    # same claim about the scrubber, and both compare against the one statement
+    # of the vocabulary in tests/_jsdriver.py rather than against each other's
+    # source text, which is what the check used to do and what would have
+    # blocked ever sharing a glyphFor().
+    painted = {}
+    for cls, glyph in re.findall(r'class="(lc[^"]*)"[^>]*>([^<]*)<', r["boardHtml"]):
+        state = next((k for k in GLYPHS if k in cls), None)
+        if state:
+            painted.setdefault(state, set()).add(glyph)
+    check(bool(painted), "the live board painted at least one shot outcome")
+    for state, want in sorted(GLYPHS.items()):
+        if state in painted:
+            check(painted[state] == {want},
+                  "the live board draws a {} as {!r}".format(state, want),
+                  "got {}".format(sorted(painted[state])))
 
     # A pool that is not a decoded set of boards must stop the widget rather
     # than push it into the exact sweep on every shot.

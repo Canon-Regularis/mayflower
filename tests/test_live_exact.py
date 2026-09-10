@@ -28,7 +28,12 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+from _harness import ROOT, SKIP, check, exe, report, run, widget_env  # noqa: E402
+from _jsdriver import write_engine_script  # noqa: E402
+
+# The engine as the page inlines it, written once for this process. The
+# harnesses eval it whole, so what they run is what the page runs.
+ENGINE_SCRIPT = write_engine_script()
 
 NODE = os.environ.get("MF_NODE", "node")
 POOL = os.path.join(ROOT, "web", "pool.bin")
@@ -43,20 +48,23 @@ function makeEl(){ return {innerHTML:'',textContent:'',dataset:{},style:{},
   classList:{add(){},remove(){},toggle(){}},children:[],
   appendChild(c){this.children.push(c);},addEventListener(){},setAttribute(){},
   removeAttribute(){},querySelector(){return null;},querySelectorAll(){return [];}}; }
-let eng = fs.readFileSync(process.argv[3],'utf8')
-  .split('export const ').join('const ').split('export function ').join('function ');
+// Already a classic script: tests/_jsdriver.py inlines it with the page's
+// own loader, so the harness runs exactly what the page runs.
+const eng = fs.readFileSync(process.argv[3],'utf8');
 const live = fs.readFileSync(process.argv[4],'utf8');
 const full = fs.readFileSync(process.argv[2]);
 function build(n) {
   const root = makeEl();
   root.dataset.pool = full.subarray(0, n * 5).toString('base64');
+  root.dataset.omega = process.env.MF_OMEGA;
+  root.dataset.buckets = process.env.MF_BUCKETS;
   const nodes = {'.liveboard':makeEl(),'.livestats':makeEl(),
     '[data-act="new"]':makeEl(),'[data-act="step"]':makeEl(),
     '[data-act="play"]':makeEl(),'[data-act="reveal"]':makeEl()};
   root.querySelector = s => nodes[s] || null;
   global.document = { getElementById: id => id==='live'?root:null, createElement: makeEl };
   global.window = {}; Math.random = () => 0.4242;
-  eval('(function(){\n'+eng+'\nwindow.MayflowerEngine={makeInstance,count,marginals,constrain,MISS,HIT,SUNK,FREE,EMPTY,OCCUPIED};\n})();');
+  eval(eng);   // load_engine already published the manifest
   eval(live);
   const board = nodes['.liveboard'].innerHTML;
   const stats = nodes['.livestats'].innerHTML;
@@ -78,9 +86,9 @@ def run_exact_probe():
     io.open(harness, "w", encoding="utf-8", newline="\n").write(EXACT_HARNESS)
     try:
         proc = subprocess.run(
-            [NODE, harness, POOL, os.path.join(ROOT, "web", "engine.js"),
+            [NODE, harness, POOL, ENGINE_SCRIPT,
              os.path.join(ROOT, "web", "live.js")],
-            capture_output=True, text=True, timeout=TIMEOUT)
+            capture_output=True, text=True, timeout=TIMEOUT, env=widget_env())
     except subprocess.TimeoutExpired:
         # These sweeps are CPU-bound and the clock is the only thing about this
         # test that varies: the widget is deterministic, Math.random pinned. A
@@ -122,19 +130,22 @@ function makeEl(){ return {innerHTML:'',textContent:'',dataset:{},style:{},L:{},
   appendChild(c){this.children.push(c);},addEventListener(t,fn){this.L[t]=fn;},
   setAttribute(){},removeAttribute(){},querySelector(){return null;},
   querySelectorAll(){return [];}}; }
-let eng = fs.readFileSync(process.argv[3],'utf8')
-  .split('export const ').join('const ').split('export function ').join('function ');
+// Already a classic script: tests/_jsdriver.py inlines it with the page's
+// own loader, so the harness runs exactly what the page runs.
+const eng = fs.readFileSync(process.argv[3],'utf8');
 const live = fs.readFileSync(process.argv[4],'utf8');
 const full = fs.readFileSync(process.argv[2]);
 
 const root = makeEl(); root.dataset.pool = full.toString('base64');
+root.dataset.omega = process.env.MF_OMEGA;
+root.dataset.buckets = process.env.MF_BUCKETS;
 const nodes = {'.liveboard':makeEl(),'.livestats':makeEl(),'[data-act="new"]':makeEl(),
   '[data-act="step"]':makeEl(),'[data-act="play"]':makeEl(),'[data-act="reveal"]':makeEl()};
 root.querySelector = s => nodes[s] || null;
 global.document = { getElementById: id => id==='live'?root:null, createElement: makeEl };
 global.window = {}; Math.random = () => 0.4242;
 global.setTimeout = () => 0; global.clearTimeout = () => {};
-eval('(function(){\n'+eng+'\nwindow.MayflowerEngine={makeInstance,count,marginals,constrain,MISS,HIT,SUNK,FREE,EMPTY,OCCUPIED};\n})();');
+eval(eng);   // load_engine already published the manifest
 eval(live);
 
 const step = nodes['[data-act="step"]'].L.click;
@@ -167,9 +178,9 @@ def run_play_probe():
     io.open(harness, "w", encoding="utf-8", newline="\n").write(PLAY_HARNESS)
     try:
         proc = subprocess.run(
-            [NODE, harness, POOL, os.path.join(ROOT, "web", "engine.js"),
+            [NODE, harness, POOL, ENGINE_SCRIPT,
              os.path.join(ROOT, "web", "live.js")],
-            capture_output=True, text=True, timeout=TIMEOUT)
+            capture_output=True, text=True, timeout=TIMEOUT, env=widget_env())
     except subprocess.TimeoutExpired:
         # These sweeps are CPU-bound and the clock is the only thing about this
         # test that varies: the widget is deterministic, Math.random pinned. A

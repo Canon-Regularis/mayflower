@@ -21,7 +21,8 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+from _jsdriver import GLYPHS, painted_glyphs  # noqa: E402
+from _harness import ROOT, SKIP, check, exe, report, run, widget_env  # noqa: E402
 
 NODE = os.environ.get("MF_NODE", "node")
 FIGURES = os.path.join(ROOT, "out", "figures.json")
@@ -67,6 +68,7 @@ function makeEl(tag) {
 const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const root = makeEl('div');
 root.dataset.frames = JSON.stringify(payload);
+root.dataset.buckets = process.env.MF_BUCKETS;
 
 global.document = {
   getElementById: (id) => (id === 'scrub' ? root : null),
@@ -111,6 +113,18 @@ stepIn.value = '-4'; stepIn.fire('change');
 out.clampedStep = stepIn.value;
 advance(500); out.afterNegative = turnOf();
 advance(500); out.afterNegativeAgain = turnOf();
+
+// The ramp width arrives on the element. When the harness omitted it the
+// bucket index came out NaN and every cell painted var(--ramp-NaN).
+out.cellBackgrounds = root.children[0].children.slice(0, 8)
+                          .map(c => c.style.background).join(' ');
+
+// What the board actually paints, per cell: the class that carries the outcome
+// and the glyph beside it. The agreement with live.js used to be checked by
+// looking for substrings in each file, which pinned the duplication in place:
+// a shared glyphFor() would have deleted the needles and failed the test.
+out.glyphPairs = root.children[0].children
+  .map(c => c.className + '|' + c.textContent).join(' ');
 
 // Pause stops the clock advancing the frame.
 play.fire('click');
@@ -185,6 +199,7 @@ for (const [label, mutate] of Object.entries(cases)) {
   mutate(payload);
   const root = makeEl('div');
   root.dataset.frames = JSON.stringify(payload);
+root.dataset.buckets = process.env.MF_BUCKETS;
   global.document = { getElementById: id => (id === 'scrub' ? root : null), createElement: makeEl };
   global.window = { matchMedia: () => ({matches: false}) };
   let built = 0, said = '';
@@ -207,7 +222,7 @@ def run_malformed_probe(payload):
     try:
         proc = subprocess.run(
             [NODE, harness, data, os.path.join(ROOT, "web", "scrubber.js")],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=widget_env())
     finally:
         for f in (harness, data):
             if os.path.exists(f):
@@ -244,7 +259,7 @@ def main():
     try:
         proc = subprocess.run(
             [NODE, harness, data, os.path.join(ROOT, "web", "scrubber.js")],
-            cwd=ROOT, capture_output=True, text=True)
+            cwd=ROOT, capture_output=True, text=True, env=widget_env())
         if proc.returncode != 0:
             print("  the harness failed:", proc.stderr[:700])
             return 1
@@ -276,6 +291,15 @@ def main():
           "the box reads {}".format(r["clampedStep"]))
     check(r["labelAfterPause"] == "Play" and r["afterPause"] == r["heldAt"],
           "Pause stops the clock moving the frame")
+
+    # Same trap as the live widget: the ramp width arrives on the element,
+    # and without it every bucket index came out NaN while this file still
+    # passed. Assert on the colour actually painted.
+    check("NaN" not in r["cellBackgrounds"],
+          "no cell paints an undefined ramp step",
+          r["cellBackgrounds"][:60])
+    check("var(--ramp-" in r["cellBackgrounds"],
+          "and the colours come from the page ramp")
     check(r["beforeKeys"] == 5 and r["afterHomeInBox"] == 5
           and r["afterLeftInBox"] == 5 and not r["preventedInBox"],
           "keys inside a number box are left to the caret",
@@ -309,45 +333,36 @@ def main():
         check(all(v["built"] == 0 for v in verdicts.values()),
               "and no board is painted when it refuses")
 
-    check_glyphs_agree()
+    check_glyphs_agree(r["glyphPairs"])
 
     return report()
 
 
-def check_glyphs_agree():
-    """The scrubber and the live engine draw boards on the same page.
+def check_glyphs_agree(scrub_pairs):
+    """What the scrubber paints, against the vocabulary both widgets share.
 
-    They disagreed: the scrubber drew a miss as "o", a hit as "x" and a sunk
-    shot as "+", while the live engine drew ".", "o" and "x". A reader who
-    learned the vocabulary from one widget read the other one wrong, and the
-    scrubber's own header comment claimed the two matched. Nothing compared
-    them, which is why it went unnoticed, so the comparison is made here.
+    This used to compare substrings of web/live.js and web/scrubber.js, which
+    was the right check when no shared code existed and the wrong one to keep:
+    a shared glyphFor() would delete the needles and fail the test, so the
+    assertion pinned in place the duplication it was written to police. It now
+    reads what the widget actually painted. tests/test_live_js.py makes the
+    matching claim about the live board, and both compare against the one
+    statement of the vocabulary in tests/_jsdriver.py.
     """
-    live = io.open(os.path.join(ROOT, "web", "live.js"), encoding="utf-8").read()
-    scrub = io.open(os.path.join(ROOT, "web", "scrubber.js"), encoding="utf-8").read()
-
-    # Each widget names its outcomes differently, so the mapping is pinned
-    # rather than the expression: miss is a dot, a hit is an open ring, and the
-    # shot that sank a ship is a cross.
-    live_map = [('MISS ? "."', "miss is a dot"),
-                ('SUNK ? "x"', "a sunk shot is a cross"),
-                (': "o")', "a hit is an open ring")]
-    for (needle, what) in live_map:
-        check(needle in live, "live.js: " + what)
-
-    scrub_map = 'o === 0 ? "." : o === 1 ? "o" : o === 2 ? "x"'
-    check(scrub_map in scrub,
-          "scrubber.js draws the same three glyphs in the same roles",
-          scrub_map)
+    painted = painted_glyphs(scrub_pairs)
+    check(sorted(painted) == sorted(GLYPHS),
+          "the scrubber paints all three outcomes",
+          "saw {}".format(sorted(painted)))
+    for state, want in sorted(GLYPHS.items()):
+        if state in painted:
+            check(painted[state] == {want},
+                  "the scrubber draws a {} as {!r}".format(state, want),
+                  "got {}".format(sorted(painted[state])))
 
     # The ramp has one home, tools/build_report.py, and reaches both widgets as
-    # CSS custom properties that render_report reverses for dark mode. A literal
-    # copy of the stops renders identically in both themes while every other
-    # figure inverts, which is what the scrubber used to do.
+    # CSS custom properties that render_report reverses for dark mode.
+    scrub = io.open(os.path.join(ROOT, "web", "scrubber.js"), encoding="utf-8").read()
     check("#cde2fb" not in scrub, "and carries no literal copy of the ramp stops")
-    check("var(--ramp-" in scrub, "reading the ramp from the page instead")
-    check("15046987768" not in live,
-          "live.js takes the hypothesis space from the page, not a literal")
 
 
 if __name__ == "__main__":
