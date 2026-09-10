@@ -27,36 +27,26 @@
 #include <vector>
 
 #include "mayflower/game.hpp"
+
+#include "search/detail/outcome.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
-#include "mayflower/policy.hpp"
 #include "mayflower/profile_dp.hpp"
+#include "mayflower/random.hpp"
 
 namespace {
 
 using namespace mayflower;
 
-struct Rng {
-    std::uint64_t s;
-    explicit Rng(std::uint64_t seed) : s(seed) {}
-    std::uint64_t next() {
-        s += 0x9E3779B97F4A7C15ull;
-        std::uint64_t z = s;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-        return z ^ (z >> 31);
-    }
-    double unit() { return static_cast<double>(next() >> 11) / 9007199254740992.0; }
-};
+using mayflower::Rng;
 
 // Every board, with enough structure to answer a shot exactly.
-struct World {
-    int cells = 0;
+// The shared shape plus what only the opponent model needs. buildWorld below
+// stays this file's own: it agrees with the solver's on under half its lines,
+// because it also accumulates border scores, placement slots and the placements
+// themselves.
+struct World : search::WorldBase {
     int placementSlots = 0;
-    std::vector<std::uint32_t> occupancy;
-    std::vector<std::vector<std::int8_t>> owner;
-    std::vector<std::vector<std::uint32_t>> shipMask;
-    std::vector<std::vector<std::int8_t>> shipLength;
     std::vector<std::vector<int>> slots;      // placement slot index per ship
     std::vector<double> border;               // per board, summed over ships
     std::vector<std::vector<ShipPlacement>> placements;
@@ -108,7 +98,7 @@ World buildWorld(const Instance& inst) {
             border += borderScore(inst, p);
         }
         w.occupancy.push_back(occ);
-        w.owner.push_back(std::move(own));
+        w.ship.push_back(std::move(own));
         w.shipMask.push_back(std::move(masks));
         w.shipLength.push_back(std::move(lens));
         w.slots.push_back(std::move(slotIds));
@@ -118,14 +108,7 @@ World buildWorld(const Instance& inst) {
     return w;
 }
 
-int outcomeOf(const World& w, std::size_t b, int cell, std::uint32_t shot) {
-    if ((w.occupancy[b] & (std::uint32_t{1} << cell)) == 0) return 0;      // miss
-    const int s = w.owner[b][static_cast<std::size_t>(cell)];
-    const std::uint32_t others =
-        w.shipMask[b][static_cast<std::size_t>(s)] & ~(std::uint32_t{1} << cell);
-    if ((others & ~shot) != 0) return 1;                                    // plain hit
-    return 2 + w.shipLength[b][static_cast<std::size_t>(s)];                // sunk
-}
+using search::outcomeOf;
 
 // A policy that believes some prior over boards and shoots the cell with the
 // highest posterior occupancy under it. Survivors are carried across the game

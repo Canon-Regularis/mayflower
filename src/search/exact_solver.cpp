@@ -1,5 +1,5 @@
 #include "mayflower/exact_solver.hpp"
-#include "mayflower/game.hpp"
+#include "detail/outcome.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -14,21 +14,17 @@
 namespace mayflower {
 namespace {
 
-using Mask = std::uint32_t;
+using search::Mask;
 using ConfigId = std::uint16_t;
 
 // Outcome codes: 0 miss, 1 plain hit, 2+L a hit that sinks a length-L ship.
-constexpr int kMiss = 0;
-constexpr int kHit = 1;
-constexpr int kSunkBase = 2;
+using search::kHit;
+using search::kMiss;
+using search::kSunkBase;
 
-struct World {
-    int cells = 0;
-    std::vector<Mask> occupancy;
-    std::vector<std::vector<std::int8_t>> ship;   // ship index per cell
-    std::vector<std::vector<Mask>> shipMask;
-    std::vector<std::vector<std::int8_t>> shipLength;
-};
+// Exactly the shared shape; tools/opponent.cpp extends it with what only the
+// opponent model needs.
+using World = search::WorldBase;
 
 World buildWorld(const Instance& inst, std::uint64_t configurationLimit) {
     if (inst.cellCount() > 32)
@@ -68,14 +64,7 @@ World buildWorld(const Instance& inst, std::uint64_t configurationLimit) {
     return w;
 }
 
-int outcomeOf(const World& w, ConfigId b, int cell, Mask shot) {
-    const std::size_t i = b;
-    if ((w.occupancy[i] & (Mask{1} << cell)) == 0) return kMiss;
-    const int s = w.ship[i][static_cast<std::size_t>(cell)];
-    const Mask others = w.shipMask[i][static_cast<std::size_t>(s)] & ~(Mask{1} << cell);
-    if ((others & ~shot) != 0) return kHit;
-    return kSunkBase + w.shipLength[i][static_cast<std::size_t>(s)];
-}
+using search::outcomeOf;
 
 // A chance node splits into at most miss, plain hit, and one sunk outcome per
 // distinct ship length, so the branch table has a small fixed bound.
@@ -390,61 +379,6 @@ ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimi
     out.nodesExpanded = solver.nodes;
     out.cellsPruned = solver.cellsPruned;
     out.branchesCut = solver.branchesCut;
-    out.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    return out;
-}
-
-namespace {
-
-// Replay a finished record, counting the misses fired after the sweep first
-// returns 1. Prefixes are recounted rather than tracked incrementally: these
-// instances hold at most a few hundred configurations, and reusing the ordered
-// constraint path keeps the SUNK semantics identical to the ones under test.
-int missesAfterCertainty(const Instance& inst, const History& full) {
-    History prefix(inst);
-    int wasted = 0;
-    bool certain = false;
-    for (int cell : full.sequence()) {
-        if (certain && full.outcome(cell) == Outcome::Miss) ++wasted;
-        prefix.add(cell / inst.width, cell % inst.width, full.outcome(cell),
-                   full.sunkLength(cell));
-        if (!certain && countConfigurations(inst, constraintsFrom(inst, prefix)).count == 1)
-            certain = true;
-    }
-    return wasted;
-}
-
-}  // namespace
-
-PolicyExpectation exactPolicyExpectation(const Instance& inst, Policy& policy,
-                                        std::uint64_t seed) {
-    const auto t0 = std::chrono::steady_clock::now();
-    const Sampler sampler(inst);
-    const std::uint64_t total = sampler.total();
-
-    // Averaging over no configurations gave 0/0. A NaN expectation is worse
-    // than a refusal: it compares false against every bound a caller might
-    // check it against, so a policy that cannot be evaluated looks like one
-    // that beat everything.
-    if (total == 0)
-        throw std::invalid_argument(inst.describe() +
-                                    " admits no configuration to average a policy over");
-
-    PolicyExpectation out;
-    out.configurations = total;
-    out.best = inst.cellCount() + 1;
-    std::uint64_t sum = 0;
-    std::uint64_t wasted = 0;
-    for (std::uint64_t r = 0; r < total; ++r) {
-        History record(inst);
-        const int shots = playGameTraced(inst, sampler.unrank(r), policy, seed, record).shots;
-        sum += static_cast<std::uint64_t>(shots);
-        wasted += static_cast<std::uint64_t>(missesAfterCertainty(inst, record));
-        out.worst = std::max(out.worst, shots);
-        out.best = std::min(out.best, shots);
-    }
-    out.expectedShots = static_cast<double>(sum) / static_cast<double>(total);
-    out.missesAfterCertainty = static_cast<double>(wasted) / static_cast<double>(total);
     out.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     return out;
 }
