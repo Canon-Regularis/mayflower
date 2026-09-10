@@ -36,6 +36,9 @@ DARK_TOKENS = """
     --cell-ink:    #ffffff;
     --cell-ink-hi: #0b0b0b;
     --gapfill:     rgba(57,135,229,0.12);
+    --panel:       #0d0d0d;
+    --sans:        "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:        "IBM Plex Mono",ui-monospace,Consolas,monospace;
 """
 
 
@@ -64,6 +67,14 @@ def stylesheet():
   --cell-ink:    #0b0b0b;
   --cell-ink-hi: #ffffff;
   --gapfill:     rgba(42,120,214,0.07);
+  /* The scrubber control chips read these three. They were used by the
+     rules below and defined nowhere, so a font shorthand carrying an
+     undefined var was invalid at computed value time and the whole
+     declaration was dropped: the Play and Reveal buttons and the frame
+     number box rendered at the body font with no panel behind them. */
+  --panel:       #f9f9f7;
+  --sans:        "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:        "IBM Plex Mono",ui-monospace,Consolas,monospace;
 """ + light_ramp + """
 }
 @media (prefers-color-scheme: dark) {
@@ -320,85 +331,19 @@ def load_pool():
     with open(os.path.join(here, "..", "web", "pool.bin"), "rb") as fh:
         return base64.b64encode(fh.read()).decode("ascii")
 
-
-def _pearson(a, b):
-    n = len(a)
-    ma, mb = sum(a) / n, sum(b) / n
-    num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
-    da = math.sqrt(sum((x - ma) ** 2 for x in a))
-    db = math.sqrt(sum((y - mb) ** 2 for y in b))
-    return num / (da * db) if da and db else 0.0
+# The arithmetic the prose quotes lives in tools/report_stats.py. This file
+# renders; it does not compute.
+from report_stats import (BIN_H_09, CRUDE_PROFILES, FREE_PRODUCT, LOG2_6,
+                          _loglog_slope, _parity_split, _pearson, _ranks,
+                          _spearman, _survival)
 
 
-def _ranks(v):
-    """Midranks. The prior takes 15 distinct values over 100 cells, one per
-    dihedral orbit, so ordinal ranks would break 85 ties by board index and make
-    the coefficient depend on that order."""
-    order = sorted(range(len(v)), key=lambda i: v[i])
-    out = [0.0] * len(v)
-    i = 0
-    while i < len(order):
-        j = i
-        while j + 1 < len(order) and v[order[j + 1]] == v[order[i]]:
-            j += 1
-        for k in range(i, j + 1):
-            out[order[k]] = (i + j) / 2.0
-        i = j + 1
-    return out
+def _context(data):
+    """The values every section reads off the payload.
 
-
-def _spearman(a, b):
-    return _pearson(_ranks(a), _ranks(b))
-
-
-def _parity_split(values, width):
-    """Mean over the two diagonal colour classes of the board."""
-    ev = [v for i, v in enumerate(values) if ((i // width) + (i % width)) % 2 == 0]
-    od = [v for i, v in enumerate(values) if ((i // width) + (i % width)) % 2 == 1]
-    return sum(ev) / len(ev), sum(od) / len(od)
-
-
-def _survival(hist):
-    total = sum(hist) or 1
-    run, out = total, []
-    for n in range(len(hist)):
-        out.append(run / total)
-        run -= hist[n]
-    return out
-
-
-# Placed independently, each ship of length L has 2N(N-L+1) positions on an NxN
-# board; the two 3-ships are interchangeable, hence the 2!. The gap between this
-# and the true count is what the no-overlap rule costs.
-FREE_PRODUCT = 120 * 140 * 160 * 160 // 2 * 180
-
-# The profile carries ten row extensions in 0..4, a vertical run in 0..4, and 24
-# fleet-usage states, so 5^10 x 5 x 24.
-CRUDE_PROFILES = 5 ** 11 * 24
-
-
-def _loglog_slope(points):
-    """Empirical exponent of |Omega| against board side, with its R^2."""
-    xs = [math.log(p["n"]) for p in points]
-    ys = [math.log(p["omega"]) for p in points]
-    n = len(xs)
-    mx, my = sum(xs) / n, sum(ys) / n
-    b1 = sum((a - mx) * (c - my) for a, c in zip(xs, ys)) / sum((a - mx) ** 2 for a in xs)
-    b0 = my - b1 * mx
-    ss = sum((c - (b0 + b1 * a)) ** 2 for a, c in zip(xs, ys))
-    tt = sum((c - my) ** 2 for c in ys)
-    return b1, (1 - ss / tt if tt else 0.0)
-
-
-# The answer alphabet is {MISS, HIT, SUNK(2), ..., SUNK(5)}.
-LOG2_6 = math.log2(6)
-
-# Binary entropy at p = 0.9, the worked example of a shot the information
-# objective declines.
-BIN_H_09 = -(0.9 * math.log2(0.9) + 0.1 * math.log2(0.1))
-
-
-def build(data, out_path):
+    Derived once. Restating these in each of the eleven sections would replace
+    one duplication with a larger one.
+    """
     m = data["meta"]
     prior = data["prior"]
     pol = {p["name"]: p for p in data["policies"]}
@@ -408,42 +353,18 @@ def build(data, out_path):
     lat = data["lattice"]
     obj = data["objectives"]
     col = data["collapse"]
-
     prior_p = [c / prior["total"] for c in prior["counts"]]
     dens, par = pol["density"], pol["parity hunt/target"]
     best = policies[-1]
+    return (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par, best)
 
-    SCRUB_JS = load_scrubber()
-    ENGINE_JS = load_engine()
-    LIVE_JS = load_live()
+
+def section_anchor(w, data, st):
+    """0, the anchor."""
+    # The board pool is read here because this is the only figure that embeds it.
     POOL_B64 = load_pool()
-
-    o = io.StringIO()
-    w = o.write
-    w("<title>The Battleship Posterior</title>\n")
-    w('<link rel="preconnect" href="https://fonts.googleapis.com">\n')
-    w('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n')
-    w('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
-      'family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&'
-      'family=IBM+Plex+Serif:wght@600&display=swap">\n')
-    w("<style>" + stylesheet() + "</style>\n")
-    w('<div id="tip"></div>\n<div class="wrap">\n')
-
-    w('<header class="mast"><div class="col">')
-    w('<div class="eyebrow">Mayflower / exact inference engine</div>')
-    w("<h1>The Battleship Posterior</h1>")
-    w('<p class="standfirst">Every legal fleet counted exactly, without enumerating one, '
-      "and the shot-selection objectives that follow priced against a proved "
-      "floor.</p></div>")
-    w('<div class="figures">')
-    for v, k in [("{:,}".format(omega), "legal configurations, counted exactly"),
-                 ("{:.2f} bits".format(m["entropyBits"]), "to identify the board"),
-                 ("{:.2f} to {:.2f}".format(b["waterfilling"], best["mean"]),
-                  "shots: proved floor to best measured")]:
-        w('<div class="keyfig"><span class="v">' + esc(v) + '</span>'
-          '<span class="k">' + esc(k) + "</span></div>")
-    w("</div></header>\n")
-
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # 0, the anchor -----------------------------------------------------
     w('<section><div class="col"><div class="act">Play it</div>')
     w("<h2>The engine, hunting a board it cannot see</h2>")
@@ -473,8 +394,15 @@ def build(data, out_path):
       "percentage.</figcaption></div>")
     w("</section>\n")
 
-    SCALE_SLOPE, SCALE_R2 = _loglog_slope(data["scaling"])
+    # Fitted here, quoted by the next section. The one value that crosses a
+    # section boundary, which is why st exists rather than a shared scope.
+    st["scale_slope"], st["scale_r2"] = _loglog_slope(data["scaling"])
 
+
+def section_the_space(w, data, st):
+    """1."""
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # 1 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">One / the space</div>')
     w("<h2>Fifteen billion boards, and a prior that is 2.67 to 1</h2>")
@@ -515,8 +443,13 @@ def build(data, out_path):
       "is roomy. Over this range it is steeper, an empirical <b>N<sup>{:.1f}</sup></b> "
       "(R&sup2; {:.3f}), because at these sizes the ships are still crowded and every "
       "extra row of water relieves more crowding than it adds "
-      "room.</figcaption></figure></div></section>\n".format(SCALE_SLOPE, SCALE_R2))
+      "room.</figcaption></figure></div></section>\n".format(st["scale_slope"], st["scale_r2"]))
 
+
+def section_the_machine(w, data, st):
+    """2."""
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # 2 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">Two / the machine</div>')
     w("<h2>Counting without enumerating, at 523 boards an edge</h2>")
@@ -544,6 +477,11 @@ def build(data, out_path):
       "two columns is the fleet counter running out of "
       "ships.</figcaption></figure></section>\n".format(lat["peakStates"]))
 
+
+def section_the_bound(w, data, st):
+    """3."""
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # 3 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">Three / the bound</div>')
     w("<h2>The entropy bound is dominated, and coverage is what binds</h2>")
@@ -574,6 +512,11 @@ def build(data, out_path):
           m["games"], b["waterfilling"], best["mean"], best["mean"] - b["waterfilling"],
           (b["waterfilling"] - b["coverage"]) / (best["mean"] - b["coverage"])))
 
+
+def section_the_objective(w, data, st):
+    """4."""
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # 4 -----------------------------------------------------------------
     worst = max(obj, key=lambda r: r["maxInfo"] - r["optimal"])
     w('<section><div class="col"><div class="act">Four / the objective</div>')
@@ -622,6 +565,11 @@ def build(data, out_path):
       "4x4 {3,2} it takes 2352 shots across the space where optimal play takes 2311, a "
       "difference of exactly 41.</figcaption></figure></section>\n")
 
+
+def section_the_play(w, data, st):
+    """5."""
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # 5 -----------------------------------------------------------------
     W = prior["width"]
     marg = [c / prior["total"] for c in prior["counts"]]
@@ -709,6 +657,11 @@ def build(data, out_path):
           "; ".join("{} {:.2f} with sd {:.2f}".format(p["name"], p["mean"], p["sd"])
                     for p in policies)))
 
+
+def section_the_objects(w, data, st):
+    """objects."""
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # objects -----------------------------------------------------------
     w('<section><div class="col"><div class="act">Interlude / the objects</div>')
     w("<h2>Three objects the arguments stand on</h2>")
@@ -754,6 +707,11 @@ def build(data, out_path):
       "would merge these two positions and return the wrong posterior for one of "
       "them.</figcaption></figure></section>\n")
 
+
+def section_the_collapse(w, data, st):
+    """6."""
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # 6 -----------------------------------------------------------------
     w('<section><div class="col"><div class="act">Six / the collapse</div>')
     w("<h2>From fifteen billion to one in about forty shots</h2>")
@@ -802,6 +760,11 @@ def build(data, out_path):
       "disagree with the engine that produced it.</div></div>")
     w("</section>\n")
 
+
+def section_the_conclusion(w, data, st):
+    """7, the conclusion."""
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # 7, the conclusion --------------------------------------------------
     zero_prob = sum(1 for r in obj if abs(r["maxProb"] - r["optimal"]) < 1e-9)
     worst_prob = max(r["maxProb"] - r["optimal"] for r in obj)
@@ -869,38 +832,49 @@ def build(data, out_path):
       "which is a different claim from the best rule.</p></div>\n".format(
           pol["parity hunt/target"]["mean"] - best["mean"]))
 
+
+def section_opening_book(w, data, st):
+    """the opening book."""
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # the opening book ---------------------------------------------------
-    book = data["openingBook"]
+    # Read by the summary section as well, so it crosses through st.
+    book = st["book"] = data["openingBook"]
     if not book:
         raise ValueError("openingBook is empty; the report cannot describe an opening "
                          "that was not computed")
-    if True:
-        bw = prior["width"]
-        forced = book[-1]
-        w('<div class="col"><h3>Where to shoot first</h3>')
-        w("<p>The rule is adaptive, so it has no fixed order, but it has a principal "
-          "variation: the line it takes while every answer is a miss. That is where the "
-          "opening spends most of its time, since the best first cell is a miss {:.1%} of "
-          "the time, and it is the nearest thing to a ranking of the board.</p>".format(
-              1 - book[0]["p"]))
-        w("<p>The line walks the long diagonal outward from the centre and then fills the "
-          "gaps between those cells. It also ends by itself, after <b>{}</b> shots: by then "
-          "only {:,} boards remain and every one of them occupies {}, so that cell has "
-          "marginal 1 and the miss branch is empty. By then contact is certain.</p>".format(
-              len(book), forced["omega"],
-              chr(ord("A") + forced["cell"] % bw) + str(forced["cell"] // bw + 1)))
-        w("<p>The marginals rise as the line runs, from {:.4f} at the first cell to "
-          "{:.4f} at the last but one. Missing does not only remove boards, it concentrates "
-          "what is left, so each successive shot is a better bet than the one "
-          "before.</p></div>".format(book[0]["p"], book[-2]["p"] if len(book) > 1 else 0.0))
-        w('<figure><div class="plate">')
-        w(opening_book(book, prior["width"], prior["height"]))
-        w("</div><figcaption><b>The opening, ranked.</b> Shot order along the all-miss "
-          "branch of the recommended rule, earliest darkest. A hit at any point ends the "
-          "line and the rule recomputes; this is the order to fall back to while nothing "
-          "has been found. Unshaded cells are never reached, because the line terminates "
-          "in a forced hit first.</figcaption></figure>")
+    bw = st["bw"] = prior["width"]
+    forced = book[-1]
+    w('<div class="col"><h3>Where to shoot first</h3>')
+    w("<p>The rule is adaptive, so it has no fixed order, but it has a principal "
+      "variation: the line it takes while every answer is a miss. That is where the "
+      "opening spends most of its time, since the best first cell is a miss {:.1%} of "
+      "the time, and it is the nearest thing to a ranking of the board.</p>".format(
+          1 - book[0]["p"]))
+    w("<p>The line walks the long diagonal outward from the centre and then fills the "
+      "gaps between those cells. It also ends by itself, after <b>{}</b> shots: by then "
+      "only {:,} boards remain and every one of them occupies {}, so that cell has "
+      "marginal 1 and the miss branch is empty. By then contact is certain.</p>".format(
+          len(book), forced["omega"],
+          chr(ord("A") + forced["cell"] % bw) + str(forced["cell"] // bw + 1)))
+    w("<p>The marginals rise as the line runs, from {:.4f} at the first cell to "
+      "{:.4f} at the last but one. Missing does not only remove boards, it concentrates "
+      "what is left, so each successive shot is a better bet than the one "
+      "before.</p></div>".format(book[0]["p"], book[-2]["p"] if len(book) > 1 else 0.0))
+    w('<figure><div class="plate">')
+    w(opening_book(book, prior["width"], prior["height"]))
+    w("</div><figcaption><b>The opening, ranked.</b> Shot order along the all-miss "
+      "branch of the recommended rule, earliest darkest. A hit at any point ends the "
+      "line and the rule recomputes; this is the order to fall back to while nothing "
+      "has been found. Unshaded cells are never reached, because the line terminates "
+      "in a forced hit first.</figcaption></figure>")
 
+
+def section_summary(w, data, st):
+    """the summary."""
+    book, bw = st["book"], st["bw"]
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
     # the summary ----------------------------------------------------------
     w('<div class="col"><h3>The short version</h3>')
     w('<p class="lede">Everything above, in six lines.</p>')
@@ -932,6 +906,57 @@ def build(data, out_path):
     w("</ul>")
     w('<p class="thanks">Thank you for reading.</p></div>')
     w("</section>\n")
+
+
+def build(data, out_path):
+    (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
+     best) = _context(data)
+
+    SCRUB_JS = load_scrubber()
+    ENGINE_JS = load_engine()
+    LIVE_JS = load_live()
+
+    o = io.StringIO()
+    w = o.write
+    w("<title>The Battleship Posterior</title>\n")
+    w('<link rel="preconnect" href="https://fonts.googleapis.com">\n')
+    w('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n')
+    w('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
+      'family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&'
+      'family=IBM+Plex+Serif:wght@600&display=swap">\n')
+    w("<style>" + stylesheet() + "</style>\n")
+    w('<div id="tip"></div>\n<div class="wrap">\n')
+
+    w('<header class="mast"><div class="col">')
+    w('<div class="eyebrow">Mayflower / exact inference engine</div>')
+    w("<h1>The Battleship Posterior</h1>")
+    w('<p class="standfirst">Every legal fleet counted exactly, without enumerating one, '
+      "and the shot-selection objectives that follow priced against a proved "
+      "floor.</p></div>")
+    w('<div class="figures">')
+    for v, k in [("{:,}".format(omega), "legal configurations, counted exactly"),
+                 ("{:.2f} bits".format(m["entropyBits"]), "to identify the board"),
+                 ("{:.2f} to {:.2f}".format(b["waterfilling"], best["mean"]),
+                  "shots: proved floor to best measured")]:
+        w('<div class="keyfig"><span class="v">' + esc(v) + '</span>'
+          '<span class="k">' + esc(k) + "</span></div>")
+    w("</div></header>\n")
+
+    # Each section appends to the same buffer in the same order, so the page
+    # is byte for byte what one long function produced. `st` carries the two
+    # values one section computes and a later one reads.
+    st = {}
+    section_anchor(w, data, st)
+    section_the_space(w, data, st)
+    section_the_machine(w, data, st)
+    section_the_bound(w, data, st)
+    section_the_objective(w, data, st)
+    section_the_play(w, data, st)
+    section_the_objects(w, data, st)
+    section_the_collapse(w, data, st)
+    section_the_conclusion(w, data, st)
+    section_opening_book(w, data, st)
+    section_summary(w, data, st)
 
     w('<footer><div class="col">Mayflower &middot; exact Bayesian inference over '
       "Battleships &middot; " + esc(m["instance"]) + " &middot; {:,} games per policy on "
