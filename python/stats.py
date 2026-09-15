@@ -88,8 +88,105 @@ def normal_quantile(p: float) -> float:
            (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1)
 
 
+def _betacf(a: float, b: float, x: float) -> float:
+    """Continued fraction for the incomplete beta, by the modified Lentz method."""
+    tiny = 1e-300
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    if abs(d) < tiny:
+        d = tiny
+    d = 1.0 / d
+    h = d
+    for m in range(1, 301):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + aa / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + aa / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < 3e-16:
+            break
+    return h
+
+
+def regularised_beta(a: float, b: float, x: float) -> float:
+    """I_x(a, b), the regularised incomplete beta function."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    front = math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b) +
+                     a * math.log(x) + b * math.log1p(-x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return front * _betacf(a, b, x) / a
+    return 1.0 - front * _betacf(b, a, 1.0 - x) / b
+
+
+def student_t_quantile(p: float, df: int) -> float:
+    """Inverse Student-t CDF, by bisection on the exact CDF.
+
+    Written out rather than approximated because the whole point of using t over
+    z is the small-n tail, which is where a cheap approximation is worst. The CDF
+    comes from the regularised incomplete beta, and forty-odd bisection steps on
+    a monotone function land inside 1e-10, far inside anything a confidence level
+    cares about.
+    """
+    if not 0.0 < p < 1.0:
+        raise ValueError("a quantile needs p in (0, 1); got {!r}".format(p))
+    if df < 1:
+        raise ValueError("degrees of freedom must be at least 1; got {!r}".format(df))
+    if p == 0.5:
+        return 0.0
+    if p < 0.5:
+        return -student_t_quantile(1.0 - p, df)
+
+    def cdf(t: float) -> float:
+        x = df / (df + t * t)
+        tail = 0.5 * regularised_beta(df / 2.0, 0.5, x)
+        return 1.0 - tail if t > 0 else tail
+
+    lo, hi = 0.0, 2.0
+    # df = 1 is Cauchy, whose quantiles grow without bound as p approaches 1, so
+    # the bracket is found rather than assumed.
+    while cdf(hi) < p and hi < 1e12:
+        hi *= 2.0
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if cdf(mid) < p:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < 1e-12 * max(1.0, hi):
+            break
+    return 0.5 * (lo + hi)
+
+
 def mean_interval(xs, alpha=0.05):
-    """Normal-approximation interval for a mean. Reported by the harness.
+    """Student-t interval for a mean. Reported by the harness.
+
+    A t interval, not a z one. The variance is estimated from the same sample as
+    the mean, so the pivot is t with n-1 degrees of freedom; using a normal
+    quantile against an estimated variance understates the width, and understates
+    it worst where the sample is smallest. Measured against a standard normal,
+    the z version covered 70.0% at n = 2 and 91.9% at n = 10 against a nominal
+    95%, and only reached the band near n = 30. The calibration suite exercises
+    n = 400 and above, where the two agree to three decimals, which is why this
+    sat here uncaught.
 
     Two observations minimum: the spread divides by n-1, so one sample gave a
     bare ZeroDivisionError and none gave another one line earlier. Neither says
@@ -100,9 +197,11 @@ def mean_interval(xs, alpha=0.05):
     if n < 2:
         raise ValueError(
             "an interval needs at least two observations; got {}".format(n))
+    if not 0.0 < alpha < 1.0:
+        raise ValueError("alpha must lie in (0, 1); got {!r}".format(alpha))
     m = sum(xs) / n
     var = sum((x - m) ** 2 for x in xs) / (n - 1)
-    half = normal_quantile(1 - alpha / 2) * math.sqrt(var / n)
+    half = student_t_quantile(1 - alpha / 2, n - 1) * math.sqrt(var / n)
     return m, m - half, m + half
 
 
@@ -127,7 +226,23 @@ def wilson_interval(successes, n, alpha=0.05):
 
 
 def wald_interval(successes, n, alpha=0.05):
-    """The textbook normal approximation, here only to be compared against."""
+    """The textbook normal approximation, here only to be compared against.
+
+    The input guards match wilson_interval's, because nonsense in is nonsense
+    out either way: this returned a point estimate of 2.5 for 5 successes in 2
+    trials, and negative counts ran straight through. The endpoints themselves
+    are deliberately NOT clamped to [0, 1], unlike Wilson's. Escaping the unit
+    interval is this function's defining flaw and the reason the comparison in
+    the calibration section exists, so hiding it here would erase the finding.
+    """
+    if n < 0 or successes < 0:
+        raise ValueError("counts must be non-negative; got %d of %d" % (successes, n))
+    if successes > n:
+        raise ValueError("successes cannot exceed trials; got %d of %d" % (successes, n))
+    if not 0.0 < alpha < 1.0:
+        raise ValueError("alpha must lie in (0, 1); got {!r}".format(alpha))
+    if n == 0:
+        return 0.0, 0.0, 1.0
     z = normal_quantile(1 - alpha / 2)
     p = successes / n
     half = z * math.sqrt(max(p * (1 - p), 0.0) / n)
@@ -209,6 +324,13 @@ def games_needed(effect, sigma, alpha=0.05, power=0.80, rho=0.0):
         raise ValueError("sigma must be positive; got %r" % (sigma,))
     if not 0.0 <= rho < 1.0:
         raise ValueError("rho must lie in [0, 1); got %r" % (rho,))
+    # Three of the five arguments were checked and two were not, so alpha = 1.5
+    # returned a game count and power = 5 raised a domain error from inside the
+    # normal quantile that named neither the argument nor the caller's mistake.
+    if not 0.0 < alpha < 1.0:
+        raise ValueError("alpha must lie in (0, 1); got %r" % (alpha,))
+    if not 0.0 < power < 1.0:
+        raise ValueError("power must lie in (0, 1); got %r" % (power,))
     z_a = normal_quantile(1 - alpha / 2)
     z_b = normal_quantile(power)
     paired_var = 2 * sigma * sigma * (1 - rho)
@@ -221,7 +343,27 @@ def games_needed(effect, sigma, alpha=0.05, power=0.80, rho=0.0):
 
 def holm(pvalues, alpha=0.05):
     """Holm step-down. Controls the family-wise error rate with no independence
-    assumption, which a round robin cannot offer."""
+    assumption, which a round robin cannot offer.
+
+    A non-finite p-value is refused rather than sorted. NaN compares false
+    against everything, so it lands at an arbitrary rank and the step-down stops
+    there: [0.001, nan, 0.02] rejected only the first, where the same list
+    without the NaN rejects the first and the third. A hypothesis silently not
+    rejected is the failure mode this procedure exists to prevent.
+
+    This project has a natural source of one. density(b=50) and density(b=200)
+    choose the same cell on every board in the pool, so their paired difference
+    is identically zero and a t statistic on it is 0/0.
+    """
+    if not 0.0 < alpha < 1.0:
+        raise ValueError("alpha must lie in (0, 1); got {!r}".format(alpha))
+    for i, p in enumerate(pvalues):
+        if not math.isfinite(p):
+            raise ValueError(
+                "p-value {} is {!r}; a test that did not produce a number cannot "
+                "be ranked against ones that did".format(i, p))
+        if not 0.0 <= p <= 1.0:
+            raise ValueError("p-value {} is {!r}, outside [0, 1]".format(i, p))
     order = sorted(range(len(pvalues)), key=lambda i: pvalues[i])
     out = [False] * len(pvalues)
     for rank, idx in enumerate(order):
