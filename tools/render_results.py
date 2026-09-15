@@ -257,7 +257,11 @@ def build(d):
     idx = by_id(R)
     b = {r["note"]: r["value"] for r in fam(R, "bounds") if r.get("note")}
     pol = sorted(fam(R, "policy"), key=lambda r: -r["value"])
-    best = min(r["value"] for r in pol)
+    # The best row, not just the best value: its name, game count and fold are
+    # all quoted below, and each of those was a typed literal until a fold
+    # mixture shipped under a label nothing had checked.
+    best_row = min(pol, key=lambda r: r["value"])
+    best = best_row["value"]
     scale_pts = [{"n": int(r["id"].split("-")[1].split("x")[0]), "omega": r["value"]}
                  for r in fam(R, "counting") if r["id"].startswith("omega-")
                  and "x" in r["id"] and r["id"] != "omega-notouch"]
@@ -323,7 +327,9 @@ def build(d):
          '<span class="chip chip-out">retracted</span>',
          "not a bound on the adaptive optimum; exceeds the true optimum on 6 of 6"],
         ["best measured", "{:.3f}".format(best), chip(False),
-         "density policy, 20,000 games, TRAIN fold"],
+         "{} policy, {} games, {} fold".format(best_row["note"],
+                                               group(best_row["games"]),
+                                               best_row["fold"].upper())],
     ]))
     w("</section>")
 
@@ -349,10 +355,10 @@ def build(d):
     w("</section>")
 
     w('<section><h2>What policies actually score</h2>')
-    w('<p class="lede">Twenty thousand games on one seeded board pool, common '
-      "random numbers throughout, TRAIN fold. These are the only estimates on the "
+    w('<p class="lede">{} games on one seeded board pool, common '
+      "random numbers throughout, {} fold. These are the only estimates on the "
       "page that carry an interval, because they are the only ones that are "
-      "estimates.</p>")
+      "estimates.</p>".format(group(best_row["games"]), best_row["fold"].upper()))
     w(policies(pol))
     w(rows_table(["policy", "mean shots", "95% interval", "sd", "games"],
                  [[p["note"], "{:.3f}".format(p["value"]),
@@ -442,11 +448,19 @@ def build(d):
                    "{:.4f}".format(r["capacity"]), fmt(r["bound"], 1),
                    fmt(r["value"], 1), "{:.2f}".format(r["ratio"])]
                   for r in noise]))
-    w('<p class="cap">The ratio runs from 2.47 to 4.29. It climbs from about 2.5 '
-      "where noise is negligible and then settles between roughly 3.7 and 4.3 "
-      "rather than continuing to climb, which is what separates the cost of the "
-      "channel from the cost of choosing shots. The shot counts are measured "
-      "rather than exact.</p>")
+    # Every bound in this sentence is computed. It used to read "settles between
+    # roughly 3.7 and 4.3", which three of the ten higher-noise rows sit below,
+    # one of them at 3.09. The band was typed once and the table moved under it.
+    eps_low = min(r["eps"] for r in noise)
+    at_low = [r["ratio"] for r in noise if r["eps"] == eps_low]
+    above = [r["ratio"] for r in noise if r["eps"] > eps_low]
+    w('<p class="cap">The ratio runs from {:.2f} to {:.2f}. At the lowest rate '
+      "tested, eps = {:g}, it is {:.2f} to {:.2f}; across every higher rate it "
+      "sits between {:.2f} and {:.2f} and stops trending upward, which is what "
+      "separates the cost of the channel from the cost of choosing shots. The "
+      "shot counts are measured rather than exact.</p>".format(
+          min(r["ratio"] for r in noise), max(r["ratio"] for r in noise),
+          eps_low, min(at_low), max(at_low), min(above), max(above)))
     w("</section>")
 
     # Cross checks.
