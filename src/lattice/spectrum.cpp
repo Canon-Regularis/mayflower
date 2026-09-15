@@ -146,26 +146,56 @@ Spectrum transferSpectrum(int height, int rodLength, double z, int maxIterations
 
     // Density by a central difference: rho = (k/H) * z d(log lambda)/dz. The
     // sweep is reused, since its arrays are the expensive part.
-    const double h = std::max(1e-4, z * 1e-3);
+    //
+    // The step used to be max(1e-4, z * 1e-3), which for z below 1e-4 puts
+    // z - h at a NEGATIVE fugacity. l1() is a signed sum rather than a norm, so
+    // there lam can go negative and log(lam) is NaN, or stay positive and be
+    // merely meaningless. Capping the step at z/2 keeps both evaluation points
+    // on the domain the function is defined on. The difference stays central,
+    // between z/2 and 3z/2, so it is a wider relative step at small z and not a
+    // one-sided one.
+    const double h = z > 0.0 ? std::min(std::max(1e-4, z * 1e-3), z * 0.5)
+                             : 0.0;
+    if (h <= 0.0) {
+        // z = 0 is an empty lattice. The derivative there is not something a
+        // central difference can reach, and a fabricated 0 would read as a
+        // measurement.
+        out.density = 0.0;
+        out.densityConverged = false;
+        return out;
+    }
     std::vector<double> u(static_cast<std::size_t>(sweep.profiles), 0.0);
+    // The caller's budget governs this iteration too. It used to run a
+    // hardcoded 200 iterations to a hardcoded 1e-11, so a caller asking for
+    // more precision got a sharper lambdaMax and the same density, and a caller
+    // asking for less got a crude lambdaMax and a density computed to a
+    // precision it never requested. The two halves of one result were answering
+    // different questions.
+    bool settled = true;
     const auto growth = [&](double zz) {
         std::fill(u.begin(), u.end(), 0.0);
         u[0] = 1.0;
         double lam = 0, p = 0;
-        for (int it = 1; it <= 200; ++it) {
+        bool hit = false;
+        for (int it = 1; it <= maxIterations; ++it) {
             const double b = l1(u);
             sweep.apply(u, zz);
             const double a = l1(u);
-            if (a <= 0) return 0.0;
+            if (a <= 0) { settled = false; return 0.0; }
             lam = a / b;
             for (double& x : u) x /= a;
-            if (it > 6 && std::abs(lam - p) < 1e-11 * std::max(1.0, lam)) break;
+            if (it > 6 && std::abs(lam - p) < tolerance * std::max(1.0, lam)) {
+                hit = true;
+                break;
+            }
             p = lam;
         }
+        if (!hit) settled = false;
         return std::log(lam);
     };
     const double dlog = (growth(z + h) - growth(z - h)) / (2 * h);
     out.density = rodLength * z * dlog / height;
+    out.densityConverged = settled;
     return out;
 }
 

@@ -34,7 +34,14 @@ struct Spectrum {
                                  // so correlations flip sign column to column
     double density = 0;          // fraction of sites covered by rods
     int iterations = 0;
-    bool converged = false;
+    bool converged = false;      // lambdaMax reached `tolerance` inside
+                                 // `maxIterations`
+    // The density comes from a second power iteration, run twice at
+    // z +/- h for a central difference, and it can fail to settle when
+    // lambdaMax does not. It had no way to say so: the two halves of this
+    // struct were computed to different precisions and only one of them
+    // could report on itself.
+    bool densityConverged = false;
 };
 
 // Growth rate of an H-row strip packed with non-overlapping k-mers, each
