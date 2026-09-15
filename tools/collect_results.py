@@ -136,11 +136,15 @@ def core(results):
             instance="{n}x{n} {{5,4,3,3,2}}".format(n=e["n"]),
             metric="configurations", value=e["omega"], exact=True)
 
+    # The fold comes from the tool that drew the boards, not from a reader's
+    # assumption about it. Stamping "train" here is how a 60/20/20 mixture got
+    # published under a TRAIN label: report_data filtered nothing, and this line
+    # asserted the fold it had not checked.
     for p in d["policies"]:
         add(family="policy", id="policy-" + p["name"].replace(" ", "-"),
             instance=m["instance"], metric="mean shots to clear", value=p["mean"],
-            unit="shots", ci=p["ci"], sd=p["sd"], games=m["games"], fold="train",
-            engine="cheap", exact=False, note=p["name"])
+            unit="shots", ci=p["ci"], sd=p["sd"], games=m["games"],
+            fold=m["fold"], engine="cheap", exact=False, note=p["name"])
 
     for o in d["objectives"]:
         for key, label in (("optimal", "optimal"), ("maxProb", "max hit probability"),
@@ -315,6 +319,56 @@ def _pairs_agree(results):
     return out
 
 
+def _policy_against_headline(results):
+    """The page's headline measurement against the pre-registered one.
+
+    report_data and selfplay measure the same three policies, over the same
+    board pool key, at the same game count, in the same fold. Nothing compared
+    them, and the comparison costs nothing: both numbers are already collected.
+
+    It is the check that would have caught the fold leak on the day it landed.
+    report_data drew board ids 0..n-1 with no fold filter where selfplay filters,
+    so the page's rows were a 60/20/20 mixture published as TRAIN. The means
+    differed in the third decimal, which is small enough that nobody reading
+    either page would have seen it, and exactly what this comparison is for.
+
+    The tolerance is the headline record's own printed precision. It stores
+    three decimals, so an exact comparison would fail on rounding.
+    """
+    # report_data names the density policy by its class and selfplay by its
+    # bucket count. DensityPolicy's default bonus is 50, so density(b=50) is the
+    # same policy under the other name.
+    headline_names = {"random": "random",
+                      "parity hunt/target": "parity-hunt-target",
+                      "density": "density(b=50)"}
+    page = {r["note"]: r for r in results if r["family"] == "policy"}
+    # Keyed by fold as well as name: the headline family holds a row per policy
+    # per fold, and TRAIN and TEST share the policy name.
+    head = {(r["fold"], r["note"]): r for r in results if r["family"] == "headline"}
+    apart, checked = [], 0
+    for page_name, head_name in sorted(headline_names.items()):
+        a = page.get(page_name)
+        if a is None:
+            continue
+        b = head.get((a.get("fold"), head_name))
+        if b is None:
+            continue
+        checked += 1
+        if a.get("games") != b.get("games"):
+            apart.append({"policy": page_name, "reason": "different sample size",
+                          "out/figures.json": a.get("games"), "headline": b.get("games")})
+        elif abs(a["value"] - b["value"]) > 1e-3:
+            apart.append({"policy": page_name, "reason": "means differ",
+                          "fold": a.get("fold"),
+                          "out/figures.json": a["value"], "headline": b["value"]})
+    out = []
+    if checked:
+        out.append({"quantity": "the page's policy means match the headline record",
+                    "sources": ["out/figures.json", "experiments/headline_*.json"],
+                    "instances": checked, "agree": not apart, "disagreements": apart})
+    return out
+
+
 def _transcripts_against_sweep(results):
     """The captured transcripts against the sweep that is regenerated each build."""
     out = []
@@ -457,6 +511,7 @@ def cross_checks(results):
     checks = []
     checks += _train_against_test(results)
     checks += _pairs_agree(results)
+    checks += _policy_against_headline(results)
     checks += _transcripts_against_sweep(results)
     per_instance = _by_instance(results)
     checks += _orderings_by_definition(results, per_instance)

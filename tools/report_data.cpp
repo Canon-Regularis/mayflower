@@ -21,17 +21,51 @@
 #include "mayflower/certify.hpp"
 #include "mayflower/constants.hpp"
 #include "mayflower/exact_solver.hpp"
+#include "mayflower/folds.hpp"
 #include "mayflower/game.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/policy.hpp"
 #include "mayflower/profile_dp.hpp"
 #include "mayflower/random.hpp"
 
+#ifdef _WIN32
+#define MF_POPEN _popen
+#define MF_PCLOSE _pclose
+#define MF_DEVNULL "NUL"
+#else
+#define MF_POPEN popen
+#define MF_PCLOSE pclose
+#define MF_DEVNULL "/dev/null"
+#endif
+
 namespace {
 
 using namespace mayflower;
 
 std::string quote(const std::string& s) { return "\"" + s + "\""; }
+
+// The commit this data was generated from, so a page can be checked against the
+// engine that produced it rather than assumed current. Asked at run time rather
+// than baked in at configure time, because a build directory outlives the commit
+// it was configured on and a stale stamp is worse than none.
+//
+// Returns "unknown" wherever git is unavailable, which is a real case here: the
+// MSYS2 UCRT64 CI leg has no git. A consumer treats "unknown" as unstamped, not
+// as a mismatch.
+std::string gitCommit() {
+    std::FILE* pipe = MF_POPEN("git rev-parse --short HEAD 2>" MF_DEVNULL, "r");
+    if (!pipe) return "unknown";
+    char buf[64] = {0};
+    const bool read = std::fgets(buf, sizeof buf, pipe) != nullptr;
+    const int status = MF_PCLOSE(pipe);
+    if (!read || status != 0) return "unknown";
+    std::string s(buf);
+    while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ')) s.pop_back();
+    // A commit is hex. Anything else came from a broken shell rather than git,
+    // and must not reach the JSON unquoted.
+    if (s.empty() || s.find_first_not_of("0123456789abcdef") != std::string::npos) return "unknown";
+    return s;
+}
 
 template <typename T>
 std::string jsonArray(const std::vector<T>& v, int decimals = -1) {
@@ -51,6 +85,10 @@ std::string num(double v, int decimals = 6) {
     std::snprintf(buf, sizeof buf, "%.*f", decimals, v);
     return buf;
 }
+
+// The figure data is a TRAIN-fold measurement, and says so in its own meta
+// rather than being labelled downstream by a reader that assumes it.
+constexpr Fold kReportFold = Fold::Train;
 
 }  // namespace
 
@@ -77,6 +115,11 @@ int main(int argc, char** argv) {
     out += ", \"shipCells\": " + std::to_string(k::kShipCells);
     out += ", \"cells\": " + std::to_string(k::kCellCount);
     out += ", \"games\": " + std::to_string(games);
+    // Provenance. Without these two a rendered page says nothing about the
+    // engine that produced it, and a figure built from a tree seventeen commits
+    // back looks exactly like one built from HEAD.
+    out += ", \"commit\": " + quote(gitCommit());
+    out += ", \"fold\": " + quote(foldName(kReportFold));
     out += "},\n";
     std::fprintf(stderr, "meta done\n");
 
@@ -131,7 +174,18 @@ int main(int argc, char** argv) {
     const BoardBank bank(inst, 0xA1B2C3D4u);
     std::vector<std::vector<ShipPlacement>> boards;
     boards.reserve(static_cast<std::size_t>(games));
-    for (int i = 0; i < games; ++i) boards.push_back(bank.board(static_cast<std::uint64_t>(i)));
+    // Fold discipline, the same walk tools/selfplay.cpp makes. Taking ids
+    // 0..games-1 unfiltered takes whatever the fold hash hands back, which
+    // measures 60.0% train, 20.2% val and 19.8% test: a mixture, published under
+    // a TRAIN label, with 3,966 TEST boards read on every build and no unseal
+    // recorded against any of them. The pool key matches selfplay's, so with the
+    // filter in place the density row here and the headline row are the same
+    // measurement and can be cross-checked against each other.
+    std::uint64_t boardId = 0;
+    while (static_cast<int>(boards.size()) < games) {
+        if (inFold(boardId, kReportFold)) boards.push_back(bank.board(boardId));
+        ++boardId;
+    }
 
     std::vector<std::uint64_t> policySeeds(static_cast<std::size_t>(games));
     for (int i = 0; i < games; ++i)

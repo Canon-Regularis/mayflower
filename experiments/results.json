@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "commit": "8e77fc3",
+ "commit": "1780c9e",
  "note": "Every value is read from a tool's own output, never transcribed. Text tables are parsed against their exact headers, so a tool changing its output breaks this rather than corrupting it.",
  "counts": {
   "results": 118,
@@ -56,6 +56,16 @@
     "maxcover"
    ],
    "instances": 6,
+   "agree": true,
+   "disagreements": []
+  },
+  {
+   "quantity": "the page's policy means match the headline record",
+   "sources": [
+    "out/figures.json",
+    "experiments/headline_*.json"
+   ],
+   "instances": 3,
    "agree": true,
    "disagreements": []
   },
@@ -278,10 +288,10 @@
    "id": "policy-random",
    "instance": "10x10 {5,4,3,3,2}",
    "metric": "mean shots to clear",
-   "value": 95.4124,
+   "value": 95.4009,
    "unit": "shots",
-   "ci": 0.066,
-   "sd": 4.7601,
+   "ci": 0.0664,
+   "sd": 4.7922,
    "games": 20000,
    "fold": "train",
    "engine": "cheap",
@@ -294,10 +304,10 @@
    "id": "policy-parity-hunt/target",
    "instance": "10x10 {5,4,3,3,2}",
    "metric": "mean shots to clear",
-   "value": 51.517,
+   "value": 51.5959,
    "unit": "shots",
-   "ci": 0.1193,
-   "sd": 8.6081,
+   "ci": 0.1195,
+   "sd": 8.6256,
    "games": 20000,
    "fold": "train",
    "engine": "cheap",
@@ -310,10 +320,10 @@
    "id": "policy-density",
    "instance": "10x10 {5,4,3,3,2}",
    "metric": "mean shots to clear",
-   "value": 44.3686,
+   "value": 44.3643,
    "unit": "shots",
-   "ci": 0.1229,
-   "sd": 8.8675,
+   "ci": 0.1232,
+   "sd": 8.8885,
    "games": 20000,
    "fold": "train",
    "engine": "cheap",

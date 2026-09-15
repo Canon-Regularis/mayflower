@@ -72,20 +72,38 @@ probability, worth a factor of 158 on the fleet instances.
 
 ## Self-play
 
-One seeded pool of uniform boards, 20,000 games, every policy on the same boards.
-`tools/selfplay` drew this pool; `out/figures.json` reports a second pool of the
-same size, so the two sets of means differ inside their intervals.
+One seeded pool of uniform boards, 20,000 games, TRAIN fold, every policy on the
+same boards. `tools/selfplay` drew this pool and `out/figures.json` reports the
+same one, so the two agree row for row.
+
+That sentence used to say something else. It said `out/figures.json` reported "a
+second pool of the same size, so the two sets of means differ inside their
+intervals", which explained a discrepancy that was a defect rather than a second
+pool. `tools/report_data` drew board ids 0 to 19,999 with no fold filter where
+`tools/selfplay` filters, so its rows were 60.0% train, 20.2% val and 19.8% test:
+a mixture, published under a TRAIN label, over the same pool key. The difference
+was small enough to look like sampling and was written up as sampling. With the
+filter in place the two tools agree to the third decimal, which is all the
+precision either records.
 
 ```text
 policy                   mean      sd     95% CI on mean  median    p95   best  worst
-random                 95.354   4.800  [ 95.288,  95.421]      97    100     57    100
-parity-hunt-target     51.535   8.710  [ 51.414,  51.656]      53     64     21     71
-density                44.369   8.868  [ 44.246,  44.491]      44     61     20     85
+random                 95.401   4.792  [ 95.335,  95.467]      97    100     62    100
+parity-hunt-target     51.596   8.626  [ 51.476,  51.715]      53     63     19     70
+density(b=10)          44.369   8.962  [ 44.245,  44.493]      44     61     20     96
+density(b=50)          44.364   8.889  [ 44.241,  44.487]      44     61     20     85
+density(b=200)         44.364   8.889  [ 44.241,  44.487]      44     61     20     85
 ```
+
+`density(b=50)` and `density(b=200)` are the same column because the bucket
+count saturates: both pick the same cell on every one of the 20,000 boards. Their
+paired difference is therefore identically zero, and `tools/selfplay` reports
+that as "identical on all 20000" rather than as a 95% interval of zero width,
+which is what it used to print and what both headline artefacts still carry.
 
 The random shooter is the harness self-test: shooting uniformly, the game ends on
 the last of the 17 ship cells, so `E[T] = k(N+1)/(k+1) = 95.3889`. Measured
-95.3544, inside the interval.
+95.4009, inside the interval.
 
 Correlation across the shared pool is bimodal, so sample sizes have to be derived
 per comparison. Within the density family it is 0.923, worth 12.9 times fewer
