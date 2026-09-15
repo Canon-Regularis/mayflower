@@ -92,9 +92,23 @@ foreach(hdr IN LISTS MF_DETAIL_HEADERS)
   list(APPEND MF_HEADER_TUS ${gen})
 endforeach()
 
+# tools/m9 carries two headers of its own, core.hpp and sections.hpp, shared by
+# the dispatcher and the eight sections. They were the one set the self test did
+# not reach: every one of the nine translation units that include them includes
+# core.hpp first, so a sections.hpp that only compiles second would never have
+# been caught here. Same mechanism, two more units.
+file(GLOB MF_M9_HEADERS CONFIGURE_DEPENDS
+     ${CMAKE_CURRENT_SOURCE_DIR}/tools/m9/*.hpp)
+foreach(hdr IN LISTS MF_M9_HEADERS)
+  get_filename_component(hdr_name ${hdr} NAME_WE)
+  set(gen ${CMAKE_CURRENT_BINARY_DIR}/header_selftest/m9_${hdr_name}.cpp)
+  file(WRITE ${gen} "#include \"${hdr_name}.hpp\"\n")
+  list(APPEND MF_HEADER_TUS ${gen})
+endforeach()
+
 add_library(mayflower_headers OBJECT ${MF_HEADER_TUS})
 target_link_libraries(mayflower_headers PRIVATE mf_flags)
-target_include_directories(mayflower_headers PRIVATE include src src/core)
+target_include_directories(mayflower_headers PRIVATE include src src/core tools/m9)
 
 # The oracle is the independent check the differential suite rests on: eight
 # tests compare a sweep against it, and the comparison is only evidence while it
@@ -294,6 +308,15 @@ mf_test(stats
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick
   LABEL fast)
 
+# out/figures.json used to say nothing about the build that produced it, so a
+# page rendered from data seventeen commits old looked exactly like a current
+# one. Every one of those commits was checked by hand, which is why the numbers
+# were right and why nothing would have caught it when they stopped being.
+mf_test(provenance
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_provenance.py
+  LABEL fast
+  SKIPPABLE)
+
 # The belief frames the scrubber replays have no other reader, so their
 # invariants are checked here rather than by the thing that draws them.
 mf_test(report_data
@@ -447,6 +470,13 @@ mf_test(bounds COMMAND test_bounds LABEL pr TIMEOUT 1800)
 mf_test(bounds_tool COMMAND bounds LABEL pr TIMEOUT 1800)
 
 mf_test(exact COMMAND test_exact LABEL pr TIMEOUT 900)
+
+# The same test with the three published fleet optima added to the pruning
+# comparison. out/figures.json publishes an optimum for 5x4 {3}, 4x4 {2,2} and
+# 4x4 {3,2}, and until this existed the only thing asserting any of the three was
+# the pruned search that computed it. Pruning::None on a fleet instance costs
+# tens of seconds, so it runs nightly.
+mf_test(exact_heavy COMMAND test_exact heavy LABEL nightly TIMEOUT 3600)
 
 # Labelled fast rather than pr. This is the only test asserting that V0, V1, V2
 # and V3 return bit identical counts, which is the property a change to any sweep

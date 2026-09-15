@@ -103,7 +103,7 @@ jobs:
         shell: bash
         run: |
           missing=""
-          for t in python_names stats report_data results pool selfplay_fold run_headline \
+          for t in python_names stats provenance report_data results pool selfplay_fold run_headline \
                    render_results live_exact tool_cli tools_output oracle \
                    engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
@@ -158,7 +158,7 @@ jobs:
       - name: Every interpreter-gated test was registered
         run: |
           missing=""
-          for t in python_names stats report_data results pool selfplay_fold run_headline \
+          for t in python_names stats provenance report_data results pool selfplay_fold run_headline \
                    render_results live_exact tool_cli tools_output oracle \
                    engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
