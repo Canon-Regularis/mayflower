@@ -33,9 +33,9 @@ instead.
 | entropy | 13.079 | H0 / log2 6, dominated by coverage |
 | coverage | 17 | all 17 ship cells must be shot |
 | water filling | 24.088 | transcript counting, the binding rung |
-| best measured | 44.369 | density policy, 20,000 seeded boards |
+| best measured | 44.364 | density policy, 20,000 seeded boards, TRAIN fold |
 
-The interval `[24.088, 44.369]` is **20.28 shots** nobody has closed. Its width
+The interval `[24.088, 44.364]` is **20.28 shots** nobody has closed. Its width
 is the slack in the bound plus the loss of the policy against the true optimum,
 and nothing measured here says how it divides between them. See
 [docs/BOUNDS.md](docs/BOUNDS.md).
@@ -96,7 +96,7 @@ cmake --build build                                       #  51 s
 ctest --test-dir build -L fast                            #  78 s, 26 tests
 
 ./build/omega0            # 15,046,987,768 and 1,925,751,392, plus the lattice
-./build/bounds            # the ladder, and the interval [24.088, 44.369]
+./build/bounds            # the certified floors, 17 then 24.088
 ./build/optimal           # exact optimal play, and the price of each objective
 
 mkdir -p out

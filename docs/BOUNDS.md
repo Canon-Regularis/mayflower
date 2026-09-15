@@ -56,6 +56,6 @@ check. What it does obey there is the **non-adaptive** optimum, and an adaptive
 searcher has a tree of shot-sets where the non-adaptive one has a single set.
 `tools/maxcover selftest` holds this as a negative regression.
 
-Unresolved interval `[24.088, 44.369]`, water filling to the best measured
+Unresolved interval `[24.088, 44.364]`, water filling to the best measured
 policy, a gap of 20.3 shots. Water filling closes
 25.9% of the distance from the coverage bound to the best measured policy.

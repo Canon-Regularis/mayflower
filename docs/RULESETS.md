@@ -62,7 +62,7 @@ covered element, this one waits for the last.
 At full scale `tools/maxcover` measures the best fixed order at 88.7342 shots for
 row-major, which
 column-major matches to every digit because the board is square and transposing
-is a bijection on configurations. Against a density policy at 44.369, both being
+is a bijection on configurations. Against a density policy at 44.364, both being
 achievable rather than optimal, the pair does not bound the adaptivity gap from
 below but does show it is not small.
 
