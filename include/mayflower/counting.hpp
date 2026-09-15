@@ -19,6 +19,22 @@ struct CountResult {
     std::uint64_t stateVisits = 0; // states processed across all cells
     std::uint64_t edges = 0;       // transitions relaxed
     std::vector<std::uint32_t> layerSizes;   // live states entering each cell layer
+
+    // False when an accumulator passed 2^64 and `count` is the true answer
+    // modulo 2^64. The counting path is unsigned, so it wraps in silence: no
+    // trap, no flag, and a plausible nineteen-digit answer.
+    //
+    // This is reachable on an instance validate() accepts. 16x8 with sixteen
+    // 1-ships is 128 cells and 16 ship cells, every clause passes, and the true
+    // count is C(128,16) = 9.334e19. The sweep used to return
+    // 1109300832714419320, which is that value modulo 2^64, with nothing to say
+    // so. Fifteen 1-ships fit and sixteen do not, so the boundary is crossed by
+    // adding one ship to a legal fleet.
+    //
+    // weightedCount already reported this class through maxLayerSum; the
+    // integer path, which is the one that publishes 15,046,987,768, had no
+    // equivalent. See tests/test_counting.cpp.
+    bool exact = true;
 };
 
 CountResult countConfigurations(const Instance& inst, const Constraints& constraints);

@@ -48,22 +48,38 @@ CountResult countConfigurations(const Instance& inst, const Constraints& constra
 
             next.clear();
             std::uint64_t edges = 0;
+            // The layer sum, in 128 bits, riding the walk the sweep already
+            // makes. It is a sound and complete detector for the unsigned wrap:
+            // a state in the next layer collects at most one contribution from
+            // each state in this one, so no value there can exceed this sum.
+            // Check the sum before the layer it feeds is built and the first
+            // layer that could overflow is caught before any value in it does.
+            //
+            // Cost is one 128-bit add per state visit inside a loop that
+            // already expands each state into up to seventeen transitions, so
+            // it does not move bench/dp_bench.
+            __uint128_t layerSum = 0;
             cur.forEach([&](const Key& key, std::uint64_t count) {
+                layerSum += count;
                 transitions(key, ctx, fc, W, H, [&](const Key& dst, Kind, int) {
                     next.add(dst, count);
                     ++edges;
                 });
             });
+            if (layerSum > static_cast<__uint128_t>(UINT64_MAX)) result.exact = false;
             result.edges += edges;
             std::swap(cur, next);
         }
     }
 
-    std::uint64_t total = 0;
+    // The final layer is summed the same way, since it is never fed forward and
+    // so is not covered by the check above.
+    __uint128_t total = 0;
     cur.forEach([&](const Key& key, std::uint64_t count) {
         if (accepting(key, fc)) total += count;
     });
-    result.count = total;
+    if (total > static_cast<__uint128_t>(UINT64_MAX)) result.exact = false;
+    result.count = static_cast<std::uint64_t>(total);
     return result;
 }
 

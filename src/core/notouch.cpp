@@ -7,6 +7,7 @@
 #include "detail/cell_ctx.hpp"
 #include "detail/entry.hpp"
 
+#include <cstdint>
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
@@ -254,12 +255,21 @@ CountResult countNoTouch(const Instance& inst, const Constraints& constraints) {
 
             next.clear();
             std::uint64_t edges = 0;
+            // The layer sum in 128 bits, riding the walk this sweep already
+            // makes. A state in the next layer collects at most one
+            // contribution from each state in this one, so checking the sum
+            // before the layer it feeds is built catches a wrap before any
+            // value takes one. The touching and non-touching sweeps report
+            // CountResult.exact the same way.
+            __uint128_t layerSum = 0;
             cur.forEach([&](std::uint64_t key, std::uint64_t count) {
+                layerSum += count;
                 transitions(key, ctx, fc, lay, W, H, [&](std::uint64_t dst) {
                     next.add(dst, count);
                     ++edges;
                 });
             });
+            if (layerSum > static_cast<__uint128_t>(UINT64_MAX)) result.exact = false;
             result.edges += edges;
             std::swap(cur, next);
         }
@@ -267,12 +277,14 @@ CountResult countNoTouch(const Instance& inst, const Constraints& constraints) {
 
     // The trailing column occupancy is a record of the last column, not part of
     // acceptance, so accepting keys differing only there are summed.
-    std::uint64_t total = 0;
+    // The final layer is never fed forward, so it is summed the same way.
+    __uint128_t total = 0;
     cur.forEach([&](std::uint64_t key, std::uint64_t count) {
         if ((key & lay.extMask) == 0 && lay.vrem(key) == 0 && lay.fleet(key) == fc.fullIndex)
             total += count;
     });
-    result.count = total;
+    if (total > static_cast<__uint128_t>(UINT64_MAX)) result.exact = false;
+    result.count = static_cast<std::uint64_t>(total);
     return result;
 }
 

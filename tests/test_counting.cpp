@@ -9,6 +9,9 @@
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/profile_dp.hpp"
+// For the rung agreement on CountResult.exact. The overflow flag is part of the
+// ladder's contract, so it is checked across the ladder rather than on V0 alone.
+#include "mayflower/profile_dp_blocked.hpp"
 
 #include "harness.hpp"
 #include "oracle/brute_force.hpp"
@@ -204,6 +207,63 @@ void testSymmetryOfThePrior() {
     }
 }
 
+void testCountOverflowIsReported() {
+    std::printf("[counting past 64 bits]\n");
+    // A sweep that wraps used to return a plausible nineteen-digit answer with
+    // nothing to say it had. The counting path is unsigned, so it does not trap
+    // and -ftrapv does nothing for it; weightedCount reported this class through
+    // maxLayerSum and the integer path, which is the one that publishes
+    // 15,046,987,768, had no equivalent.
+    //
+    // Pinned from both sides, because a guard that has never been the reason for
+    // a refusal proves nothing. 16x8 with fifteen 1-ships is C(128,15), which
+    // fits; adding one more ship makes it C(128,16) = 9.334e19, which does not.
+    // Both instances pass Instance::validate() on every clause.
+    const Instance fits(16, 8, std::vector<int>(15, 1));
+    const Instance over(16, 8, std::vector<int>(16, 1));
+    fits.validate();
+    over.validate();
+
+    const auto a = mayflower::countConfigurations(fits);
+    checkEq(a.count, std::uint64_t{13216710966550396800ull}, "16x8 with fifteen 1-ships is C(128,15)");
+    expect(a.exact, "and it is reported exact");
+
+    const auto b = mayflower::countConfigurations(over);
+    expect(!b.exact, "16x8 with sixteen 1-ships is refused as inexact");
+    // The wrapped value is still returned, deliberately: the flag is the answer
+    // to whether it can be trusted, and a caller that ignores the flag should
+    // see the same number it always saw rather than a different silent one.
+    checkEq(b.count, std::uint64_t{1109300832714419320ull},
+            "and the value returned is still C(128,16) modulo 2^64");
+
+    // The instance every published number comes from is nowhere near the edge.
+    const auto standard = mayflower::countConfigurations(mayflower::standardInstance());
+    checkEq(standard.count, std::uint64_t{15046987768ull}, "10x10 {5,4,3,3,2} is unchanged");
+    expect(standard.exact, "and exact, with 30 bits of headroom");
+
+    // Every rung reports it, not just the reference. CountResult.exact is part
+    // of the ladder's contract now, and a flag only V0 computes would be worse
+    // than no flag: a caller on the fast path would read exact = true from a
+    // default-initialised field and take it for an answer.
+    if (mayflower::fastPathSupports(over)) {
+        const auto fast = mayflower::countConfigurationsFast(over);
+        checkEq(fast.count, b.count, "V1 returns the same wrapped value as V0");
+        expect(!fast.exact, "and refuses it as inexact as well");
+    }
+    if (mayflower::blockedPathSupports(over)) {
+        const auto blocked = mayflower::countConfigurationsBlocked(over);
+        checkEq(blocked.count, b.count, "V2 returns the same wrapped value as V0");
+        expect(!blocked.exact, "and refuses it as inexact as well");
+    }
+    // And the rungs agree on the instance that fits, where all four must say so.
+    if (mayflower::fastPathSupports(fits))
+        expect(mayflower::countConfigurationsFast(fits).exact,
+               "V1 calls the fifteen-ship case exact, as V0 does");
+    if (mayflower::blockedPathSupports(fits))
+        expect(mayflower::countConfigurationsBlocked(fits).exact,
+               "V2 calls the fifteen-ship case exact, as V0 does");
+}
+
 void testIndistinguishableShips() {
     std::printf("[indistinguishable ships]\n");
     // The DP counts unordered configurations, so a repeated length must agree
@@ -228,6 +288,7 @@ int main() {
     testConstraints();
     testSymmetryOfThePrior();
     testIndistinguishableShips();
+    testCountOverflowIsReported();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     return mf::test::report(dt);

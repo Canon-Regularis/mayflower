@@ -35,6 +35,7 @@
 
 #include "mayflower/profile_dp_blocked.hpp"
 
+#include <cstdint>
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -264,8 +265,17 @@ CountResult countConfigurationsBlocked(const Instance& inst, const Constraints& 
             for (auto& b : bucket) b.clear();
 
             // Scatter. Sequential appends, one stream per bucket.
+            //
+            // layerSum rides this walk in 128 bits. A state in the next
+            // layer collects at most one contribution from each state in
+            // this one, so checking the sum before the layer it feeds is
+            // built catches a wrap before any value takes one. The whole
+            // ladder has to agree on CountResult.exact as it agrees on
+            // CountResult.count.
             std::uint64_t edges = 0;
+            __uint128_t layerSum = 0;
             for (const Entry& e : cur) {
+                layerSum += e.count;
                 transitions(e.key, ctx, fc, lay, W, H, [&](std::uint64_t dst) {
                     const std::size_t which = splitmix64(dst) & (kRadix - 1);
                     bucket[which].push_back({dst, e.count});
@@ -273,6 +283,7 @@ CountResult countConfigurationsBlocked(const Instance& inst, const Constraints& 
                 });
             }
             result.edges += edges;
+            if (layerSum > static_cast<__uint128_t>(UINT64_MAX)) result.exact = false;
 
             // Buckets partition the destination keys, so merges never touch
             // one counter and need no lock. Below the floor a barrier costs more
@@ -287,12 +298,14 @@ CountResult countConfigurationsBlocked(const Instance& inst, const Constraints& 
         }
     }
 
-    std::uint64_t total = 0;
+    // The final layer is never fed forward, so it is summed the same way.
+    __uint128_t total = 0;
     for (const Entry& e : cur)
         if ((e.key & lay.extMask) == 0 && lay.vrem(e.key) == 0 &&
             lay.fleet(e.key) == fc.fullIndex)
             total += e.count;
-    result.count = total;
+    if (total > static_cast<__uint128_t>(UINT64_MAX)) result.exact = false;
+    result.count = static_cast<std::uint64_t>(total);
     return result;
 }
 

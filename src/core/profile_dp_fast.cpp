@@ -23,6 +23,7 @@
 //
 // Slots are 16 bytes, four to a cache line, and key and count sit in the same
 // line, so a probe touches one line where V0 touched three arrays.
+#include <cstdint>
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
@@ -250,7 +251,16 @@ CountResult countConfigurationsFast(const Instance& inst, const Constraints& con
                 if (++staged == kBatch) flush();
             };
 
+            // The layer sum in 128 bits, riding the walk this rung already
+            // makes. A state in the next layer collects at most one
+            // contribution from each state in this one, so checking the sum
+            // before the layer it feeds is built catches a wrap before any
+            // value takes one. countConfigurations does the same, and the
+            // ladder has to agree on CountResult.exact as it agrees on
+            // CountResult.count.
+            __uint128_t layerSum = 0;
             cur.forEach([&](std::uint64_t key, std::uint64_t count) {
+                layerSum += count;
                 // extShift is hoisted out of the state loop, which is this
                 // rung's fusion, so the digit is read here rather than through
                 // extDigit. The width is the header's.
@@ -284,6 +294,7 @@ CountResult countConfigurationsFast(const Instance& inst, const Constraints& con
             });
             flush();
 
+            if (layerSum > static_cast<__uint128_t>(UINT64_MAX)) result.exact = false;
             result.edges += edges;
             std::swap(cur, next);
         }
@@ -291,11 +302,13 @@ CountResult countConfigurationsFast(const Instance& inst, const Constraints& con
 
     const std::uint64_t acceptTail =
         static_cast<std::uint64_t>(fullFleet) << fleetShift;
-    std::uint64_t total = 0;
+    // The final layer is never fed forward, so it is summed the same way.
+    __uint128_t total = 0;
     cur.forEach([&](std::uint64_t key, std::uint64_t count) {
         if (key == acceptTail) total += count;
     });
-    result.count = total;
+    if (total > static_cast<__uint128_t>(UINT64_MAX)) result.exact = false;
+    result.count = static_cast<std::uint64_t>(total);
     return result;
 }
 
