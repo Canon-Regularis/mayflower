@@ -331,10 +331,99 @@ def test_structure(fig):
           "{} edges against {} states".format(lat["edges"], lat["stateVisits"]))
 
 
+def test_prose_against_experiments():
+    """Prose literals whose source is not out/figures.json.
+
+    test_prose_figures below covers the four quantities the renderer can reach
+    through its own input. These five cannot: the adaptivity ratios, the best
+    fixed order and the opponent margins live in experiments/results.json and
+    docs/MAXCOVER.txt, which render_report.py never opens, and the handoff
+    threshold lives in web/live.js. All five were typed into sentences with
+    nothing comparing them to anything.
+
+    All five are correct today. That is the reason to pin them rather than the
+    reason not to: a number that is right and unwatched is the state every one
+    of this project's stale figures passed through on its way to being wrong.
+
+    Every input here is committed, so unlike the checks below this runs on a
+    clean clone and therefore on every CI push.
+    """
+    print("\n[prose against the experiment record]")
+    src = io.open(os.path.join(ROOT, "tools", "render_report.py"),
+                  encoding="utf-8").read()
+    # A sentence is written as adjacent string literals across several source
+    # lines, so a phrase that reads as one run of words is broken by a quote, a
+    # newline and an indent. Join them before matching, or every pattern
+    # spanning a line break silently finds nothing and the check passes by
+    # never running.
+    src = re.sub(r'"\s*\n\s*"', "", src)
+    results = json.load(io.open(os.path.join(ROOT, "experiments", "results.json"),
+                                encoding="utf-8"))["results"]
+
+    # "between 1.31 and 2.09 times the adaptive optimum"
+    ratios = [r["value"] / r["adaptive"] for r in results
+              if r["family"] == "adaptivity" and r.get("adaptive")]
+    m = re.search(r"between ([0-9.]+) and ([0-9.]+) times the adaptive optimum", src)
+    if m is None:
+        check(False, "the adaptivity range is quoted in the prose")
+    else:
+        check(abs(float(m.group(1)) - min(ratios)) < 0.005
+              and abs(float(m.group(2)) - max(ratios)) < 0.005,
+              "the adaptivity range matches the solved instances",
+              "prose {} to {}, data {:.4f} to {:.4f} over {} instances".format(
+                  m.group(1), m.group(2), min(ratios), max(ratios), len(ratios)))
+
+    # "the best fixed order found is 88.73 shots", captured in docs/MAXCOVER.txt.
+    transcript = io.open(os.path.join(ROOT, "docs", "MAXCOVER.txt"),
+                         encoding="utf-8").read()
+    m = re.search(r"best fixed order found is ([0-9.]+) shots", src)
+    t = re.search(r"Best fixed order found: \S+ at ([0-9.]+) shots", transcript)
+    if m is None or t is None:
+        check(False, "the best fixed order is quoted in both the prose and the transcript")
+    else:
+        check(abs(float(m.group(1)) - float(t.group(1))) < 0.005,
+              "the best fixed order matches docs/MAXCOVER.txt",
+              "prose {}, transcript {}".format(m.group(1), t.group(1)))
+
+    # "improves the worst case over all opponents tested by 0.1392 shots on
+    # 5x5 {4,3,2} and 0.2057 on 4x4 {3,2}".
+    #
+    # The quantity is specifically the flat prior against the mild bias: the
+    # opponent rows are a worst case per belief, id'd opp-worst-<instance>-<theta>,
+    # and the claim is what believing theta = 1 buys over believing theta = 0.
+    # It is not the spread across every theta, which is 0.2422 on 5x5 and would
+    # have made this check pass against the wrong number.
+    m = re.search(r"all opponents tested by ([0-9.]+) shots on 5x5 \{4,3,2\} "
+                  r"and ([0-9.]+) on", src)
+    if m is None:
+        check(False, "the opponent margins are quoted in the prose")
+    else:
+        for quoted, instance in ((m.group(1), "5x5 {4,3,2}"), (m.group(2), "4x4 {3,2}")):
+            by_theta = {r["id"].rsplit("-", 1)[1]: r["value"] for r in results
+                        if r["family"] == "opponent" and r["instance"] == instance}
+            gain = (by_theta["0.0"] - by_theta["1.0"]
+                    if {"0.0", "1.0"} <= set(by_theta) else None)
+            check(gain is not None and abs(float(quoted) - gain) < 5e-4,
+                  "the {} opponent margin matches the record".format(instance),
+                  "prose {}, data {}".format(
+                      quoted, "{:.4f}".format(gain) if gain is not None else "rows missing"))
+
+    # "the handoff is at k = 400", which is web/live.js's SWITCH_TO_EXACT. The
+    # page explains a threshold the widget owns, so the two have to agree.
+    live = io.open(os.path.join(ROOT, "web", "live.js"), encoding="utf-8").read()
+    m = re.search(r"handoff is at k = (\d+)", src)
+    j = re.search(r"SWITCH_TO_EXACT\s*=\s*(\d+)", live)
+    check(m is not None and j is not None and m.group(1) == j.group(1),
+          "the handoff the prose explains is the one the widget uses",
+          "prose {}, web/live.js {}".format(
+              m.group(1) if m else "?", j.group(1) if j else "?"))
+
+
 def main():
     print("the figure-data contract")
     print("========================")
     test_blocking_hover()
+    test_prose_against_experiments()
 
     if not os.path.exists(FIGURES):
         # Not a pass and not a failure. out/ is generated and gitignored, so a
