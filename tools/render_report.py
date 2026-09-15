@@ -19,6 +19,32 @@ from build_report import (BUCKETS, RAMP, blocking_boards, board_heatmap, bound_l
                           esc, layer_profile, objective_bars, orbit_map, order_dependence,
                           scaling, survival)
 
+# How long web/engine.js takes to sweep the exact posterior, which is what
+# decides where the live widget hands off from the sampled estimator. These are
+# the one set of numbers on the page that report_data cannot produce, because
+# they time the browser engine rather than the C++ one, so they are stated here
+# with the command that produced them rather than left as prose.
+#
+#     node tools/sweep_timing.mjs
+#
+# Median of three, Node 24 on the reference part, against a record of misses.
+#
+# The page used to say "27 seconds at turn 0, under a second by shot 14". The
+# first half holds up: the empty record measures 58.2, 38.6 and 27.4 seconds
+# over three consecutive runs, falling as the JIT warms, so 27 was a warm
+# reading. The second half was wrong. Shot 14 measures 3.49 seconds, and the
+# sweep does not go under a second until shot 24. web/live.js records 2.0 to 3.4
+# seconds for the states the widget actually sweeps, which agrees with 3.49 at
+# shot 14 and not with "under a second", so the two files describing the same
+# widget had disagreed for as long as anyone had looked.
+#
+# Turn 0 is quoted as a range rather than a number because a 2.1x spread across
+# three back-to-back runs is not a quantity that deserves three significant
+# figures. Re-run the script and update these three together.
+SWEEP_TURN0 = "tens of seconds"
+SWEEP_SHOT14 = "about three and a half seconds"
+SWEEP_SUBSECOND = 24
+
 DARK_TOKENS = """
     color-scheme: dark;
     --page:        #0d0d0d;
@@ -375,11 +401,14 @@ def section_anchor(w, data, st):
       "fixed uniform sample of 200,000 boards against the record costs the same at every "
       "turn, and its survivors are a uniform sample of the posterior, so a cell marginal "
       "estimated from k of them carries a standard error of at most 1/(2&#8730;k). The "
-      "exact sweep has no error and a cost that falls as the record shrinks the lattice: "
-      "27 seconds at turn 0, under a second by shot 14. The handoff is at k = 400, where "
-      "the sampled marginal is good to 0.025 and the sweep has become cheap enough to run "
-      "between clicks. The readout names the estimator in "
-      "use.</p></div>")
+      "exact sweep has no error and a cost that falls steeply as the record shrinks the "
+      "lattice. Timed under Node against a record of misses, which constrains less than a "
+      "real game does at the same shot count: {} from an empty record, {} by shot 14, and "
+      "under a second from shot {}. That is why the opening is sampled rather than swept. "
+      "The handoff is at k = 400, where the sampled marginal is good to 0.025 and the "
+      "record has tightened enough that the sweep runs between clicks. The readout names "
+      "the estimator in use.</p></div>".format(
+          SWEEP_TURN0, SWEEP_SHOT14, SWEEP_SUBSECOND))
     w('<div class="livewrap" id="live" data-pool="' + POOL_B64 +
       '" data-omega="' + str(omega) + '" data-buckets="' + str(BUCKETS) + '">')
     w('<div class="livegrid"><div class="liveboard"></div>')
@@ -958,9 +987,16 @@ def build(data, out_path):
     section_opening_book(w, data, st)
     section_summary(w, data, st)
 
+    # Provenance, carried through from the figure data rather than stamped here.
+    # A page built from an old out/figures.json then says so, where before it
+    # said nothing at all and a page seventeen commits stale looked exactly like
+    # a current one. tests/test_provenance.py reads this back.
     w('<footer><div class="col">Mayflower &middot; exact Bayesian inference over '
       "Battleships &middot; " + esc(m["instance"]) + " &middot; {:,} games per policy on "
-      "one seeded uniform board pool.</div></footer>".format(m["games"]))
+      "one seeded uniform board pool, {} fold &middot; figure data from commit "
+      '<code data-commit="{}">{}</code>.</div></footer>'.format(
+          m["games"], esc(m.get("fold", "unstated")),
+          esc(m.get("commit", "unknown")), esc(m.get("commit", "unknown"))))
     w("</div>\n<script>" + SCRIPT + "</script>\n")
     w("<script>" + ENGINE_JS + "</script>\n")
     w("<script>" + LIVE_JS + "</script>\n")
