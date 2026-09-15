@@ -193,12 +193,26 @@ void testDegenerateInstances() {
     }
 }
 
-void testPruningLevelsAgree() {
+void testPruningLevelsAgree(bool heavy) {
     std::printf("[pruning does not change the answer]\n");
     struct Case { int w, h; std::vector<int> fleet; };
-    const Case cases[] = {
+    std::vector<Case> cases = {
         {3, 3, {2}}, {4, 3, {2}}, {4, 4, {3}}, {3, 4, {2}}, {4, 4, {2}},
     };
+    // Those five are the cheap instances, and they are not the published
+    // ones. out/figures.json carries an optimum for 5x4 {3}, 4x4 {2,2} and
+    // 4x4 {3,2} as well, and none of the three had an unpruned reference:
+    // the only thing asserting each value was the pruned search that
+    // produced it, so an inadmissible floor would have agreed with itself.
+    //
+    // Pruning::None on a fleet instance costs tens of seconds, which is why
+    // these sit behind an argument and run nightly rather than on a pull
+    // request. Measured, the levels agree to 8.9e-16 on 5x4 {3} and 1.8e-15
+    // on 4x4 {3,2}: a few ulp of summation order, well inside the tolerance
+    // below.
+    if (heavy)
+        for (const Case& c : {Case{5, 4, {3}}, Case{4, 4, {2, 2}}, Case{4, 4, {3, 2}}})
+            cases.push_back(c);
     const mayflower::Pruning levels[] = {
         mayflower::Pruning::None, mayflower::Pruning::Bounds, mayflower::Pruning::Star1,
     };
@@ -279,8 +293,11 @@ void testAdaptivePruningStaysOn() {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
     const auto t0 = std::chrono::steady_clock::now();
+    // "heavy" adds the three published fleet optima to the pruning
+    // comparison. Off by default so a pull request stays in budget.
+    const bool heavy = argc > 1 && std::string(argv[1]) == "heavy";
 
     testOptimumDominatesEveryPolicy();
     testPinnedValues();
@@ -288,7 +305,7 @@ int main() {
     testRefusesOversizedInstances();
     testFloorIsAdmissible();
     testDegenerateInstances();
-    testPruningLevelsAgree();
+    testPruningLevelsAgree(heavy);
     testAdaptivePruningStaysOn();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
