@@ -118,6 +118,24 @@ def test_parser():
         check(first["ci"][0] <= first["mean"] <= first["ci"][1],
               "and the interval it read contains the mean it read")
 
+    # A pair with no spread prints a different line, and it has to be read
+    # rather than skipped. density(b=50) and density(b=200) choose the same cell
+    # on every board in the pool, so every paired difference is zero and the
+    # interval is 0/0. selfplay used to print that as [+0.000, +0.000], a 95%
+    # interval of zero width, and both headline artefacts carry one. It now says
+    # what actually happened, and a row the parser cannot match is a row that
+    # disappears from the record, so this pins that it matches.
+    degenerate = run_headline.parse(
+        "  density(b=50)        - density(b=200)        +0.000  "
+        "[identical on all 20000]   rho 1.000   CRN saves unbounded\n")
+    check(len(degenerate["paired"]) == 1, "a pair with no spread is still read",
+          "got {}".format(len(degenerate["paired"])))
+    if degenerate["paired"]:
+        row = degenerate["paired"][0]
+        check(row["ci"] is None and row.get("identical") == 20000,
+              "and it records no interval rather than one of width zero",
+              "ci {!r}, identical {!r}".format(row["ci"], row.get("identical")))
+
     # The caller refuses to record a partial result, which only works if a table
     # it cannot read comes back empty rather than half full.
     empty = run_headline.parse("selfplay: could not open the board bank\n")

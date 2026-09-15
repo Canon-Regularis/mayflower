@@ -117,9 +117,22 @@ void pairedComparison(const Summary& a, const Summary& b) {
         std::snprintf(saving, sizeof saving, "unbounded");
     }
 
-    std::printf("  %-20s - %-20s  %+7.3f  [%+7.3f, %+7.3f]   rho %.3f   CRN saves %s\n",
-                a.name.c_str(), b.name.c_str(), dmean, dmean - half, dmean + half, rho,
-                saving);
+    // The same degeneracy reaches the interval, and there it was not caught.
+    // Every paired difference being zero makes dsd zero and prints [+0.000,
+    // +0.000]: a 95% confidence interval of zero width, which claims the
+    // difference is known exactly. It is not known exactly, it is undefined,
+    // because the estimator divides a zero spread by a zero spread. Both
+    // headline artefacts carry that interval today for density(b=50) against
+    // density(b=200). An interval that cannot be computed is reported as not
+    // computed.
+    if (dsd > 0.0) {
+        std::printf("  %-20s - %-20s  %+7.3f  [%+7.3f, %+7.3f]   rho %.3f   CRN saves %s\n",
+                    a.name.c_str(), b.name.c_str(), dmean, dmean - half, dmean + half, rho,
+                    saving);
+    } else {
+        std::printf("  %-20s - %-20s  %+7.3f  [identical on all %zu]   rho %.3f   CRN saves %s\n",
+                    a.name.c_str(), b.name.c_str(), dmean, n, rho, saving);
+    }
 }
 
 }  // namespace

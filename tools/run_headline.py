@@ -78,8 +78,21 @@ def parse(text):
                 "best": int(m.group(8)), "worst": int(m.group(9)),
             })
 
+    # Two forms, because an interval is not always computable. When every paired
+    # difference is zero the spread is zero and the interval is 0/0, which used
+    # to print as [+0.000, +0.000]: a 95% interval of zero width, claiming the
+    # difference is known exactly rather than not known at all. Both headline
+    # artefacts carry one, for density(b=50) against density(b=200), which pick
+    # the same cell on every board in the pool.
+    #
+    # The degenerate form has to be matched rather than merely not matched, or
+    # the row vanishes from the record and a reader sees nine comparisons where
+    # the tool made ten.
     pair = re.compile(
         r"^(\S+)\s+-\s+(\S+)\s+([+-][\d.]+)\s+\[\s*([+-][\d.]+),\s*([+-][\d.]+)\]"
+        r"\s+rho\s+([-\d.]+)")
+    same = re.compile(
+        r"^(\S+)\s+-\s+(\S+)\s+([+-][\d.]+)\s+\[identical on all (\d+)\]"
         r"\s+rho\s+([-\d.]+)")
     for line in text.split("\n"):
         m = pair.match(line.strip())
@@ -88,6 +101,18 @@ def parse(text):
                 "a": m.group(1), "b": m.group(2), "difference": float(m.group(3)),
                 "ci": [float(m.group(4)), float(m.group(5))],
                 "rho": float(m.group(6)),
+            })
+            continue
+        m = same.match(line.strip())
+        if m:
+            out["paired"].append({
+                "a": m.group(1), "b": m.group(2), "difference": float(m.group(3)),
+                # null, not [0, 0]. The two policies agreed on every board, which
+                # is a stronger and different statement than an interval of
+                # width zero, and a reader can tell the two apart.
+                "ci": None,
+                "identical": int(m.group(4)),
+                "rho": float(m.group(5)),
             })
     return out
 

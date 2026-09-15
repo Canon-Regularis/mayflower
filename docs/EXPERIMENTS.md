@@ -44,3 +44,26 @@ bimodal, the same comparison against two opponents differs by a factor of
 thirteen and no single number covers both. The formula is checked by simulating at
 exactly the prescribed `n` and confirming the promised 80% power arrives, measured
 at 0.807 over 2,000 replicates and 0.825 over the 400 the quick run uses.
+
+## A degenerate pair, and what the artefacts still hold
+
+`density(b=50)` and `density(b=200)` saturate to the same rule: over the whole
+20,000-board pool they pick the same cell on every board. Every paired
+difference between them is therefore exactly zero, and so is the spread of those
+differences, so the paired interval is 0 divided by 0.
+
+`tools/selfplay` used to print that as `[+0.000, +0.000]`, a 95% confidence
+interval of zero width. That is not a narrow interval, it is an undefined one,
+and printing it as a number claims the difference is known exactly rather than
+not estimable. It now prints `identical on all 20000`, and `tools/run_headline`
+records `"ci": null` with an `identical` count rather than a pair of zeros.
+
+`experiments/headline_train.json` has been regenerated and carries the new form.
+`experiments/headline_test.json` has not, and still holds the zero-width
+interval. That is deliberate. Regenerating it means reading TEST, which needs an
+unseal recorded in `experiments/audit.log`, and the seal exists so that reading
+TEST is a decision someone takes rather than a side effect of tidying a field.
+The TEST measurements themselves did not change: the means, the standard
+deviations and every other interval are what the current tool produces, and the
+`paired` block is read by nothing downstream, so no published number rests on
+it. The next legitimate TEST read will carry the corrected form.
