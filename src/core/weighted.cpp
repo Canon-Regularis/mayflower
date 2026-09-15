@@ -11,6 +11,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -320,6 +321,32 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
         (!weights.empty.empty() &&
          weights.empty.size() != static_cast<std::size_t>(inst.cellCount())))
         throw std::invalid_argument("cell weights must have one entry per cell");
+
+    // Only the sizes were checked, never a value, and Weights is a plain
+    // aggregate with four public vectors that callers fill directly. A weight
+    // that is not a finite non-negative number does not produce an obviously
+    // broken answer, which is what makes it worth refusing here.
+    //
+    // Measured on 5x5 {3,2}: one negative occupancy weight returns total 0 and
+    // logTotal -inf, which is byte for byte what an impossible record returns,
+    // so a mis-signed weight reads as "no configuration is consistent with this
+    // record". A NaN does the same, because every comparison against it is
+    // false and so the underflow test, the rescale test and the max all decline
+    // to fire. An infinity returns total inf.
+    //
+    // The most plausible way in is a caller passing log-odds where odds were
+    // wanted. A mixture of signs is worse than a uniform one: the sweep then
+    // cancels partially and can land on a positive total that means nothing.
+    const auto checkValues = [](const std::vector<double>& v, const char* what) {
+        for (const double x : v)
+            if (!std::isfinite(x) || x < 0.0)
+                throw std::invalid_argument(
+                    std::string(what) + " weights must be finite and non-negative");
+    };
+    checkValues(weights.occupied, "cell occupancy");
+    checkValues(weights.empty, "cell vacancy");
+    checkValues(weights.startH, "horizontal placement");
+    checkValues(weights.startV, "vertical placement");
 
     WeightMap cur(1024), next(1024);
     cur.add(Key{0, packAux(0, 0)}, 1.0);

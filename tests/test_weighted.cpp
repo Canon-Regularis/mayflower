@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <stdexcept>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -453,6 +454,54 @@ void testRejectsBadInput() {
         mayflower::weightedCount(inst, bad);
     } catch (const std::exception&) { threw = true; }
     check(threw, "a mis-sized weight vector is refused");
+
+    // Only the sizes were ever checked. Weights is a plain aggregate with four
+    // public vectors and callers fill them directly, so a value that is not a
+    // finite non-negative number reached the sweep.
+    //
+    // The reason this is worth refusing rather than tolerating is what came
+    // back. Measured on 5x5 {3,2} before the guard: a negative occupancy weight
+    // returned total 0 and logTotal -inf, which is what an impossible record
+    // returns, so a mis-signed weight read as "no configuration is consistent
+    // with this record". NaN did the same, because every comparison against it
+    // is false and so the underflow test, the rescale test and the running
+    // maximum all declined to fire. An infinity returned total inf.
+    const std::size_t cells = static_cast<std::size_t>(inst.cellCount());
+    const std::size_t slots = cells * 2;   // two distinct lengths in {3,2}
+    struct BadValue { const char* name; double v; };
+    for (const BadValue& bad : {BadValue{"a negative", -1.0},
+                                BadValue{"a NaN", std::numeric_limits<double>::quiet_NaN()},
+                                BadValue{"an infinite", std::numeric_limits<double>::infinity()}}) {
+        threw = false;
+        try {
+            mayflower::Weights w;
+            w.occupied.assign(cells, bad.v);
+            w.empty.assign(cells, 1.0);
+            mayflower::weightedCount(inst, w);
+        } catch (const std::exception&) { threw = true; }
+        check(threw, std::string(bad.name) + " cell weight is refused");
+    }
+
+    // The placement families are checked too, and were equally unguarded.
+    threw = false;
+    try {
+        mayflower::Weights w;
+        w.startH.assign(slots, 1.0);
+        w.startV.assign(slots, 1.0);
+        w.startV[0] = -1.0;
+        mayflower::weightedCount(inst, w);
+    } catch (const std::exception&) { threw = true; }
+    check(threw, "a negative placement weight is refused");
+
+    // And the legitimate case is untouched: a weight of zero is how a caller
+    // says a placement is impossible, so it must still be accepted.
+    {
+        mayflower::Weights w;
+        w.occupied.assign(cells, 1.0);
+        w.empty.assign(cells, 0.0);
+        const auto r = mayflower::weightedCount(inst, w);
+        check(r.total >= 0.0, "a weight of exactly zero is still allowed");
+    }
 }
 
 // Weights a double cannot hold.
