@@ -70,15 +70,18 @@ non-adaptive quantity, and the non-adaptive optimum is worth a number here.
   diagonal lattice          95.7404               
 
   Best fixed order found: row-major at 88.7342 shots, so the non-adaptive optimum is
-  at most that. The density policy measures 44.369 on the same board, so an
-  adaptive player beats every fixed order tried here by 44.3652 shots.
+  at most that. This tool enumerates fixed orders and does not play a game,
+  so the adaptive side of the comparison is not its to state: it used to
+  subtract a typed 44.369 from the figure above and report the difference as
+  a measurement. experiments/results.json holds the measured policy mean with
+  its interval and its fold, and the dossier makes the comparison there.
 
-  Both of those are achievable numbers rather than optima, so the pair does
-  not bound the adaptivity gap from below: that would need a lower bound on
-  the non-adaptive optimum, and the only route to one is a bound on maxcov
-  from above, which is the same wall section 1 hit. What the pair does show
-  is that the gap is not small, matching the 2.09x tools/m9 measures where
-  both optima are computable.
+  The fixed order above and any measured adaptive policy are both achievable
+  numbers rather than optima, so the pair does not bound the adaptivity gap
+  from below: that would need a lower bound on the non-adaptive optimum, and
+  the only route to one is a bound on maxcov from above, which is the same
+  wall section 1 hit. What the pair does show is that the gap is not small,
+  matching the 2.09x tools/m9 measures where both optima are computable.
 
   Verdict on the rung: cut. E5 as sketched is not a lower bound on the
   adaptive optimum, and the ladder keeps E4 at 24.088 as its binding rung.

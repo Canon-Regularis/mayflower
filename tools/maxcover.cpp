@@ -320,15 +320,17 @@ void shapes() {
 
     std::printf("\n  Best fixed order found: %s at %.4f shots, so the non-adaptive optimum is\n",
                 bestName, bestOrder);
-    std::printf("  at most that. The density policy measures 44.369 on the same board, so an\n");
-    std::printf("  adaptive player beats every fixed order tried here by %.4f shots.\n\n",
-                bestOrder - 44.369);
-    std::printf("  Both of those are achievable numbers rather than optima, so the pair does\n");
-    std::printf("  not bound the adaptivity gap from below: that would need a lower bound on\n");
-    std::printf("  the non-adaptive optimum, and the only route to one is a bound on maxcov\n");
-    std::printf("  from above, which is the same wall section 1 hit. What the pair does show\n");
-    std::printf("  is that the gap is not small, matching the 2.09x tools/m9 measures where\n");
-    std::printf("  both optima are computable.\n\n");
+    std::printf("  at most that. This tool enumerates fixed orders and does not play a game,\n");
+    std::printf("  so the adaptive side of the comparison is not its to state: it used to\n");
+    std::printf("  subtract a typed 44.369 from the figure above and report the difference as\n");
+    std::printf("  a measurement. experiments/results.json holds the measured policy mean with\n");
+    std::printf("  its interval and its fold, and the dossier makes the comparison there.\n\n");
+    std::printf("  The fixed order above and any measured adaptive policy are both achievable\n");
+    std::printf("  numbers rather than optima, so the pair does not bound the adaptivity gap\n");
+    std::printf("  from below: that would need a lower bound on the non-adaptive optimum, and\n");
+    std::printf("  the only route to one is a bound on maxcov from above, which is the same\n");
+    std::printf("  wall section 1 hit. What the pair does show is that the gap is not small,\n");
+    std::printf("  matching the 2.09x tools/m9 measures where both optima are computable.\n\n");
     std::printf("  Verdict on the rung: cut. E5 as sketched is not a lower bound on the\n");
     std::printf("  adaptive optimum, and the ladder keeps E4 at 24.088 as its binding rung.\n\n");
 }

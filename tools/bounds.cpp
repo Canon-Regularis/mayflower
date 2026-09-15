@@ -103,16 +103,20 @@ int main() {
     std::printf("optimum is computable. What it does bound is the NON-ADAPTIVE optimum, which\n");
     std::printf("is the wrong problem. See tools/maxcover and docs/MAXCOVER.txt.\n\n");
 
-    std::printf("Measured for comparison (20,000 games, seeded uniform pool):\n");
-    std::printf("  random               95.354  [ 95.288,  95.421]\n");
-    std::printf("  parity hunt/target   51.535  [ 51.414,  51.656]\n");
-    std::printf("  density              44.369  [ 44.246,  44.491]\n\n");
-    std::printf("Unresolved interval: [%.3f, 44.369], a gap of %.3f shots.\n", wf.bound,
-                44.369 - wf.bound);
-    std::printf("The water-filling rung raises the floor from %d to %.3f, closing %.1f%% of the\n",
-                k::kCoverageBound, wf.bound,
-                100.0 * (wf.bound - k::kCoverageBound) / (44.369 - k::kCoverageBound));
-    std::printf("distance to the best measured policy.\n");
+    // This tool proves the floor. It does not measure the ceiling, and it used
+    // to print one anyway: three policy rows typed in, and a 44.369 repeated at
+    // four sites, from which it derived both the unresolved gap and the
+    // percentage of it closed. The page computes that endpoint from the
+    // measurement instead, so the two disagreed in the third decimal on the
+    // project's central claim, on a page whose first line says nothing on it is
+    // transcribed. A quantity this tool cannot measure is one it should not
+    // quote, and the page and experiments/results.json both carry it already.
+    std::printf("Unresolved interval: [%.3f, the best measured policy], where the upper end is\n",
+                wf.bound);
+    std::printf("a measurement rather than a bound. tools/selfplay measures it, and\n");
+    std::printf("experiments/results.json carries it with its interval and its fold.\n");
+    std::printf("The water-filling rung raises the certified floor from %d to %.3f.\n",
+                k::kCoverageBound, wf.bound);
 
     const bool ok = blocked == 0 && betas[0] == 50 && betas[3] == 20 &&
                     wf.hitTranscripts == 28560 && wf.bound > 24.0 && wf.bound < 24.1;
