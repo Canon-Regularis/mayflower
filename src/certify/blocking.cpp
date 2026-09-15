@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -26,7 +28,17 @@ struct FreeSetDp {
     int W, H, L;
     std::vector<std::int64_t> pow;   // pow[c] = L^c
     std::int64_t vertStates = 1;
-    std::vector<std::int8_t> cur, next;
+    // The DP value is the size of the free set, so the type has to hold a
+    // whole board. It was std::int8_t, which caps at 127, while the only
+    // guard below is on the state count. Those are different quantities:
+    // blockingNumber(12,20,3) has 1,594,323 states, comfortably inside the
+    // 2^31 state guard, and a free set near 160, comfortably outside a
+    // signed byte. value + 1 wrapped to -128, the `value < 0` test below
+    // then dropped those states, and run() returned a saturated 127. Since
+    // blockingNumber reports width*height - largestFreeSet, a saturated
+    // free set is a blocking number that is too large, published as exact.
+    using Value = std::int16_t;   // -1 for dead, else a cell count
+    std::vector<Value> cur, next;
     const std::vector<Decision>* fixed = nullptr;   // null means every cell is free to choose
 
     FreeSetDp(int w, int h, int l) : W(w), H(h), L(l) {
@@ -36,6 +48,12 @@ struct FreeSetDp {
         const std::int64_t total = vertStates * L;
         if (total > (std::int64_t{1} << 31))
             throw std::invalid_argument("blocking DP state space too large for this board");
+        // Both ceilings, stated together. The state one was here alone and
+        // the value one lived only in the width of a type, which is how a
+        // saturated answer got out instead of a refusal.
+        if (static_cast<std::int64_t>(W) * H >
+            static_cast<std::int64_t>(std::numeric_limits<Value>::max()))
+            throw std::invalid_argument("blocking DP free set would not fit its value type");
         cur.assign(static_cast<std::size_t>(total), -1);
         next.assign(static_cast<std::size_t>(total), -1);
     }
@@ -47,7 +65,7 @@ struct FreeSetDp {
             for (int col = 0; col < W; ++col) step(row, col);
             foldRow();
         }
-        std::int8_t best = -1;
+        Value best = -1;
         for (std::int64_t v = 0; v < vertStates; ++v)
             best = std::max(best, cur[static_cast<std::size_t>(v * L)]);
         return best;
@@ -69,13 +87,13 @@ struct FreeSetDp {
                 for (std::int64_t lo = 0; lo < low; ++lo) {
                     const std::int64_t vert = db + lo;
                     for (int horiz = 0; horiz < L; ++horiz) {
-                        const std::int8_t value = cur[static_cast<std::size_t>(vert * L + horiz)];
+                        const Value value = cur[static_cast<std::size_t>(vert * L + horiz)];
                         if (value < 0) continue;
 
                         // Cell excluded from the free set: both runs restart.
                         if (mayBlock) {
                             const std::int64_t clearedVert = hb + lo;
-                            std::int8_t& blocked =
+                            Value& blocked =
                                 next[static_cast<std::size_t>(clearedVert * L)];
                             blocked = std::max(blocked, value);
                         }
@@ -83,9 +101,9 @@ struct FreeSetDp {
                         // Cell in the free set: both runs extend and must stay below L.
                         if (mayTake && d + 1 < L && horiz + 1 < L) {
                             const std::int64_t grownVert = hb + static_cast<std::int64_t>(d + 1) * low + lo;
-                            std::int8_t& taken =
+                            Value& taken =
                                 next[static_cast<std::size_t>(grownVert * L + horiz + 1)];
-                            taken = std::max(taken, static_cast<std::int8_t>(value + 1));
+                            taken = std::max(taken, static_cast<Value>(value + 1));
                         }
                     }
                 }
@@ -97,7 +115,7 @@ struct FreeSetDp {
     // A new row restarts the horizontal run, so collapse the horizontal digit.
     void foldRow() {
         for (std::int64_t v = 0; v < vertStates; ++v) {
-            std::int8_t best = -1;
+            Value best = -1;
             for (int horiz = 0; horiz < L; ++horiz)
                 best = std::max(best, cur[static_cast<std::size_t>(v * L + horiz)]);
             cur[static_cast<std::size_t>(v * L)] = best;

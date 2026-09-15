@@ -237,6 +237,32 @@ void testParityCase() {
     std::printf("  beta(2) = 50, matching the checkerboard argument\n");
 }
 
+void testFreeSetBeyondAByte() {
+    std::printf("[blocking: a free set larger than a signed byte]\n");
+    // The DP value is the size of the free set, and it was a std::int8_t. The
+    // only guard in that constructor is on the STATE COUNT, which is a different
+    // quantity: 12x20 with L = 3 has 1,594,323 states, comfortably inside the
+    // 2^31 state guard, and a free set of 160, comfortably outside a byte.
+    // value + 1 wrapped to -128, the dead-state test then dropped those states,
+    // and run() returned a saturated 127, so blockingNumber reported 240 - 127 =
+    // 113 as an exact blocking number. The true answer is 240 - 160 = 80.
+    //
+    // 160 is checkable by hand. No three free cells in a line means at most two
+    // of every three in each row, and a width of 12 takes exactly eight, so
+    // eight per row across twenty rows is 160 and the pattern achieves it.
+    const auto wide = mayflower::blockingNumber(12, 20, 3);
+    checkEq(wide.largestFreeSet, 160, "12x20 L=3 finds a free set of 160");
+    checkEq(wide.blocking, 80, "so beta is 240 - 160");
+    expect(wide.largestFreeSet > 127, "and the value exceeds what a signed byte holds");
+
+    // Every call site in the repository is 10x10, where the free set never
+    // approaches the old ceiling, so none of the published numbers move.
+    checkEq(mayflower::blockingNumber(10, 10, 2).blocking, 50, "10x10 beta(2) is unchanged");
+    checkEq(mayflower::blockingNumber(10, 10, 3).blocking, 33, "10x10 beta(3) is unchanged");
+    checkEq(mayflower::blockingNumber(10, 10, 4).blocking, 24, "10x10 beta(4) is unchanged");
+    checkEq(mayflower::blockingNumber(10, 10, 5).blocking, 20, "10x10 beta(5) is unchanged");
+}
+
 }  // namespace
 
 int main() {
@@ -249,6 +275,7 @@ int main() {
     testWitnessesAreValid();
     testTranscriptCount();
     testWaterFillingIsSound();
+    testFreeSetBeyondAByte();
 
     const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     return mf::test::report(dt);
