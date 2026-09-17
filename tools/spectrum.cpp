@@ -26,8 +26,13 @@ int main() {
     std::printf("packing once. lambda is the growth per column: the number of packings of\n");
     std::printf("an H x W strip goes like lambda^W.\n\n");
 
-    std::printf("%3s %3s %16s %14s %10s %9s %s\n", "k", "H", "lambda", "log(lambda)/H",
-                "density", "xi (cols)", "correlations");
+    // lambda and log(lambda)/H come from the main power iteration, which
+    // reports Spectrum::converged. density and xi come from a second one, which
+    // reports densityConverged. Both flags existed and neither was printed, so
+    // a column that had not settled looked exactly like one that had. The
+    // "settled" column says whether to believe the two on its left.
+    std::printf("%3s %3s %16s %14s %10s %9s %8s %s\n", "k", "H", "lambda", "log(lambda)/H",
+                "density", "xi (cols)", "settled", "correlations");
     for (int rod = 2; rod <= 5; ++rod) {
         for (int h = 2; h <= 12; ++h) {
             if (h < rod) continue;
@@ -36,8 +41,11 @@ int main() {
             // outside it and are skipped instead of thrashing.
             try { s = transferSpectrum(h, rod, 1.0); }
             catch (const std::exception&) { break; }
-            std::printf("%3d %3d %16.10f %14.6f %10.4f %9.2f %s\n", rod, h, s.lambdaMax,
-                        s.freeEnergyPerSite, s.density, s.correlationLength,
+            const char* settled = (s.converged && s.densityConverged) ? "yes"
+                                : s.converged ? "lambda"
+                                : s.densityConverged ? "density" : "no";
+            std::printf("%3d %3d %16.10f %14.6f %10.4f %9.2f %8s %s\n", rod, h, s.lambdaMax,
+                        s.freeEnergyPerSite, s.density, s.correlationLength, settled,
                         s.alternating ? "alternate sign" : "same sign");
         }
         std::printf("\n");

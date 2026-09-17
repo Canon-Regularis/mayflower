@@ -23,7 +23,13 @@ void reportInstance(const mayflower::Instance& inst, const char* label) {
     const double dt = seconds(t0);
 
     std::printf("%-28s %s\n", label, inst.describe().c_str());
-    std::printf("  |Omega|        %20llu\n", static_cast<unsigned long long>(r.count));
+    // The sweeps compute CountResult::exact and this printed the count without
+    // consulting it, which makes the flag decoration rather than a guard. Every
+    // instance here is far inside 64 bits, so the note never fires; that is the
+    // reason to print it rather than a reason not to.
+    std::printf("  |Omega|        %20llu%s\n",
+                static_cast<unsigned long long>(r.count),
+                r.exact ? "" : "   NOT EXACT: the count passed 64 bits");
     std::printf("  log2|Omega|    %20.4f bits\n",
                 r.count ? std::log2(static_cast<double>(r.count)) : 0.0);
     std::printf("  peak states    %20llu\n", static_cast<unsigned long long>(r.peakStates));

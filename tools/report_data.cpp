@@ -134,6 +134,15 @@ int main(int argc, char** argv) {
 
     // ---- lattice shape ----------------------------------------------------
     const CountResult lattice = countConfigurations(inst);
+    // The flag the sweeps compute is worth nothing if the publisher does
+    // not read it. This is the tool that writes 15,046,987,768 into the
+    // figure data, and it used to write whatever came back.
+    if (!lattice.exact) {
+        std::fprintf(stderr, "refusing to publish: the lattice count for %s "
+                             "exceeded 64 bits and is not exact\n",
+                     inst.describe().c_str());
+        return 3;
+    }
     out += "  \"lattice\": {\"edges\": " + std::to_string(lattice.edges) +
            ", \"stateVisits\": " + std::to_string(lattice.stateVisits) +
            ", \"peakStates\": " + std::to_string(lattice.peakStates) +
