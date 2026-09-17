@@ -37,8 +37,20 @@ export function makeInstance(width, height, fleet) {
     if (L > 8)
       throw new RangeError(`profile sweep supports ship length <= 8, got ${L}`);
   }
-  if (height > 20)
-    throw new RangeError(`profile sweep supports height <= 20, got ${height}`);
+  // Ten, not twenty. The twenty came from Instance::validate(), where ext is
+  // a uint64 and twenty rows of three bits genuinely fit. Here ext is built
+  // with bitwise operators and stored in an Int32Array, so only ten rows fit
+  // and the file's own header says so. Above ten the shifts wrap: at row 11
+  // `1 << 33` is `1 << 1` and corrupts row 1's digit, and at row 10 a digit
+  // of 2 or more reaches the sign bit and reads back as something else.
+  //
+  // The result was not a conservative undercount. 5x11 {5,4} returned 2175
+  // against a true 2170, so the engine reported configurations that do not
+  // exist. Measured across every width that fits 128 cells: no failures at
+  // height 9 or 10, 7 of 80 at height 11, 50 of 72 at height 12.
+  if (height > 10)
+    throw new RangeError(
+      `profile sweep supports height <= 10 in this engine, got ${height}`);
 
   const lengths = [...new Set(fleet)].sort((a, b) => a - b);
   const caps = lengths.map(L => fleet.filter(x => x === L).length);
@@ -76,7 +88,38 @@ class Layer {
     this.epoch = 0;
   }
   clear() { this.epoch++; this.n = 0; }
+
+  // Double and rehash. The C++ counterpart grows at the same load factor
+  // (src/core/detail/v0_sweep.hpp); this port kept the open addressing and
+  // dropped the growth, so a full table made add() probe every slot, find
+  // none free, and loop forever. That is reachable from the exported API:
+  // makeInstance(10, 10, [8,7,6,5,4]) is accepted and passes four million
+  // live states through a table of 2^20, which hangs the tab with no error.
+  //
+  // epoch restarts at 1 rather than 0 because the fresh stamp array is
+  // zero-filled, and at epoch 0 every slot would read as live holding key 0.
+  grow() {
+    const oldExt = this.ext, oldAux = this.aux, oldCnt = this.cnt;
+    const oldDense = this.dense, oldN = this.n;
+    const cap = (this.mask + 1) * 2;
+    this.mask = cap - 1;
+    this.ext = new Int32Array(cap);
+    this.aux = new Int32Array(cap);
+    this.cnt = new Float64Array(cap);
+    this.stamp = new Int32Array(cap);
+    this.dense = new Int32Array(cap);
+    this.n = 0;
+    this.epoch = 1;
+    for (let k = 0; k < oldN; k++) {
+      const i = oldDense[k];
+      this.add(oldExt[i], oldAux[i], oldCnt[i]);
+    }
+  }
+
   add(ext, aux, count) {
+    // Grow before probing, so the probe below always has a free slot to
+    // find. Seven tenths is the C++ threshold.
+    if (this.n * 10 >= (this.mask + 1) * 7) this.grow();
     let i = (Math.imul(ext, 0x9e3779b1) ^ Math.imul(aux + 1, 0x85ebca6b)) & this.mask;
     for (;;) {
       if (this.stamp[i] !== this.epoch) {
@@ -174,7 +217,62 @@ function expand(inst, ext, aux, ctx, emit) {
 const AUX_SHIFT = 5, AUX_MASK = 31;
 
 /** Exact configuration count under the given constraints. */
+// What count() and marginals() both require of their arguments.
+//
+// Neither checked. A cells array shorter than the board read undefined past
+// its end, and undefined !== EMPTY and !== OCCUPIED, so the tail silently
+// counted as FREE: a one-element array returned the same 204 on 4x4 {3,2} as
+// the full sixteen. A gate with missing or short arrays is worse, because
+// expand tests (!allowH || allowH[li]) and a missing entry reads as allowed,
+// so a malformed gate returns the unconstrained 264 rather than refusing.
+// src/core/detail/entry.hpp does this check before every C++ sweep.
+function checkArgs(inst, cells, gate) {
+  if (cells && cells.length !== inst.cells)
+    throw new RangeError(
+      `cell filter has ${cells.length} entries, need ${inst.cells}`);
+  if (!gate) return;
+  // gate.h and gate.v are indexed by cell, and each entry is either null
+  // or a per-length array, which is how cellCtx reads them.
+  for (const [name, table] of [["h", gate.h], ["v", gate.v]]) {
+    if (table === undefined || table === null) continue;
+    if (table.length !== inst.cells)
+      throw new RangeError(
+        `${name} placement gate has ${table.length} entries, need ${inst.cells}`);
+    for (let c = 0; c < table.length; c++)
+      if (table[c] && table[c].length !== inst.lengths.length)
+        throw new RangeError(
+          `${name} gate at cell ${c} has ${table[c].length} lengths, ` +
+          `need ${inst.lengths.length}`);
+  }
+}
+
+// Refuse a layer whose sum has left the exactly-representable integers.
+//
+// The header's claim that every count here is exact is derived for the one
+// standard instance, where the largest layer sum measures 1.58e10 against a
+// limit of 9.01e15. makeInstance permits many others: 10x10 with twelve
+// 2-ships returned 184521737660311420 where the true count ends 383, a
+// silently rounded answer.
+//
+// src/core/profile_dp.cpp answers this by returning the value beside a flag,
+// because CountResult is a struct. count() returns a primitive, so the choice
+// here is between a rounded number and a refusal, and a refusal is the one a
+// caller cannot mistake for an answer. Same detector as the C++: no value in
+// the next layer can exceed this layer's sum, so a sum inside the limit means
+// nothing in the layer it feeds has rounded.
+const EXACT_LIMIT = 9007199254740992;   // 2^53
+
+function checkExact(layer, where) {
+  let sum = 0;
+  for (let k = 0; k < layer.n; k++) sum += layer.cnt[layer.dense[k]];
+  if (sum > EXACT_LIMIT)
+    throw new RangeError(
+      `${where}: a layer sums to ${sum}, past the 2^53 a double holds exactly, ` +
+      `so this instance cannot be counted exactly here`);
+}
+
 export function count(inst, cells, gate) {
+  checkArgs(inst, cells, gate);
   const cap = 1 << 20;
   let cur = new Layer(cap), next = new Layer(cap);
   cur.clear(); next.clear();
@@ -186,6 +284,7 @@ export function count(inst, cells, gate) {
       const cc = cells[c];
       const ctx = cellCtx(inst, cells, gate, row, col);
       next.clear();
+      checkExact(cur, "count");
       for (let k = 0; k < cur.n; k++) {
         const i = cur.dense[k];
         const e = cur.ext[i], a = cur.aux[i], n = cur.cnt[i];
@@ -213,6 +312,7 @@ export function count(inst, cells, gate) {
  * it, which holds the working set to one column.
  */
 export function marginals(inst, cells, gate) {
+  checkArgs(inst, cells, gate);
   const cap = 1 << 20;
   const W = inst.width, H = inst.height;
   let cur = new Layer(cap), next = new Layer(cap);
@@ -225,6 +325,7 @@ export function marginals(inst, cells, gate) {
       const c = row * W + col, cc = cells[c];
       const ctx = cellCtx(inst, cells, gate, row, col);
       next.clear();
+      checkExact(cur, "count");
       for (let k = 0; k < cur.n; k++) {
         const i = cur.dense[k];
         const e = cur.ext[i], a = cur.aux[i], n = cur.cnt[i];
@@ -300,7 +401,11 @@ export function constrain(inst, history) {
   const cells = new Uint8Array(inst.cells);
   const time = new Int32Array(inst.cells).fill(-1);
   const outcome = new Uint8Array(inst.cells);
-  const sunkLen = new Uint8Array(inst.cells);
+  // Int32Array, not Uint8Array. A byte matched the announced length modulo
+  // 256, so SUNK(258) was accepted wherever SUNK(2) is: on 4x4 {3,2} both
+  // returned 12 where the C++, which holds this as an int, refuses. It is
+  // the same narrowing hazard this file documents twice elsewhere.
+  const sunkLen = new Int32Array(inst.cells);
 
   // The same record rules History::add applies in the C++. Typed arrays ignore
   // an out-of-range write instead of throwing, so a shot at cell 999 simply
@@ -319,6 +424,9 @@ export function constrain(inst, history) {
       throw new RangeError(`shot ${t} carries outcome ${s.outcome}`);
     if (s.outcome === SUNK && !(Number.isInteger(s.length) && s.length >= 1))
       throw new RangeError(`shot ${t} announces SUNK without a ship length`);
+    if (s.outcome === SUNK && !inst.fleet.includes(s.length))
+      throw new RangeError(
+        `shot ${t} announces SUNK(${s.length}), a length this fleet does not have`);
     time[s.cell] = t;
     outcome[s.cell] = s.outcome;
     sunkLen[s.cell] = s.length || 0;
