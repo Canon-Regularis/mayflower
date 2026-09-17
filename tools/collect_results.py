@@ -106,6 +106,16 @@ def core(results):
     src = "out/figures.json"
     m, b, lat = d["meta"], d["bounds"], d["lattice"]
 
+    # meta.fold arrived with the fold filter, and figure data generated before
+    # that does not carry it. Reading it as m["fold"] raised a bare KeyError
+    # naming nothing, which is a poor answer to "your out/ is older than your
+    # build". The collector refuses, and says what to run.
+    if "fold" not in m:
+        raise KeyError(
+            "out/figures.json carries no meta.fold, so it predates the fold "
+            "filter and its policy rows are a fold mixture; regenerate it with "
+            "build/report_data 20000 > out/figures.json")
+
     add = lambda **kw: results.append(dict(source=src, **kw))
     add(family="counting", id="omega0", instance=m["instance"],
         metric="configurations", value=m["omega0"], exact=True)
