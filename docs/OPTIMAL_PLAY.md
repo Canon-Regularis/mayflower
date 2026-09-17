@@ -99,7 +99,8 @@ density(b=200)         44.364   8.889  [ 44.241,  44.487]      44     61     20 
 count saturates: both pick the same cell on every one of the 20,000 boards. Their
 paired difference is therefore identically zero, and `tools/selfplay` reports
 that as "identical on all 20000" rather than as a 95% interval of zero width,
-which is what it used to print and what both headline artefacts still carry.
+which is what it used to print and what `experiments/headline_test.json`
+still carries. The TRAIN record has been regenerated and holds the new form.
 
 The random shooter is the harness self-test: shooting uniformly, the game ends on
 the last of the 17 ship cells, so `E[T] = k(N+1)/(k+1) = 95.3889`. Measured

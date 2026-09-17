@@ -21,8 +21,8 @@ adds board-generator uniformity at 300,000 draws, and rebuilds the figure data
 and the report end to end, which is where `report_data`, `results` and
 `scrubber_js` run against real data instead of reporting Skipped.
 
-Two things are asserted that a green tick would otherwise hide. Sixteen tests
-are registered only when CMake finds Python, three of them needing Node as well,
+Two things are asserted that a green tick would otherwise hide. Eighteen tests
+are registered only when CMake finds Python, four of them needing Node as well,
 so CI names them and fails if any is missing rather than passing a suite that
 quietly shrank. That check reads the listing rather than the exit code, because
 `ctest` ignores `--no-tests=error` in `-N` mode and exits zero for a pattern

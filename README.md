@@ -23,7 +23,7 @@ from 0.0800 at a corner to 0.2136 at the centre and sums over the board to exact
 
 **Information is not the scarce resource.** Identifying the board costs 33.81 bits.
 Each shot answers over an alphabet of six, worth log2(6) = 2.585 bits, so a
-44.37-shot game supplies 114.7 bits against the 33.81 it needs, a surplus of
+44.36-shot game supplies 114.7 bits against the 33.81 it needs, a surplus of
 3.4 to 1. The entropy floor is therefore 13.08 shots, below the trivial coverage
 bound of 17 and dominated by it. The rung that binds counts finished games
 instead.
@@ -56,9 +56,9 @@ measured. See
 geometry. It scores a cell by the placements of the remaining fleet covering it,
 each weighted by how many open hits it already touches, which in hunt mode is a
 plain count. Its mean shot turn against the exact prior marginals gives a rank
-correlation of **-0.878**: it opens on the centre at turn 1.00, and on the games
-where it reaches the far corner at all, 11.1% of them, it gets there at turn
-43.39.
+correlation of **-0.877**: it opens on the centre at turn 1.00, and on the games
+where it reaches the far corner at all, 11.0% of them, it gets there at turn
+43.41.
 
 ## Why it is interesting
 
@@ -93,7 +93,7 @@ git clone https://github.com/Canon-Regularis/mayflower && cd mayflower
 
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   #  11 s
 cmake --build build                                       #  51 s
-ctest --test-dir build -L fast                            #  78 s, 26 tests
+ctest --test-dir build -L fast                            #  78 s, 28 tests
 
 ./build/omega0            # 15,046,987,768 and 1,925,751,392, plus the lattice
 ./build/bounds            # the certified floors, 17 then 24.088
@@ -111,7 +111,7 @@ C++20, CMake >= 3.24, Ninja, Python 3 and Node. Python is standard library only,
 so there is nothing to install. Developed against MinGW-w64 GCC 13.2 on Windows;
 CI also builds Linux GCC and Clang.
 
-Three tests report `Skipped` until `report_data` has run, because they read the
+Four tests report `Skipped` until `report_data` has run, because they read the
 generated `out/figures.json`. That is expected on a fresh clone. `report_data` is
 dominated by fixed exact sweeps rather than by the game count, so a smaller number
 buys little: 200 games costs 387 s against 717 s for the 20,000 above.
@@ -123,7 +123,7 @@ hunts a hidden board using a real posterior, replays a recorded game frame by
 frame at the exact marginals, and closes with the attack and the defence that the
 measurements support.
 
-`out/results.html` is the companion: 96 recorded quantities, 71 exact and 25
+`out/results.html` is the companion: 118 recorded quantities, 93 exact and 25
 measured, each labelled by how firmly it is established and by which tool printed
 it.
 

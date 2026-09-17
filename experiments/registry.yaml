@@ -44,7 +44,7 @@ experiments:
     question: How tight is the certified lower bound on the optimum?
     metric: shots
     design: exact combinatorics, no sampling
-    result: "coverage 17, water filling 24.088, best measured policy 44.369"
+    result: "coverage 17, water filling 24.088, best measured policy 44.364"
     notes: >
       No fold applies: these are exact counts rather than estimates. The
       max-coverage rung was investigated and withdrawn; see docs/MAXCOVER.txt.
