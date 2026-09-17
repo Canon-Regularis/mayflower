@@ -68,13 +68,23 @@ def text(x, y, s, cls="lbl", anchor="middle", extra=""):
 # Figures
 # --------------------------------------------------------------------------- #
 
-def board_heatmap(values, width, height, label, fmt_cell, caption_scale, cell=46):
+def board_heatmap(values, width, height, label, fmt_cell, caption_scale, cell=46,
+                  scale=None):
     """A 10x10 board rendered as the same widget everywhere: row 0 at the top,
-    columns A onward, one grid, one glyph vocabulary."""
+    columns A onward, one grid, one glyph vocabulary.
+
+    scale fixes the ramp domain across several boards. Without it each board
+    stretches to its own range, which is right for a board read alone and
+    wrong for two side by side: the density and parity search-order maps span
+    1.0 to 43.4 and 26.2 to 30.0, so 26.224 and 26.176, two numbers a reader
+    would call equal, landed in buckets 7 and 0 of the same ramp under a
+    caption saying the maps compare directly. blocking_boards already fixes
+    its scale across four boards for this reason; this is the same argument.
+    """
     pad_l, pad_t = 34, 26
     w = pad_l + width * cell + 12
     h = pad_t + height * cell + 34
-    lo, hi = min(values), max(values)
+    lo, hi = scale if scale else (min(values), max(values))
     span = (hi - lo) or 1.0
 
     out = [svg_open(w, h, label)]
@@ -111,18 +121,34 @@ def board_heatmap(values, width, height, label, fmt_cell, caption_scale, cell=46
 def bound_ladder(bounds, policies):
     w, h = 760, 268
     pad_l, pad_r, pad_t = 20, 20, 34
-    x0, x1 = 12.0, 50.0
+
+    # The domain used to be the literal 12.0 to 50.0, with any policy past it
+    # skipped. Two of the three were: random at 95.40 and parity at 51.60, the
+    # second by 1.6 shots, under a caption reading "measured policies as points"
+    # in the plural. The page drew one point and named three, and nothing said
+    # so.
+    #
+    # Widening to hold random would squeeze the rungs and the gap, which are
+    # what the figure is for, into the left third. So the domain is derived to
+    # hold the bounds and the best policy with room to spare, and anything past
+    # it is drawn at the edge with a caret and its true value in the label.
+    # Off the scale is a thing a reader can see; absent is not.
+    best = min(p["mean"] for p in policies)
+    x0 = 12.0
+    x1 = max(30.0, math.ceil(max(bounds["waterfilling"], best) * 1.2 / 5.0) * 5.0)
     def sx(v):
-        return pad_l + (v - x0) / (x1 - x0) * (w - pad_l - pad_r)
+        return pad_l + (min(v, x1) - x0) / (x1 - x0) * (w - pad_l - pad_r)
 
     out = [svg_open(w, h, "Lower-bound ladder against measured policies")]
     base = h - 42
-    # Shaded first, so the rungs and points sit on top of it.
+    # Shaded first, so the rungs and points sit on top of it. Keyed on the best
+    # measured policy rather than on policies[-1], which was the same value only
+    # because the list happens to be built worst first.
     out.append(f'<rect class="gap" x="{sx(bounds["waterfilling"]):.1f}" y="{pad_t - 20}" '
-               f'width="{sx(policies[-1]["mean"]) - sx(bounds["waterfilling"]):.1f}" '
+               f'width="{sx(best) - sx(bounds["waterfilling"]):.1f}" '
                f'height="{base - pad_t + 20:.1f}"/>')
     out.append(axis_line(pad_l, base, w - pad_r, base))
-    for v in range(15, 51, 5):
+    for v in range(15, int(x1) + 1, 5):
         out.append(axis_line(sx(v), base, sx(v), base + 5, "tick-mark"))
         out.append(text(sx(v), base + 19, str(v), "tick"))
     out.append(text(w / 2, h - 6, "expected shots to clear the board", "axtitle"))
@@ -151,11 +177,25 @@ def bound_ladder(bounds, policies):
         out.append(text(lx, y + 20, note, "tick", anchor))
         y += 44
 
-    # Measured policies as points with confidence whiskers.
-    for i, p in enumerate(policies):
-        if p["mean"] > x1:
-            continue
+    # Measured policies as points with confidence whiskers. Every policy gets a
+    # row, drawn in ascending order so the best sits nearest the rungs, and the
+    # row index counts rows drawn rather than indexing the caller's list: the
+    # old form left the rows of skipped policies blank and pushed the survivor
+    # 8 px above the axis.
+    for i, p in enumerate(sorted(policies, key=lambda q: q["mean"])):
         yy = y + i * 26
+        off = p["mean"] > x1
+        if off:
+            # Clamped to the edge, marked, and labelled with the real number.
+            edge = sx(x1)
+            out.append(f'<circle class="pt" cx="{edge:.1f}" cy="{yy}" r="5" '
+                       f'fill="var(--series-2)" data-tip="{esc(p["name"])}: '
+                       f'{p["mean"]:.3f} +/- {p["ci"]:.3f}, beyond the axis"/>')
+            out.append(text(edge + 9, yy + 4, "›", "ptlbl", "start"))
+            out.append(text(edge - 11, yy + 4,
+                            f'{p["name"]}  {p["mean"]:.2f}  off the scale',
+                            "ptlbl", "end"))
+            continue
         out.append(f'<line class="ci" x1="{sx(p["mean"] - p["ci"]):.1f}" y1="{yy}" '
                    f'x2="{sx(p["mean"] + p["ci"]):.1f}" y2="{yy}"/>')
         out.append(f'<circle class="pt" cx="{sx(p["mean"]):.1f}" cy="{yy}" r="5" '
@@ -221,10 +261,16 @@ def survival(policies):
     for i, p in enumerate(policies):
         hist = p["histogram"]
         total = sum(hist) or 1
+        # Subtract before appending, so the value at x = n is the
+        # fraction still running AFTER n shots, which is what the title
+        # says. Appending first plots P(T >= n): the random curve then
+        # ended at 0.1685 on shot 100, the 3,370 games of 20,000 that
+        # finish on exactly that shot, when nothing can still be running
+        # after 100 shots on a 100-cell board.
         pts, running = [], total
         for n in range(len(hist)):
-            pts.append((sx(n), sy(running / total)))
             running -= hist[n]
+            pts.append((sx(n), sy(running / total)))
         d = " ".join(("M" if k == 0 else "L") + f"{x:.1f},{y:.1f}" for k, (x, y) in enumerate(pts))
         out.append(f'<path class="line" d="{d}" stroke="var({SERIES[i]})"/>')
 

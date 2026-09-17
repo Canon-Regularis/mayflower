@@ -619,12 +619,16 @@ def section_the_play(w, data, st):
       "half the cells, so the two maps carry different "
       "information.</p></div>".format(m["games"], dens["mean"]))
 
+    # One domain across the pair, so a tone means the same turn on both.
+    turn_scale = (min(min(dens["meanTurn"]), min(par["meanTurn"])),
+                  max(max(dens["meanTurn"]), max(par["meanTurn"])))
     w('<div class="pair">')
     for p, name in ((dens, "density"), (par, "parity hunt/target")):
         w('<figure><div class="plate">')
         w(board_heatmap(p["meanTurn"], prior["width"], prior["height"],
                         "Mean turn at which each cell is shot, " + name,
-                        lambda v: "{:.0f}".format(v), "mean turn shot", cell=40))
+                        lambda v: "{:.0f}".format(v), "mean turn shot", cell=40,
+                        scale=turn_scale))
         w("</div><figcaption><b>" + esc(name) + ", search order.</b> Mean turn index, "
           "lighter earlier.</figcaption></figure>")
     w("</div>")
@@ -638,12 +642,15 @@ def section_the_play(w, data, st):
       "of the marginal table in section one is the same ordering, arrived at without the "
       "table.</p>".format(rho, centre_turn, corner_turn))
 
+    rate_scale = (min(min(dens["shotRate"]), min(par["shotRate"])),
+                  max(max(dens["shotRate"]), max(par["shotRate"])))
     w('<div class="pair">')
     for p, name in ((dens, "density"), (par, "parity hunt/target")):
         w('<figure><div class="plate">')
         w(board_heatmap(p["shotRate"], prior["width"], prior["height"],
                         "Fraction of games in which each cell is shot, " + name,
-                        lambda v: "{:.0f}".format(v * 100), "games shot in, %", cell=40))
+                        lambda v: "{:.0f}".format(v * 100), "games shot in, %", cell=40,
+                        scale=rate_scale))
         w("</div><figcaption><b>" + esc(name) + ", coverage.</b> Percentage of games in "
           "which the cell is ever shot. These sum to {:.1f}, the mean shots per "
           "game.</figcaption></figure>".format(sum(p["shotRate"])))

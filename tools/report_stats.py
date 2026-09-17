@@ -58,11 +58,20 @@ def _parity_split(values, width):
 
 
 def _survival(hist):
+    """P(T > n) at index n: the fraction still running AFTER n shots.
+
+    Subtracts before appending. The other order gives P(T >= n), which
+    is off by one shot and never reaches zero: on a 100-cell board the
+    random policy's last value was the 16.9% of games that finish on
+    exactly shot 100, rather than the nothing that is still running
+    after it. The figure and this function share the convention, so both
+    moved together.
+    """
     total = sum(hist) or 1
     run, out = total, []
     for n in range(len(hist)):
-        out.append(run / total)
         run -= hist[n]
+        out.append(run / total)
     return out
 
 
