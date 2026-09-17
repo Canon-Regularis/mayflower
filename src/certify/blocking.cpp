@@ -33,8 +33,9 @@ struct FreeSetDp {
     // guard below is on the state count. Those are different quantities:
     // blockingNumber(12,20,3) has 1,594,323 states, comfortably inside the
     // 2^31 state guard, and a free set near 160, comfortably outside a
-    // signed byte. value + 1 wrapped to -128, the `value < 0` test below
-    // then dropped those states, and run() returned a saturated 127. Since
+    // signed byte. value + 1 wrapped to -128, and since the slot it competes
+    // with starts at -1 the max discarded it, so the state was never recorded
+    // and run() returned a saturated 127. Since
     // blockingNumber reports width*height - largestFreeSet, a saturated
     // free set is a blocking number that is too large, published as exact.
     using Value = std::int16_t;   // -1 for dead, else a cell count

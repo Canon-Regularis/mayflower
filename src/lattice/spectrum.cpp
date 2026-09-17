@@ -157,9 +157,10 @@ Spectrum transferSpectrum(int height, int rodLength, double z, int maxIterations
     const double h = z > 0.0 ? std::min(std::max(1e-4, z * 1e-3), z * 0.5)
                              : 0.0;
     if (h <= 0.0) {
-        // z = 0 is an empty lattice. The derivative there is not something a
-        // central difference can reach, and a fabricated 0 would read as a
-        // measurement.
+        // No usable step: z at or below zero, or so small that z/2 underflows.
+        // A central difference cannot reach a derivative here, so the density
+        // is left at its default and densityConverged says it was not
+        // computed. Read the flag rather than the zero.
         out.density = 0.0;
         out.densityConverged = false;
         return out;
