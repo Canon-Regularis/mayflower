@@ -122,7 +122,7 @@ def test_parser():
     # rather than skipped. density(b=50) and density(b=200) choose the same cell
     # on every board in the pool, so every paired difference is zero and the
     # interval is 0/0. selfplay used to print that as [+0.000, +0.000], a 95%
-    # interval of zero width, and both headline artefacts carry one. It now says
+    # interval of zero width, and the TEST artefact still carries one. It now says
     # what actually happened, and a row the parser cannot match is a row that
     # disappears from the record, so this pins that it matches.
     degenerate = run_headline.parse(

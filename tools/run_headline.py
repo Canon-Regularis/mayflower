@@ -78,21 +78,30 @@ def parse(text):
                 "best": int(m.group(8)), "worst": int(m.group(9)),
             })
 
-    # Two forms, because an interval is not always computable. When every paired
-    # difference is zero the spread is zero and the interval is 0/0, which used
-    # to print as [+0.000, +0.000]: a 95% interval of zero width, claiming the
-    # difference is known exactly rather than not known at all. Both headline
-    # artefacts carry one, for density(b=50) against density(b=200), which pick
-    # the same cell on every board in the pool.
+    # Three forms, because an interval is not always computable. When every
+    # paired difference is zero the spread is zero and the interval is 0/0,
+    # which used to print as [+0.000, +0.000]: a 95% interval of zero width,
+    # claiming the difference is known exactly rather than not known at all.
+    # experiments/headline_test.json still carries one, for density(b=50)
+    # against density(b=200), which pick the same cell on every board in the
+    # pool; the TRAIN record has been regenerated.
     #
-    # The degenerate form has to be matched rather than merely not matched, or
-    # the row vanishes from the record and a reader sees nine comparisons where
-    # the tool made ten.
+    # The third form is the case those two do not cover: a pair whose
+    # differences are all equal but not zero. That also has no spread and so no
+    # interval, but the policies are not identical and selfplay does not say
+    # they are.
+    #
+    # Every form has to be matched rather than merely not matched, or the row
+    # vanishes from the record and a reader sees nine comparisons where the tool
+    # made ten.
     pair = re.compile(
         r"^(\S+)\s+-\s+(\S+)\s+([+-][\d.]+)\s+\[\s*([+-][\d.]+),\s*([+-][\d.]+)\]"
         r"\s+rho\s+([-\d.]+)")
     same = re.compile(
         r"^(\S+)\s+-\s+(\S+)\s+([+-][\d.]+)\s+\[identical on all (\d+)\]"
+        r"\s+rho\s+([-\d.]+)")
+    flat = re.compile(
+        r"^(\S+)\s+-\s+(\S+)\s+([+-][\d.]+)\s+\[no spread, (\d+) boards\]"
         r"\s+rho\s+([-\d.]+)")
     for line in text.split("\n"):
         m = pair.match(line.strip())
@@ -112,6 +121,18 @@ def parse(text):
                 # width zero, and a reader can tell the two apart.
                 "ci": None,
                 "identical": int(m.group(4)),
+                "rho": float(m.group(5)),
+            })
+            continue
+        m = flat.match(line.strip())
+        if m:
+            out["paired"].append({
+                "a": m.group(1), "b": m.group(2), "difference": float(m.group(3)),
+                # Also no interval, and deliberately no "identical" key: the
+                # difference is a real constant, it simply has no spread to
+                # estimate from.
+                "ci": None,
+                "boards": int(m.group(4)),
                 "rho": float(m.group(5)),
             })
     return out

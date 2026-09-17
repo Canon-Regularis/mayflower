@@ -75,7 +75,17 @@ double correlation(const Summary& a, const Summary& b) {
 void pairedComparison(const Summary& a, const Summary& b) {
     const std::size_t n = a.shots.size();
     double dsum = 0;
-    for (std::size_t i = 0; i < n; ++i) dsum += a.shots[i] - b.shots[i];
+    // Whether the two policies played every board the same, which is a
+    // different question from whether their differences have no spread. Two
+    // policies separated by a constant offset have zero spread and are not
+    // identical, and the first version of this reported them as identical
+    // because it tested the spread: a line reading "+3.000 [identical on all
+    // 20000]" contradicts itself in the space of one row.
+    bool allSame = true;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (a.shots[i] != b.shots[i]) allSame = false;
+        dsum += a.shots[i] - b.shots[i];
+    }
     const double dmean = dsum / static_cast<double>(n);
     double dss = 0;
     for (std::size_t i = 0; i < n; ++i) {
@@ -121,16 +131,25 @@ void pairedComparison(const Summary& a, const Summary& b) {
     // Every paired difference being zero makes dsd zero and prints [+0.000,
     // +0.000]: a 95% confidence interval of zero width, which claims the
     // difference is known exactly. It is not known exactly, it is undefined,
-    // because the estimator divides a zero spread by a zero spread. Both
-    // headline artefacts carry that interval today for density(b=50) against
-    // density(b=200). An interval that cannot be computed is reported as not
+    // because the estimator divides a zero spread by a zero spread.
+    // experiments/headline_test.json still carries that interval for
+    // density(b=50) against density(b=200); the TRAIN record has been
+    // regenerated. An interval that cannot be computed is reported as not
     // computed.
-    if (dsd > 0.0) {
+    //
+    // Reported on allSame rather than on dsd, because those are different
+    // conditions and only the first justifies the words. A pair with a constant
+    // non-zero offset also has dsd zero, and for that the honest report is a
+    // point difference with no interval rather than a claim of identity.
+    if (allSame) {
+        std::printf("  %-20s - %-20s  %+7.3f  [identical on all %zu]   rho %.3f   CRN saves %s\n",
+                    a.name.c_str(), b.name.c_str(), dmean, n, rho, saving);
+    } else if (dsd > 0.0) {
         std::printf("  %-20s - %-20s  %+7.3f  [%+7.3f, %+7.3f]   rho %.3f   CRN saves %s\n",
                     a.name.c_str(), b.name.c_str(), dmean, dmean - half, dmean + half, rho,
                     saving);
     } else {
-        std::printf("  %-20s - %-20s  %+7.3f  [identical on all %zu]   rho %.3f   CRN saves %s\n",
+        std::printf("  %-20s - %-20s  %+7.3f  [no spread, %zu boards]   rho %.3f   CRN saves %s\n",
                     a.name.c_str(), b.name.c_str(), dmean, n, rho, saving);
     }
 }
