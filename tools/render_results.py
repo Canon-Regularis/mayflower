@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import sys
 
@@ -78,7 +79,10 @@ def ladder(bounds, best):
     shaded between the binding floor and the ceiling.
     """
     w, h, pad = 760, 168, 46
-    span = 50.0
+    # Derived so every mark fits. The literal 50.0 held the four marks
+    # drawn today and would have put a fifth outside the plate.
+    span = max(50.0, math.ceil(max(bounds["coverage"], bounds["entropy"],
+                                   bounds["waterfilling"], best) / 10.0) * 10.0)
     x = lambda v: pad + (w - 2 * pad) * v / span
     y = 96
 
@@ -92,13 +96,13 @@ def ladder(bounds, best):
 
     out.append('<line x1="{:.1f}" y1="{}" x2="{:.1f}" y2="{}" class="axis"/>'
                .format(pad, y, w - pad, y))
-    for t in range(0, 51, 10):
+    for t in range(0, int(span) + 1, 10):
         out.append('<line x1="{0:.1f}" y1="{1}" x2="{0:.1f}" y2="{2}" class="tick"/>'
                    .format(x(t), y, y + 6))
         out.append('<text x="{:.1f}" y="{}" class="tk" text-anchor="middle">{}</text>'
                    .format(x(t), y + 22, t))
     out.append('<text x="{:.1f}" y="{}" class="tk" text-anchor="middle">shots</text>'
-               .format(x(25), y + 40))
+               .format(x(span / 2), y + 40))
 
     # The printed value is formatted from the same number that positions the
     # mark. It used to be a string literal beside it, so a bound that moved slid
@@ -136,7 +140,6 @@ def ladder(bounds, best):
 
 def scaling(points):
     """Configurations against board side, log y, one series."""
-    import math
     w, h, l, r, t, b = 520, 230, 52, 16, 18, 40
     xs = [p["n"] for p in points]
     ys = [math.log10(p["omega"]) for p in points]
@@ -170,7 +173,12 @@ def scaling(points):
 def policies(rows):
     """Three means with 95% intervals. A dot plot, because these are estimates."""
     w, h, l, r, t = 520, 150, 150, 24, 26
-    lo, hi = 40, 100
+    # Derived, not typed. The literal 40 to 100 held every policy measured so
+    # far and would have drawn one outside the plot rather than refusing.
+    vals = [p["value"] for p in rows]
+    cis = [p["ci"] for p in rows]
+    lo = min(40.0, math.floor((min(vals) - max(cis)) / 10.0) * 10.0)
+    hi = max(100.0, math.ceil((max(vals) + max(cis)) / 10.0) * 10.0)
     x = lambda v: l + (w - l - r) * (v - lo) / (hi - lo)
 
     out = [svg_open(w, h, "Mean shots per policy with 95 percent intervals",
@@ -189,8 +197,16 @@ def policies(rows):
         out.append('<circle cx="{:.1f}" cy="{}" r="5" class="mk-meas">'
                    '<title>{}: {:.3f} shots, 95% interval +/- {:.3f}</title></circle>'
                    .format(x(p["value"]), yy, esc(p["note"]), p["value"], p["ci"]))
-        out.append('<text x="{:.1f}" y="{}" class="lv" text-anchor="start">{:.3f}</text>'
-                   .format(x(p["value"]) + 12, yy + 4, p["value"]))
+        # Placed on whichever side has room. At x + 12 anchored start the
+        # widest label, "95.401" against a mark at 469.5, ended near 528
+        # in a 520-wide viewBox and the root clipped its last character.
+        px, label = x(p["value"]), "{:.3f}".format(p["value"])
+        if px + 12 + 7.8 * len(label) > w - 4:
+            lx, la = px - 12, "end"
+        else:
+            lx, la = px + 12, "start"
+        out.append('<text x="{:.1f}" y="{}" class="lv" text-anchor="{}">{}</text>'
+                   .format(lx, yy + 4, la, label))
     out.append('<text x="{:.1f}" y="{}" class="tk" text-anchor="middle">'
                'mean shots to clear</text>'.format((l + w - r) / 2, h - 4))
     out.append("</svg>")
@@ -313,8 +329,9 @@ def build(d):
       "actually lands. What binds is coverage, and the interval below starts from "
       "it.</p>")
     w(ladder(b, best))
-    w('<p class="cap">Filled marks are exact; the hollow mark is the rung dominated '
-      "by E1; the open square is a measured policy. The shaded span is what remains "
+    w('<p class="cap">Filled blue marks are proved bounds; the hollow mark is the '
+      "rung dominated by E1; the orange mark is a measured policy, which is an "
+      "estimate and carries an interval. The shaded span is what remains "
       "unproven.</p>")
     w(rows_table(["rung", "shots", "status", "what it rests on"], [
         ["E1 coverage", fmt(b["coverage"], 0), chip(True),
