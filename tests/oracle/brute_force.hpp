@@ -12,7 +12,10 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace oracle {
@@ -22,6 +25,13 @@ namespace oracle {
 #  pragma GCC diagnostic ignored "-Wpedantic"   // __int128 is a GCC extension
 #endif
 using Mask = unsigned __int128;
+// Wide enough for any board Instance::validate() admits, which caps a board
+// at 128 cells. Nothing tied the two before: raise that bound and
+// `Mask{1} << cell` would shift past the width, the oracle would report
+// nonsense, and every test comparing a sweep against it would agree on the
+// nonsense. The oracle is the ground truth, so it fails loudly instead.
+static_assert(sizeof(Mask) * 8 >= 128,
+              "the oracle's mask must hold every cell of a legal board");
 #if defined(__GNUC__)
 #  pragma GCC diagnostic pop
 #endif
@@ -333,8 +343,20 @@ inline std::vector<Observation> simulate(const BoardShips& ships,
 
     std::vector<Observation> out;
     out.reserve(shots.size());
+    // A cell may be shot once. Without this the counter is decremented
+    // twice for one cell and the second shot reports SUNK on a ship half of
+    // which was never touched: a 2-ship played against the same cell twice
+    // returned HIT then SUNK(2). python/oracle.py has always refused this,
+    // so the two references disagreed on a legal call, and this one is what
+    // the differential tests take as ground truth. mayflower::History
+    // refuses duplicates, which is why no current caller reaches it.
+    Mask seen = 0;
     for (int cell : shots) {
         const Mask bit = Mask{1} << cell;
+        if ((seen & bit) != 0)
+            throw std::invalid_argument(
+                "oracle: a cell is shot twice; histories must not repeat cells");
+        seen |= bit;
         std::size_t idx = ships.size();
         for (std::size_t i = 0; i < ships.size(); ++i) {
             if ((ships[i] & bit) != 0) { idx = i; break; }
