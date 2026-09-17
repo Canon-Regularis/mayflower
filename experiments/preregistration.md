@@ -98,10 +98,20 @@ The claim is that coverage binds before information: the entropy bound of 13.08
 shots is weaker than the coverage bound of 17, so information-greedy play should
 underperform hit-greedy play.
 
-It is falsified if the max-information-gain objective matches or beats
-max-hit-probability on mean shots, on TEST, outside the interval. That has not
-been observed on TRAIN, where information-greedy loses by up to 6.86 shots on
-small instances, but TRAIN is not the test.
+**Amended, see `audit.log` entry 0005.** As first written this said the claim
+is falsified if the max-information-gain objective matches or beats
+max-hit-probability on mean shots on TEST. That is not testable as written.
+The objective comparison is exact over enumerated small instances and carries
+no fold, so there is no TEST reading of it to take. Testing it at 10x10 needs
+the exact-posterior policies played over TEST boards, which is a separate
+experiment and is not covered by the unseal that this document's headline
+comparison used.
+
+What stands, on the enumerated instances and with no fold attached: 
+information-greedy loses to hit-greedy by up to 6.86 shots, and the claim
+would be falsified by an instance where it does not. That is a statement
+about exact optima, not an estimate, so it carries no interval and needs no
+fold.
 
 ## Amendments
 
