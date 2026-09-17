@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import functools
 import hashlib
 import io
 import math
@@ -137,8 +138,17 @@ def regularised_beta(a: float, b: float, x: float) -> float:
     return 1.0 - front * _betacf(b, a, 1.0 - x) / b
 
 
+@functools.lru_cache(maxsize=512)
 def student_t_quantile(p: float, df: int) -> float:
     """Inverse Student-t CDF, by bisection on the exact CDF.
+
+    Cached, because the callers ask the same question over and over. A
+    calibration run calls mean_interval once per replicate at one fixed alpha
+    and one fixed n, so every call wants the identical quantile, and computing
+    it from scratch measured about 5.5 ms a time: six seconds added to the fast
+    label's stats test and thirty to a full run. The cache makes the second and
+    later calls free. It is keyed on the arguments, so it cannot mask a change
+    in either.
 
     Written out rather than approximated because the whole point of using t over
     z is the small-n tail, which is where a cheap approximation is worst. The CDF
@@ -163,8 +173,20 @@ def student_t_quantile(p: float, df: int) -> float:
     lo, hi = 0.0, 2.0
     # df = 1 is Cauchy, whose quantiles grow without bound as p approaches 1, so
     # the bracket is found rather than assumed.
+    #
+    # The ceiling has to refuse rather than saturate. Leaving the loop with
+    # cdf(hi) still below p means the root is outside the bracket, and bisection
+    # then walks lo up to hi and returns the ceiling as though it were an
+    # answer: student_t_quantile(1 - 1e-13, 1) returned 1099511627775.5 against
+    # a true 3.183e12. Nothing in this repository asks for a quantile that
+    # extreme, which is the reason it went unnoticed rather than a reason to
+    # leave it returning a number.
     while cdf(hi) < p and hi < 1e12:
         hi *= 2.0
+    if cdf(hi) < p:
+        raise ValueError(
+            "t quantile for p = {!r} at {} degrees of freedom lies beyond 1e12; "
+            "the bracket cannot hold it".format(p, df))
     for _ in range(200):
         mid = 0.5 * (lo + hi)
         if cdf(mid) < p:
@@ -228,9 +250,10 @@ def wilson_interval(successes, n, alpha=0.05):
 def wald_interval(successes, n, alpha=0.05):
     """The textbook normal approximation, here only to be compared against.
 
-    The input guards match wilson_interval's, because nonsense in is nonsense
+    The count guards are wilson_interval's, because nonsense in is nonsense
     out either way: this returned a point estimate of 2.5 for 5 successes in 2
-    trials, and negative counts ran straight through. The endpoints themselves
+    trials, and negative counts ran straight through. The alpha guard goes
+    further than wilson_interval, which still has none. The endpoints themselves
     are deliberately NOT clamped to [0, 1], unlike Wilson's. Escaping the unit
     interval is this function's defining flaw and the reason the comparison in
     the calibration section exists, so hiding it here would erase the finding.
