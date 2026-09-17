@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "commit": "12a8b86",
+ "commit": "aca2682",
  "note": "Every value is read from a tool's own output, never transcribed. Text tables are parsed against their exact headers, so a tool changing its output breaks this rather than corrupting it.",
  "counts": {
   "results": 118,
