@@ -58,11 +58,13 @@ jobs:
   uniformity:
     name: uniformity at scale
     runs-on: ubuntu-24.04
-    # The nightly label selects two tests, not one: test_uniformity and
-    # live_exact, each carrying TIMEOUT 3600. live_exact is recorded as
-    # taking 877 s on a busy runner, so 90 minutes was not enough headroom
-    # for the pair.
-    timeout-minutes: 180
+    # The nightly label selects three tests: test_uniformity, live_exact
+    # and exact_heavy, each carrying TIMEOUT 3600. ctest runs them
+    # serially, so the worst case is 10,800 s, which is 180 minutes before
+    # checkout, ccache restore or build. At 180 the budget was exactly the
+    # worst case and the job would have been killed mid-test rather than
+    # reporting one. 210 leaves half an hour around it.
+    timeout-minutes: 210
     steps:
       - uses: actions/checkout@v7
 
@@ -156,12 +158,16 @@ jobs:
       # left out of this list. Being labelled fast, it therefore ran nowhere:
       # every push leg skipped it for want of out/, and the one job that
       # builds out/ did not call it.
+      #
+      # provenance arrived later and landed in exactly the same hole, which
+      # is the argument for this list being the one place a figure-data
+      # test is named. Four now.
       # A skip still exits zero, which is how scrubber_js stayed missing without
       # anything going red, so a skip is an error in the one job that supplies
       # what these three are gated on.
       - name: The figure-data contract
         run: |
-          ctest --test-dir build -R '^(report_data|results|scrubber_js)$' \
+          ctest --test-dir build -R '^(report_data|results|scrubber_js|provenance)$' \
             --output-on-failure --no-tests=error > figure-data.log 2>&1 \
             || { cat figure-data.log; exit 1; }
           cat figure-data.log

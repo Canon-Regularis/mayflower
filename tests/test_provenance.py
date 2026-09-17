@@ -58,8 +58,12 @@ RESULTS = os.path.join(ROOT, "experiments", "results.json")
 UNKNOWN = "unknown"
 
 # What decides the numbers in out/figures.json. The engine, its public headers
-# and the tool that drives it. Everything here is compiled into report_data, so
-# a change to any of it can move a published figure.
+# and the tool that drives it.
+#
+# Wider than report_data's own object files: the src glob also picks up the
+# platform and lattice sources it never links. That errs towards reporting
+# staleness that is not there, never towards missing staleness that is, which
+# is the safe direction to be wrong in.
 FIGURE_SOURCES = (
     ("include/mayflower", (".hpp",)),
     ("src", (".cpp", ".hpp")),
@@ -115,12 +119,30 @@ def head_commit():
         return None
 
 
+def is_shallow():
+    """Whether this clone holds only part of the history.
+
+    CI checks out with actions/checkout's default fetch-depth of 1, so almost
+    no commit resolves there. A shallow clone cannot answer whether a commit
+    exists, and a test that reads "cannot answer" as "does not exist" fails for
+    a reason that has nothing to do with the artefact.
+    """
+    try:
+        out = subprocess.check_output(["git", "rev-parse", "--is-shallow-repository"],
+                                      cwd=ROOT, stderr=subprocess.DEVNULL)
+        return out.decode().strip() == "true"
+    except Exception:
+        return True
+
+
 def commit_exists(rev):
     """Whether this repository has such a commit.
 
     Catches a stamp that never named anything, which a hand-edited artefact or a
     broken shell can produce. It deliberately does not ask whether the commit is
     an ancestor of HEAD: generating on a branch and reading on another is normal.
+
+    Only meaningful on a full clone. Callers check is_shallow() first.
     """
     try:
         subprocess.check_output(["git", "cat-file", "-e", rev + "^{commit}"],
@@ -139,7 +161,9 @@ def main():
         return SKIP
 
     meta = json.loads(io.open(FIGURES, encoding="utf-8").read())["meta"]
-    have_git = head_commit() is not None
+    # A shallow clone answers HEAD and resolves nothing else, so the
+    # existence checks below are only asked where they can be answered.
+    can_resolve = head_commit() is not None and not is_shallow()
 
     # 1. The figure data says what it is.
     check("commit" in meta,
@@ -153,7 +177,7 @@ def main():
           "meta holds only: " + ", ".join(sorted(meta)))
 
     stamped = meta.get("commit", UNKNOWN)
-    if stamped != UNKNOWN and have_git:
+    if stamped != UNKNOWN and can_resolve:
         check(commit_exists(stamped),
               "and that commit exists in this repository",
               "figure data names {}, which git cannot resolve".format(stamped))
@@ -187,16 +211,22 @@ def main():
 
     if os.path.exists(RESULTS):
         got = json.loads(io.open(RESULTS, encoding="utf-8").read()).get("commit", UNKNOWN)
-        if got != UNKNOWN and have_git:
+        if got != UNKNOWN and can_resolve:
             check(commit_exists(got),
                   "experiments/results.json names a commit that exists",
                   "results.json names {}, which git cannot resolve".format(got))
+        # Only against its own sources. The ordering against
+        # out/figures.json used to be part of this and had to go: in the
+        # nightly report pipeline results.json arrives at checkout and
+        # figures.json is generated afterwards, so the clause is false on
+        # every run of the one job that can execute this test. What it was
+        # reaching for, that the two agree, is a content question, and
+        # collect_results --check already answers it as the results test.
         stale = newer_than(RESULTS, RESULT_SOURCES)
-        check(os.path.getmtime(RESULTS) + 1.0 >= os.path.getmtime(FIGURES) and not stale,
+        check(not stale,
               "experiments/results.json is no older than what it collects",
-              "regenerate with python tools/collect_results.py"
-              + ("; newer: " + ", ".join(stale[:4]) if stale else
-                 "; out/figures.json is newer than it"))
+              "regenerate with python tools/collect_results.py; newer: "
+              + ", ".join(stale[:4]))
 
     return report()
 
