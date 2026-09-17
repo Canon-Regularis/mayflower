@@ -257,10 +257,13 @@ CountResult countNoTouch(const Instance& inst, const Constraints& constraints) {
             std::uint64_t edges = 0;
             // The layer sum in 128 bits, riding the walk this sweep already
             // makes. A state in the next layer collects at most one
-            // contribution from each state in this one, so checking the sum
-            // before the layer it feeds is built catches a wrap before any
-            // value takes one. The touching and non-touching sweeps report
-            // CountResult.exact the same way.
+            // contribution from each state in this one, so a sum that stays inside 64 bits means no value in
+            // the layer it feeds can have wrapped. The sum accumulates during
+            // the walk that writes that layer and is tested after it, so the
+            // flag lands one layer later than the wrap it describes, which is
+            // fine for a flag on the whole result.
+            // The touching and non-touching sweeps report CountResult.exact
+            // the same way.
             __uint128_t layerSum = 0;
             cur.forEach([&](std::uint64_t key, std::uint64_t count) {
                 layerSum += count;

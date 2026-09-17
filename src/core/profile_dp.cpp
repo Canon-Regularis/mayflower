@@ -49,11 +49,21 @@ CountResult countConfigurations(const Instance& inst, const Constraints& constra
             next.clear();
             std::uint64_t edges = 0;
             // The layer sum, in 128 bits, riding the walk the sweep already
-            // makes. It is a sound and complete detector for the unsigned wrap:
-            // a state in the next layer collects at most one contribution from
-            // each state in this one, so no value there can exceed this sum.
-            // Check the sum before the layer it feeds is built and the first
-            // layer that could overflow is caught before any value in it does.
+            // makes. A state in the next layer collects at most one
+            // contribution from each state in this one, so no value there can
+            // exceed this sum, and a sum that stays inside 64 bits means no
+            // value in the layer it feeds can have wrapped. No false
+            // negatives.
+            //
+            // It can say inexact on an exact answer, since a layer of billions
+            // of states can sum past 2^64 with every value small. That needs
+            // more live states than this machine can hold, and the bias is
+            // the safe way round.
+            //
+            // The sum accumulates during the walk that writes the next layer
+            // and is tested after it, so the flag is set one layer later than
+            // the wrap it describes. That is fine for a flag on the whole
+            // result and would not be if it were per layer.
             //
             // Cost is one 128-bit add per state visit inside a loop that
             // already expands each state into up to seventeen transitions, so

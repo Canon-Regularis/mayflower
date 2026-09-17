@@ -268,10 +268,13 @@ CountResult countConfigurationsBlocked(const Instance& inst, const Constraints& 
             //
             // layerSum rides this walk in 128 bits. A state in the next
             // layer collects at most one contribution from each state in
-            // this one, so checking the sum before the layer it feeds is
-            // built catches a wrap before any value takes one. The whole
-            // ladder has to agree on CountResult.exact as it agrees on
-            // CountResult.count.
+            // this one, so a sum that stays inside 64 bits means no value in
+            // the layer it feeds can have wrapped. The sum accumulates during
+            // the walk that writes that layer and is tested after it, so the
+            // flag lands one layer later than the wrap it describes, which is
+            // fine for a flag on the whole result.
+            // The whole ladder has to agree on CountResult.exact as it agrees
+            // on CountResult.count.
             std::uint64_t edges = 0;
             __uint128_t layerSum = 0;
             for (const Entry& e : cur) {

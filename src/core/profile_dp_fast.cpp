@@ -253,11 +253,13 @@ CountResult countConfigurationsFast(const Instance& inst, const Constraints& con
 
             // The layer sum in 128 bits, riding the walk this rung already
             // makes. A state in the next layer collects at most one
-            // contribution from each state in this one, so checking the sum
-            // before the layer it feeds is built catches a wrap before any
-            // value takes one. countConfigurations does the same, and the
-            // ladder has to agree on CountResult.exact as it agrees on
-            // CountResult.count.
+            // contribution from each state in this one, so a sum that stays inside 64 bits means no value in
+            // the layer it feeds can have wrapped. The sum accumulates during
+            // the walk that writes that layer and is tested after it, so the
+            // flag lands one layer later than the wrap it describes, which is
+            // fine for a flag on the whole result.
+            // countConfigurations does the same, and the ladder has to agree
+            // on CountResult.exact as it agrees on CountResult.count.
             __uint128_t layerSum = 0;
             cur.forEach([&](std::uint64_t key, std::uint64_t count) {
                 layerSum += count;
