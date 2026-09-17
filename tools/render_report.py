@@ -928,7 +928,7 @@ def section_summary(w, data, st):
       "far corner in {:.1%} of them, so the edges buy time against a stranger. Against "
       "anyone who plays you repeatedly the same habit is worth about a shot to them, and "
       "ten games is enough to read it.</li>".format(dens["shotRate"][9 * bw + 9]
-                                                    if book else 0.111))
+                                                    if book else 0.110))
     w("<li><b>What is still open.</b> The optimum for this board is unknown. It lies "
       "between {:.3f} and {:.2f}, and nothing here narrows which end.</li>".format(
           b["waterfilling"], best["mean"]))
