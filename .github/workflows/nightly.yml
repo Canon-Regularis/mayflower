@@ -167,7 +167,7 @@ jobs:
       # what these three are gated on.
       - name: The figure-data contract
         run: |
-          ctest --test-dir build -R '^(report_data|results|scrubber_js|provenance)$' \
+          ctest --test-dir build -R '^(report_data|results|scrubber_js|provenance|figure_marks)$' \
             --output-on-failure --no-tests=error > figure-data.log 2>&1 \
             || { cat figure-data.log; exit 1; }
           cat figure-data.log

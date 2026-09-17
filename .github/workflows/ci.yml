@@ -90,7 +90,7 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      # Eighteen tests are registered only when CMake finds Python, and four of
+      # Nineteen tests are registered only when CMake finds Python, and four of
       # those need Node as well, so a runner missing either would shrink the
       # suite and still report green. Name them rather than count them, so
       # adding a test does not have to touch this.
@@ -103,8 +103,8 @@ jobs:
         shell: bash
         run: |
           missing=""
-          for t in python_names stats stated_counts provenance report_data results pool selfplay_fold \
-                   run_headline render_results live_exact tool_cli tools_output oracle \
+          for t in python_names stats stated_counts figure_marks provenance report_data results pool \
+                   selfplay_fold run_headline render_results live_exact tool_cli tools_output oracle \
                    engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
               | grep -q "Total Tests: 1" || missing="$missing $t"
@@ -158,8 +158,8 @@ jobs:
       - name: Every interpreter-gated test was registered
         run: |
           missing=""
-          for t in python_names stats stated_counts provenance report_data results pool selfplay_fold \
-                   run_headline render_results live_exact tool_cli tools_output oracle \
+          for t in python_names stats stated_counts figure_marks provenance report_data results pool \
+                   selfplay_fold run_headline render_results live_exact tool_cli tools_output oracle \
                    engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
               | grep -q "Total Tests: 1" || missing="$missing $t"

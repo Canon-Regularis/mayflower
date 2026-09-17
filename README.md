@@ -93,7 +93,7 @@ git clone https://github.com/Canon-Regularis/mayflower && cd mayflower
 
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   #  11 s
 cmake --build build                                       #  51 s
-ctest --test-dir build -L fast                            #  78 s, 28 tests
+ctest --test-dir build -L fast                            #  78 s, 29 tests
 
 ./build/omega0            # 15,046,987,768 and 1,925,751,392, plus the lattice
 ./build/bounds            # the certified floors, 17 then 24.088
@@ -111,7 +111,7 @@ C++20, CMake >= 3.24, Ninja, Python 3 and Node. Python is standard library only,
 so there is nothing to install. Developed against MinGW-w64 GCC 13.2 on Windows;
 CI also builds Linux GCC and Clang.
 
-Four tests report `Skipped` until `report_data` has run, because they read the
+Five tests report `Skipped` until `report_data` has run, because they read the
 generated `out/figures.json`. That is expected on a fresh clone. `report_data` is
 dominated by fixed exact sweeps rather than by the game count, so a smaller number
 buys little: 200 games costs 387 s against 717 s for the 20,000 above.

@@ -321,6 +321,15 @@ mf_test(stated_counts
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_stated_counts.py
   LABEL fast)
 
+# Every check the suite had compared the page's PROSE to the data. Nothing
+# read the marks, so the bound ladder drew one of three measured policies
+# and the survival curves plotted P(T >= n) under a title saying P(T > n),
+# both for as long as they had existed. This inverts the coordinates.
+mf_test(figure_marks
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_figure_marks.py
+  LABEL fast
+  SKIPPABLE)
+
 # out/figures.json used to say nothing about the build that produced it, so a
 # page rendered from data seventeen commits old looked exactly like a current
 # one. Every one of those commits was checked by hand, which is why the numbers
