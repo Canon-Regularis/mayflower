@@ -495,12 +495,29 @@ void testRejectsBadInput() {
 
     // And the legitimate case is untouched: a weight of zero is how a caller
     // says a placement is impossible, so it must still be accepted.
+    //
+    // Asserted against an independently computed count rather than against
+    // itself. The first version of this checked total >= 0.0, which is a
+    // tautology for a sum of products of non-negative weights and could not
+    // fail whatever the sweep did.
     {
         mayflower::Weights w;
         w.occupied.assign(cells, 1.0);
-        w.empty.assign(cells, 0.0);
+        w.empty.assign(cells, 1.0);
+        w.occupied[0] = 0.0;   // cell 0 may not be covered
         const auto r = mayflower::weightedCount(inst, w);
-        check(r.total >= 0.0, "a weight of exactly zero is still allowed");
+
+        // The same question asked of the integer path: how many
+        // configurations leave cell 0 empty.
+        std::vector<mayflower::CellConstraint> cellsFree(
+            cells, mayflower::CellConstraint::Free);
+        cellsFree[0] = mayflower::CellConstraint::MustBeEmpty;
+        const std::uint64_t want =
+            mayflower::countConfigurations(inst, cellsFree).count;
+
+        check(r.total == static_cast<double>(want),
+              "a weight of exactly zero forbids rather than refuses");
+        check(want > 0, "and the case is not vacuous: some board avoids cell 0");
     }
 }
 
