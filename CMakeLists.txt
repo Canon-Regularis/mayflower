@@ -97,18 +97,23 @@ endforeach()
 # not reach: every one of the nine translation units that include them includes
 # core.hpp first, so a sections.hpp that only compiles second would never have
 # been caught here. Same mechanism, two more units.
+#
+# Included as m9/<name>.hpp with tools on the path, which is how the m9
+# executable itself reaches them. A bare "core.hpp" would have tools/m9 searched
+# last, so adding src/core.hpp later would silently redirect this unit to that
+# file and the m9 header would stop being covered with nothing to say so.
 file(GLOB MF_M9_HEADERS CONFIGURE_DEPENDS
      ${CMAKE_CURRENT_SOURCE_DIR}/tools/m9/*.hpp)
 foreach(hdr IN LISTS MF_M9_HEADERS)
   get_filename_component(hdr_name ${hdr} NAME_WE)
   set(gen ${CMAKE_CURRENT_BINARY_DIR}/header_selftest/m9_${hdr_name}.cpp)
-  file(WRITE ${gen} "#include \"${hdr_name}.hpp\"\n")
+  file(WRITE ${gen} "#include \"m9/${hdr_name}.hpp\"\n")
   list(APPEND MF_HEADER_TUS ${gen})
 endforeach()
 
 add_library(mayflower_headers OBJECT ${MF_HEADER_TUS})
 target_link_libraries(mayflower_headers PRIVATE mf_flags)
-target_include_directories(mayflower_headers PRIVATE include src src/core tools/m9)
+target_include_directories(mayflower_headers PRIVATE include src src/core tools)
 
 # The oracle is the independent check the differential suite rests on: eight
 # tests compare a sweep against it, and the comparison is only evidence while it
@@ -306,6 +311,14 @@ mf_test(python_names
 
 mf_test(stats
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick
+  LABEL fast)
+
+# Counts written into README, docs/CI.md and ci.yml's own comments, against
+# the registrations and guard list that decide them. Every one of them had
+# drifted, and the commit that last corrected them was followed within one
+# change set by a new test that made two of them wrong again.
+mf_test(stated_counts
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_stated_counts.py
   LABEL fast)
 
 # out/figures.json used to say nothing about the build that produced it, so a

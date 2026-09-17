@@ -90,7 +90,7 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      # Fifteen tests are registered only when CMake finds Python, and three of
+      # Eighteen tests are registered only when CMake finds Python, and four of
       # those need Node as well, so a runner missing either would shrink the
       # suite and still report green. Name them rather than count them, so
       # adding a test does not have to touch this.
@@ -103,8 +103,8 @@ jobs:
         shell: bash
         run: |
           missing=""
-          for t in python_names stats provenance report_data results pool selfplay_fold run_headline \
-                   render_results live_exact tool_cli tools_output oracle \
+          for t in python_names stats stated_counts provenance report_data results pool selfplay_fold \
+                   run_headline render_results live_exact tool_cli tools_output oracle \
                    engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
               | grep -q "Total Tests: 1" || missing="$missing $t"
@@ -114,9 +114,9 @@ jobs:
             exit 1
           fi
 
-      # out/ is generated and not in the repository, so report_data, results and
-      # scrubber_js report Skipped here. The nightly workflow generates it and
-      # runs them for real.
+      # out/ is generated and not in the repository, so report_data, results,
+      # scrubber_js and provenance report Skipped here. The nightly workflow
+      # generates it and runs all four for real.
       - name: Test
         run: ctest --test-dir build -L fast --output-on-failure --no-tests=error
 
@@ -158,8 +158,8 @@ jobs:
       - name: Every interpreter-gated test was registered
         run: |
           missing=""
-          for t in python_names stats provenance report_data results pool selfplay_fold run_headline \
-                   render_results live_exact tool_cli tools_output oracle \
+          for t in python_names stats stated_counts provenance report_data results pool selfplay_fold \
+                   run_headline render_results live_exact tool_cli tools_output oracle \
                    engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
               | grep -q "Total Tests: 1" || missing="$missing $t"
@@ -291,6 +291,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
       # Everything here is standard library only, so there is nothing to install.
       # These are the independent implementations the engine is checked against,
       # and they are worth running even when the C++ does not build.
@@ -305,3 +309,10 @@ jobs:
       # a second and closes that window.
       - name: Every tracked Python program parses
         run: python -m compileall -q python tools tests
+
+      # compileall covers Python only, and tools/sweep_timing.mjs is neither a
+      # registered test nor in the guard list, so nothing read it at all. It
+      # produces the three timings render_report.py quotes, which makes a
+      # syntax error there a number nobody can reproduce.
+      - name: The timing script parses
+        run: node --check tools/sweep_timing.mjs
