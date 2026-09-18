@@ -39,6 +39,7 @@ order-aware. See [ORDER_DEPENDENCE.md](ORDER_DEPENDENCE.md).
 **A length-1 ship starts horizontally only.** Both branches of the cell sweep
 would emit the same single cell, so a rung without the `L > 1` guard returns
 `2^k` times the truth on a fleet of `k` single cells. Five of the six sweeps
-shipped without it. The ladder compares the rungs against each other, and every
+shipped without it: the four C++ rungs other than the no-touching one, which
+carried the guard from its first commit, plus the browser engine. The ladder compares the rungs against each other, and every
 case in its list had `L >= 2`, so it could not distinguish them; the list now
 carries single-cell fleets.

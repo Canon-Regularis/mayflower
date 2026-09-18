@@ -9,8 +9,9 @@ Part of [Mayflower](../README.md).
   board banks get large.
 - The no-touching sweep packs its state into one uint64, so it stops at about 13
   rows. `noTouchSupports()` reports whether an instance fits.
-- The report page is about 1.5 MB, over the 0.7 to 1.0 MB budget. Nearly all of it
-  is the base64 board pool the live widget needs.
+- The report page is about 1.7 MB, over the 0.7 to 1.0 MB budget. Nearly all of it
+  is the base64 board pool the live widget needs. The nightly job holds it under
+  2.5 MB and nothing pins it closer, so this figure is read off the page.
 - The weighted forward-backward does not rescale, because the backward pass has to
   combine `f` and `b` from the same layer and a per-layer scale would not cancel
   the way a global one does. Weights extreme enough to leave a double need

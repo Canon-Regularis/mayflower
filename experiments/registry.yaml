@@ -20,12 +20,18 @@ experiments:
     metric: mean shots to clear
     design: 20000 games per policy on one seeded uniform pool, common random numbers
     result:
-      random: "95.354 [95.288, 95.421]"
-      parity-hunt-target: "51.535 [51.414, 51.656]"
-      density: "44.369 [44.246, 44.491]"
+      random: "95.401 [95.335, 95.467]"
+      parity-hunt-target: "51.596 [51.476, 51.715]"
+      density: "44.369 [44.245, 44.493]"
     notes: >
       Also the source of sigma = 8.87 and the bimodal correlation, 0.923 within
       the density family and 0.00 against the hunt policy.
+
+      These are transcribed from experiments/headline_train.json by hand, and
+      nothing parses this file: there is no YAML reader anywhere in the tree.
+      The random and parity figures were left behind once already, by the fold
+      fix that moved every measured quantity, and read 95.354 and 51.535 for
+      two rounds. Treat every number here as prose and the JSON as the record.
 
   - id: objective-comparison
     status: complete
@@ -86,8 +92,8 @@ experiments:
     notes: >
       Run once at the pre-registered size, no extension and no early stop. Every
       TEST mean falls inside the TRAIN interval for the same policy, so the
-      TRAIN figures were not overfitted: random 95.339 against 95.354, parity
-      51.564 against 51.535, density 44.443 against 44.369.
+      TRAIN figures were not overfitted: random 95.339 against 95.401, parity
+      51.564 against 51.596, density 44.443 against 44.369.
 
       The bimodal correlation reproduced: 0.916 within the density family against
       0.923 on TRAIN, and effectively zero across families. The pre-registered
@@ -96,8 +102,9 @@ experiments:
       The harness self-test also held on unseen data: the random shooter measured
       95.3387 against a theoretical k(N+1)/(k+1) of 95.3889.
 
-      Beam width stops mattering past 50. density(b=50) and density(b=200) agree
-      to every digit with a paired difference of exactly 0.000 and correlation
-      1.000, so the larger beam is pure cost.
+      Beam width stops mattering past 50. density(b=50) and density(b=200) pick
+      the same cell on all 20000 boards, so the paired difference is identically
+      zero and there is no interval to quote rather than a zero-width one. The
+      larger beam is pure cost.
 
       See experiments/headline_test.json for the full capture.

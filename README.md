@@ -178,8 +178,8 @@ so the rest of it was already hit. A predicate requiring only
 case, and two orderings of one shot multiset leave 41 and 53 configurations
 standing. See [docs/ORDER_DEPENDENCE.md](docs/ORDER_DEPENDENCE.md).
 
-**A length-1 ship has one placement.** Five of the six sweeps emitted it from
-both the horizontal and the vertical branch, so a fleet of k single cells came
+**A length-1 ship has one placement.** Five of the six sweeps, counting the
+browser engine, emitted it from both the horizontal and the vertical branch, so a fleet of k single cells came
 back 2^k times too large. Both brute-force oracles always carried the guard, and
 the ladder caught nothing until its case list gained a fleet of single cells.
 
@@ -202,9 +202,23 @@ Full detail in [docs/CORRECTNESS.md](docs/CORRECTNESS.md).
 | [docs/CI.md](docs/CI.md) | What runs on a push, on a pull request, and nightly |
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | What does not work, or does not scale |
 
-Captured tool output sits beside them: [M9_RESULTS.txt](docs/M9_RESULTS.txt),
-[MAXCOVER.txt](docs/MAXCOVER.txt), [OPPONENT.txt](docs/OPPONENT.txt),
-[WEIGHTED_MARGINALS.txt](docs/WEIGHTED_MARGINALS.txt).
+Captured tool output sits beside them, each the whole standard output of one
+command with no argument:
+
+| transcript | produced by | feeds |
+| --- | --- | --- |
+| [M9_RESULTS.txt](docs/M9_RESULTS.txt) | `build/m9` | 29 rows of the dossier |
+| [MAXCOVER.txt](docs/MAXCOVER.txt) | `build/maxcover` | 6 rows |
+| [OPPONENT.txt](docs/OPPONENT.txt) | `build/opponent` | 8 rows |
+| [WEIGHTED_MARGINALS.txt](docs/WEIGHTED_MARGINALS.txt) | `build/weighted`, section 3 | nothing; prose only |
+
+The nightly run regenerates the first three, recollects the record from them
+and fails if any published value moved, so a transcript cannot drift from the
+tool that prints it. The comparison is on the collected values rather than the
+bytes, because `M9_RESULTS.txt` carries a microsecond column in a table the
+collector does not read, and that column moves with the machine. The byte diff
+is printed anyway. `WEIGHTED_MARGINALS.txt` is left out: it reports its own
+wall-clock seconds and no published number depends on it.
 
 ## Licence
 
