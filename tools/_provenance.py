@@ -31,7 +31,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UNKNOWN = "unknown"
 
 
-def git(*args):
+def git(*args: str) -> str | None:
     """Stripped stdout, or None if git is absent, fails, or hangs.
 
     Every failure mode returns None rather than raising, because provenance is
@@ -46,12 +46,12 @@ def git(*args):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-def short_commit():
+def short_commit() -> str:
     """The abbreviated hash, or "unknown"."""
     return git("rev-parse", "--short", "HEAD") or UNKNOWN
 
 
-def full_commit():
+def full_commit() -> str:
     """The full hash, suffixed "-dirty" when the tree has uncommitted changes."""
     head = git("rev-parse", "HEAD")
     if not head:

@@ -29,14 +29,16 @@ outcome.hpp` records for buildWorld.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import argparse
 import io
 import json
 import math
 import os
 import re
-import subprocess
 import sys
+from typing import Any
 
 # tools/ on the path. A no-op as long as this module is only ever run as a
 # script, which it is: Python puts a script's own directory first already. Kept
@@ -47,20 +49,25 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _provenance import short_commit as git_commit  # noqa: E402
 from report_style import Z_95  # noqa: E402
 
+# See tools/render_results.py for why a collected row is a mapping rather
+# than a TypedDict.
+Result = dict[str, Any]
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def path(*parts):
+def path(*parts: str) -> str:
     return os.path.join(ROOT, *parts)
 
 
-def read(relative):
+def read(relative: str) -> str:
     return io.open(path(*relative.split("/")), encoding="utf-8").read()
 
 
 # --- table parsing --------------------------------------------------------
 
-def table(text, header, source, stop=None, occurrence=None):
+def table(text: str, header: str, source: str, stop: str | None = None,
+          occurrence: int | None = None) -> list[list[str | None]]:
     """Rows under an exact header line, split on whitespace.
 
     `header` must appear verbatim. Rows end at the first blank line, or at
@@ -102,20 +109,35 @@ def table(text, header, source, stop=None, occurrence=None):
     return rows
 
 
-def num(cell):
+def num(cell: str | None) -> int | float | None:
     if cell is None:
         return None
     return float(cell) if ("." in cell or "e" in cell.lower()) else int(cell)
 
 
-def instance_of(row, width=2):
+def required(cell: str | None, source: str, what: str) -> str:
+    """A cell that must carry text, refusing the "-" that parses to None.
+
+    table() turns a "-" into None because a dash means "not measured", and a
+    column that is sometimes a dash is a real thing in these transcripts. The
+    columns below are not those: an instance name or a row key that arrived as
+    a dash means the table moved, and silently building "noisy--None" out of it
+    is how a wrong id reaches experiments/results.json.
+    """
+    if cell is None:
+        raise ValueError("{}: {} is '-' where a value is required".format(source, what))
+    return cell
+
+
+def instance_of(row: Sequence[str | None], width: int = 2) -> str:
     """Instance names contain a space: '4x4 {3,2}'. Rejoin the leading cells."""
-    return " ".join(row[:width])
+    return " ".join(required(c, "a parsed row", "the instance name")
+                    for c in row[:width])
 
 
 # --- the families ---------------------------------------------------------
 
-def core(results):
+def core(results: list[Result]) -> None:
     """out/figures.json, which the engine writes directly."""
     d = json.loads(read("out/figures.json"))
     src = "out/figures.json"
@@ -131,7 +153,9 @@ def core(results):
             "filter and its policy rows are a fold mixture; regenerate it with "
             "build/report_data 20000 > out/figures.json")
 
-    add = lambda **kw: results.append(dict(source=src, **kw))
+    def add(**kw: Any) -> None:
+        results.append(dict(source=src, **kw))
+
     add(family="counting", id="omega0", instance=m["instance"],
         metric="configurations", value=m["omega0"], exact=True)
     add(family="counting", id="entropy", instance=m["instance"],
@@ -189,7 +213,7 @@ def core(results):
                 configurations=o["configurations"])
 
 
-def m9(results):
+def m9(results: list[Result]) -> None:
     t = read("docs/M9_RESULTS.txt")
     src = "docs/M9_RESULTS.txt"
 
@@ -217,14 +241,14 @@ def m9(results):
         # the file and therefore still contains the other instance's table.
         for r in table(block, "eps     beta   capacity  shots used      bound    ratio",
                        src + " (" + inst + ")", occurrence=0):
-            results.append(dict(source=src, family="noisy", id="noisy-" + inst + "-" + r[0],
+            results.append(dict(source=src, family="noisy", id="noisy-" + inst + "-" + required(r[0], src, "the eps column"),
                                 instance=inst, metric="shots to identify the board",
                                 value=num(r[3]), unit="shots", exact=False,
                                 eps=num(r[0]), capacity=num(r[2]), bound=num(r[4]),
                                 ratio=num(r[5])))
 
 
-def maxcover(results):
+def maxcover(results: list[Result]) -> None:
     t = read("docs/MAXCOVER.txt")
     src = "docs/MAXCOVER.txt"
     header = "instance      boards     K  E4 water  adaptive  non-adapt     maxcov   K*maxcov"
@@ -238,7 +262,7 @@ def maxcover(results):
                             kMaxcov=num(r[8])))
 
 
-def opponent(results):
+def opponent(results: list[Result]) -> None:
     t = read("docs/OPPONENT.txt")
     src = "docs/OPPONENT.txt"
     header = "believes     worst case regret vs flat"
@@ -253,7 +277,7 @@ def opponent(results):
                                 believesTheta=num(r[0]), regret=num(r[2])))
 
 
-def headline(results):
+def headline(results: list[Result]) -> None:
     """The pre-registered run, on whichever folds have been played."""
     for fold in ("train", "test"):
         target = path("experiments", "headline_{}.json".format(fold))
@@ -272,7 +296,7 @@ def headline(results):
                                 p95=p_["p95"], note=p_["name"]))
 
 
-def constants(results):
+def constants(results: list[Result]) -> None:
     t = read("include/mayflower/constants.hpp")
     src = "include/mayflower/constants.hpp"
     m = re.search(r"kOmegaNoTouch = ([0-9']+)ull", t)
@@ -287,7 +311,7 @@ def constants(results):
 # --- consistency ----------------------------------------------------------
 
 
-def _train_against_test(results):
+def _train_against_test(results: Sequence[Result]) -> list[dict[str, Any]]:
     """TRAIN against TEST on the same policy, measured on disjoint boards."""
     out = []
     # TRAIN against TEST, measured by the same tool at the same size on disjoint
@@ -317,10 +341,10 @@ def _train_against_test(results):
     return out
 
 
-def _pairs_agree(results):
+def _pairs_agree(results: Sequence[Result]) -> list[dict[str, Any]]:
     """Quantities two different tools compute on the same instances."""
     out = []
-    def pick(family, key):
+    def pick(family: str, key: str) -> dict[str, Any]:
         return {r["instance"]: r[key] for r in results
                 if r["family"] == family and key in r and r[key] is not None}
 
@@ -357,7 +381,7 @@ def _pairs_agree(results):
     return out
 
 
-def _policy_against_headline(results):
+def _policy_against_headline(results: Sequence[Result]) -> list[dict[str, Any]]:
     """The page's headline measurement against the pre-registered one.
 
     report_data and selfplay measure the same three policies, over the same
@@ -407,7 +431,7 @@ def _policy_against_headline(results):
     return out
 
 
-def _transcripts_against_sweep(results):
+def _transcripts_against_sweep(results: Sequence[Result]) -> list[dict[str, Any]]:
     """The captured transcripts against the sweep that is regenerated each build."""
     out = []
     # The captured transcripts against the live sweep. Every check above
@@ -441,20 +465,21 @@ def _transcripts_against_sweep(results):
     return out
 
 
-def _by_instance(results):
+def _by_instance(results: Sequence[Result]) -> dict[str, dict[str, Any]]:
     """Every metric, keyed by instance then metric name.
 
     Built once and passed to the two checks that read it. It used to be a
     local shared by the tail of one long function, which is the kind of
     coupling a split has to make explicit rather than inherit."""
-    per_instance = {}
+    per_instance: dict[str, dict[str, Any]] = {}
     for r in results:
         per_instance.setdefault(r["instance"], {})[r["metric"]] = r["value"]
 
     return per_instance
 
 
-def _orderings_by_definition(results, per_instance):
+def _orderings_by_definition(results: Sequence[Result],
+                             per_instance: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """Orderings that hold by definition, between families rather than within one."""
     out = []
     compared, off = 0, []
@@ -493,7 +518,8 @@ def _orderings_by_definition(results, per_instance):
     return out
 
 
-def _waste_within_misses(results, per_instance):
+def _waste_within_misses(results: Sequence[Result],
+                         per_instance: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """Waste counts misses, so it cannot exceed the misses a game has."""
     out = []
     # Waste is a subset of the misses, not a separate quantity: it counts the
@@ -501,7 +527,7 @@ def _waste_within_misses(results, per_instance):
     # E[T] - shipCells misses in total. The two come from different sweeps, so
     # a waste figure larger than the misses available to it would mean one of
     # them is measuring something else.
-    def ship_cells(instance):
+    def ship_cells(instance: str) -> int | None:
         m = re.search(r"\{([^}]*)\}", instance)
         if not m:
             return None
@@ -539,7 +565,7 @@ def _waste_within_misses(results, per_instance):
     return out
 
 
-def cross_checks(results):
+def cross_checks(results: Sequence[Result]) -> list[dict[str, Any]]:
     """Quantities two tools compute independently. Disagreement means a bug.
 
     One function per check. The call order is load bearing: render_results.py
@@ -564,7 +590,7 @@ def cross_checks(results):
 SKIP = 77
 
 
-def main():
+def main() -> int:
     if not os.path.exists(os.path.join(ROOT, "out", "figures.json")):
         print("out/figures.json is missing; run tools/report_data first")
         return SKIP
@@ -573,14 +599,14 @@ def main():
     ap.add_argument("--check", action="store_true", help="verify without writing")
     args = ap.parse_args()
 
-    results = []
+    results: list[Result] = []
     for fn in (core, m9, maxcover, opponent, headline, constants):
         fn(results)
 
     checks = cross_checks(results)
     failed = [c for c in checks if not c["agree"]]
 
-    out = {
+    out: dict[str, Any] = {
         "schema": 1,
         "commit": git_commit(),
         "note": ("Every value is read from a tool's own output, never transcribed. "

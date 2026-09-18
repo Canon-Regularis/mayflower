@@ -25,6 +25,7 @@ import os
 import re
 import subprocess
 import sys
+from typing import Any
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "python"))
@@ -32,6 +33,11 @@ sys.path.insert(0, os.path.join(ROOT, "python"))
 import stats  # noqa: E402
 
 EXPERIMENT = "headline-policy-comparison"
+
+# What this module offers its callers. commit is re-exported from
+# _provenance under a shorter name, and a rename is not the `import n as n`
+# spelling that states a re-export, so it is named here instead.
+__all__ = ["EXPERIMENT", "commit", "main", "parse"]
 
 
 # The full hash with a dirty marker, from tools/_provenance.py.
@@ -43,9 +49,9 @@ EXPERIMENT = "headline-policy-comparison"
 from _provenance import full_commit as commit  # noqa: E402
 
 
-def parse(text):
+def parse(text: str) -> dict[str, list[dict[str, Any]]]:
     """Pull the per-policy rows and the paired differences out of selfplay."""
-    out = {"policies": [], "paired": []}
+    out: dict[str, list[dict[str, Any]]] = {"policies": [], "paired": []}
 
     # policy  mean  sd  [lo, hi]  median  p95  best  worst  us/game
     row = re.compile(
@@ -122,7 +128,7 @@ def parse(text):
     return out
 
 
-def main():
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--games", type=int, required=True,
                     help="pre-registered sample size; not chosen after the fact")
