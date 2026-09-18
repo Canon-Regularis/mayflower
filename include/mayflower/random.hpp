@@ -20,10 +20,16 @@
 // rejects the ragged tail instead, and is what the board generator uses, where
 // a bias would poison every statistic computed on top of it.
 //
-// Two hashes elsewhere are deliberately NOT this one and must stay separate:
+// One hash elsewhere is deliberately NOT this one and must stay separate:
 // detail::fastMix in src/core/detail/hashing.hpp is a cheaper mixer for the
-// packed key rung's probe, and foldHash in folds.hpp is a salted variant whose
-// output vector is pinned digit for digit against python/stats.py.
+// packed key rung's probe.
+//
+// foldHash in folds.hpp used to be listed here too, as "a salted variant". It
+// was not a variant. It wrote out mix64(id + kGoldenGamma + salt), which is
+// exactly splitmix64(id + salt), so the salt was an input to this function and
+// the sentence claiming otherwise was the only thing keeping the copy alive.
+// folds.hpp now calls splitmix64, bit for bit, and its output vector is still
+// pinned digit for digit against python/stats.py.
 #pragma once
 
 #include <cstdint>
@@ -37,6 +43,14 @@ inline constexpr std::uint64_t kGoldenGamma = 0x9E3779B97F4A7C15ull;
 // 2^53, where a double stops representing consecutive integers. The divisor
 // that turns 53 random bits into a uniform double.
 inline constexpr double kTwoPow53 = 9007199254740992.0;
+
+// The same number under the name of its other job: the largest integer a
+// double holds exactly, and so the ceiling the weighted sweep's exactness
+// claim rests on. Two names rather than one because they are two ideas that
+// happen to share a value, and one sequence of digits rather than the five it
+// was written as, in src/core/weighted.cpp, tests/test_weighted.cpp,
+// include/mayflower/folds.hpp, tools/m9/noisy.cpp and web/engine.js.
+inline constexpr double kExactIntegerLimit = kTwoPow53;
 
 // The policy stream's key. Common random numbers require a policy's draws to be
 // keyed apart from the board pool: deriving one from the other gives each board
