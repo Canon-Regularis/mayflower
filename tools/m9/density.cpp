@@ -6,6 +6,9 @@
 
 #include "core.hpp"
 
+#include "mayflower/counting.hpp"
+#include "mayflower/platform.hpp"
+
 namespace mayflower::m9 {
 
 void sweepDensity(const Instance& inst, int shots, int maxHits, int step, int samples) {
@@ -30,8 +33,7 @@ void sweepDensity(const Instance& inst, int shots, int maxHits, int step, int sa
                 std::swap(pool[static_cast<std::size_t>(i)],
                           pool[static_cast<std::size_t>(rng.below(i + 1))]);
 
-            std::vector<CellConstraint> cells(static_cast<std::size_t>(inst.cellCount()),
-                                              CellConstraint::Free);
+            std::vector<CellConstraint> cells = freeConstraints(inst).cells;
             for (int i = 0; i < shots; ++i)
                 cells[static_cast<std::size_t>(pool[static_cast<std::size_t>(i)])] =
                     i < hits ? CellConstraint::MustBeOccupied : CellConstraint::MustBeEmpty;
@@ -39,7 +41,7 @@ void sweepDensity(const Instance& inst, int shots, int maxHits, int step, int sa
             const auto t0 = std::chrono::steady_clock::now();
             const auto r = countConfigurations(inst, cells);
             totalUs +=
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() * 1e6;
+                platform::elapsed(t0) * 1e6;
             peakStates = std::max(peakStates, static_cast<std::uint64_t>(r.peakStates));
             if (r.count > 0) { ++feasible; omegas.push_back(static_cast<double>(r.count)); }
 

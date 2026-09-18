@@ -26,7 +26,9 @@
 
 #include "mayflower/notouch.hpp"
 #include "mayflower/observations.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/sampler.hpp"
 #include "mayflower/weighted.hpp"
 
 #include "harness.hpp"
@@ -238,8 +240,7 @@ void testMarginalsGated() {
             if (t % 2 == 0) {
                 cons = constraintsFrom(inst, fuzz(inst, sampler, rng, 6 + rng.below(10)));
             } else {
-                cons.cells.assign(static_cast<std::size_t>(inst.cellCount()),
-                                  CellConstraint::Free);
+                cons = freeConstraints(inst);
                 for (int i = 0; i < inst.cellCount(); ++i) {
                     const int r = rng.below(7);
                     if (r == 0)
@@ -262,7 +263,7 @@ void testMarginalsGated() {
                     w.empty[static_cast<std::size_t>(i)] = 0.6 + 0.8 * (rng.below(100) / 100.0);
                 }
             }
-            const auto fast = weightedMarginals(inst, cons, w);
+            const auto fast = weightedMarginals(inst, cons, w).occupancy;
             const auto slow = weightedMarginalsByRecount(inst, cons, w);
             ++trials;
             double worst = 0;

@@ -24,11 +24,7 @@ void bimaruCost() {
     for (const C& k : std::vector<C>{{4,4,{3,2}},{5,5,{4,3,2}},{6,6,{4,3,2}},
                                      {6,6,{4,3,3,2}}}) {
         const Instance inst(k.w, k.h, k.f);
-        const std::vector<CellConstraint> free(static_cast<std::size_t>(inst.cellCount()),
-                                               CellConstraint::Free);
-        const Backtracker bt(inst, free, ~0ull);
-        std::vector<std::uint64_t> configs;
-        enumerateMasks(bt, 0, 0, 0, configs);
+        const std::vector<std::uint64_t> configs = enumerateAll(inst);
 
         std::size_t worst = 0;
         int worstCut = 0;

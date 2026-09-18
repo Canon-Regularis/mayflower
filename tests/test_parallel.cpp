@@ -14,7 +14,8 @@
 #include <vector>
 
 #include "mayflower/observations.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
 #include "mayflower/profile_dp_blocked.hpp"
 
 #include "harness.hpp"
@@ -56,7 +57,7 @@ void testConstrainedAgreement() {
     int agreed = 0, trials = 0, engaged = 0;
 
     for (int t = 0; t < 12; ++t) {
-        std::vector<CellConstraint> cells(64, CellConstraint::Free);
+        std::vector<CellConstraint> cells = freeConstraints(inst).cells;
         for (int i = 0; i < 64; ++i) {
             const int r = rng.below(8);
             if (r == 0) cells[static_cast<std::size_t>(i)] = CellConstraint::MustBeEmpty;

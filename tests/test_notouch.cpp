@@ -9,7 +9,8 @@
 
 #include "mayflower/constants.hpp"
 #include "mayflower/notouch.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
 
 #include "harness.hpp"
 #include "oracle/brute_force.hpp"
@@ -103,8 +104,8 @@ void testConstrained() {
         const mayflower::Instance inst(c.w, c.h, c.fleet);
         const int n = inst.cellCount();
 
-        std::vector<mayflower::CellConstraint> cells(
-            static_cast<std::size_t>(n), mayflower::CellConstraint::Free);
+        std::vector<mayflower::CellConstraint> cells =
+            mayflower::freeConstraints(inst).cells;
         std::vector<int> mirror(static_cast<std::size_t>(n), 0);
         for (int i = 0; i < n; ++i) {
             const int r = static_cast<int>(next() % 6);
@@ -137,7 +138,7 @@ void testConstrained() {
 void testMonotone() {
     std::printf("[constraints are monotone]\n");
     const mayflower::Instance inst(5, 5, {4, 3, 2});
-    std::vector<mayflower::CellConstraint> cells(25, mayflower::CellConstraint::Free);
+    std::vector<mayflower::CellConstraint> cells = mayflower::freeConstraints(inst).cells;
     std::uint64_t previous = mayflower::countNoTouch(inst, cells).count;
     bool ok = true;
     for (int i = 0; i < 25; ++i) {

@@ -42,11 +42,7 @@ void noisy() {
     struct C { int w, h; std::vector<int> f; int trials; };
     for (const C& k : std::vector<C>{{4,4,{3,2},400},{5,5,{4,3,2},60}}) {
         const Instance inst(k.w, k.h, k.f);
-        const std::vector<CellConstraint> blank(static_cast<std::size_t>(inst.cellCount()),
-                                                CellConstraint::Free);
-        const Backtracker bt(inst, blank, ~0ull);
-        std::vector<std::uint64_t> configs;
-        enumerateMasks(bt, 0, 0, 0, configs);
+        const std::vector<std::uint64_t> configs = enumerateAll(inst);
         const std::size_t n = configs.size();
         const double h0 = std::log2(static_cast<double>(n));
 
@@ -73,8 +69,9 @@ void noisy() {
                 while (entropy > 0.1 && shots < cap) {
                     const int cell = rng.below(inst.cellCount());
                     const bool occupied = (configs[truth] >> cell) & 1ull;
-                    const bool flip = (static_cast<double>(rng.next() >> 11) /
-                                       9007199254740992.0) < eps;
+                    // rng.unit() is these two lines, and was already written
+                    // out here rather than called.
+                    const bool flip = rng.unit() < eps;
                     const bool answer = occupied != flip;
                     ++shots;
 
@@ -105,10 +102,7 @@ void noisy() {
     // The Boltzmann form is an identity, so it can be checked rather than argued.
     {
         const Instance inst(4, 4, {3, 2});
-        const std::vector<CellConstraint> blank(16, CellConstraint::Free);
-        const Backtracker bt(inst, blank, ~0ull);
-        std::vector<std::uint64_t> configs;
-        enumerateMasks(bt, 0, 0, 0, configs);
+        const std::vector<std::uint64_t> configs = enumerateAll(inst);
         const double eps = 0.13;
         const double beta = std::log((1 - eps) / eps);
         Rng rng(99);

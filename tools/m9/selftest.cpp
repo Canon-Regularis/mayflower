@@ -8,6 +8,8 @@
 
 #include "core.hpp"
 
+#include "mayflower/counting.hpp"
+
 namespace mayflower::m9 {
 
 // Invariants the sections above rest on, cheap enough to run in the fast suite.
@@ -58,7 +60,7 @@ int selfTest() {
         Rng rng(7);
         int agreed = 0;
         for (int t = 0; t < 300; ++t) {
-            std::vector<CellConstraint> cells(16, CellConstraint::Free);
+            std::vector<CellConstraint> cells = freeConstraints(inst).cells;
             for (int i = 0; i < 16; ++i) {
                 const int r = rng.below(4);
                 if (r == 0) cells[static_cast<std::size_t>(i)] = CellConstraint::MustBeOccupied;
@@ -73,10 +75,7 @@ int selfTest() {
     // The noisy posterior is exactly Boltzmann in the mismatch count.
     {
         const Instance inst(4, 4, {3, 2});
-        const std::vector<CellConstraint> blank(16, CellConstraint::Free);
-        const Backtracker bt(inst, blank, ~0ull);
-        std::vector<std::uint64_t> configs;
-        enumerateMasks(bt, 0, 0, 0, configs);
+        const std::vector<std::uint64_t> configs = enumerateAll(inst);
         const double eps = 0.13, beta = std::log((1 - eps) / eps);
         Rng rng(99);
         const std::size_t truth =

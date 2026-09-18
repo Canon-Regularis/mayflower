@@ -13,10 +13,7 @@ NonAdaptive nonAdaptiveOptimum(const Instance& inst) {
     if (n > 22) throw std::runtime_error("subset lattice too large");
     const std::size_t size = std::size_t{1} << n;
 
-    const std::vector<CellConstraint> free(static_cast<std::size_t>(n), CellConstraint::Free);
-    const Backtracker bt(inst, free, ~0ull);
-    std::vector<std::uint64_t> configs;
-    enumerateMasks(bt, 0, 0, 0, configs);
+    const std::vector<std::uint64_t> configs = enumerateAll(inst);
 
     // c[S] counts configurations contained in S. Seed with the masks themselves,
     // then run the transform one bit at a time.

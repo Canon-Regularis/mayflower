@@ -24,7 +24,7 @@
 #include "mayflower/constants.hpp"
 #include "mayflower/exact_solver.hpp"
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
 #include "mayflower/random.hpp"
 
 
@@ -130,6 +130,14 @@ struct Backtracker {
 // variant of min-sum set cover.
 //
 // c(S) for all S at once is a subset-sum transform over the configuration masks.
+//
+// Deliberately a second copy of what tools/maxcover.cpp writes out, not a
+// shared helper. tools/collect_results.py compares the two tools' answers for
+// the configuration count and the non-adaptive optimum, and merging them would
+// leave that comparison checking nothing. It is a copy, so what it catches is a
+// transcription or build error rather than an error in the reasoning both
+// carry; collect_results says so per pair. src/search/detail/outcome.hpp
+// records the same call for buildWorld.
 inline void enumerateMasks(const Backtracker& bt, std::size_t slot, std::uint64_t used,
                     std::size_t from, std::vector<std::uint64_t>& out) {
     if (slot == bt.options.size()) { out.push_back(used); return; }
@@ -140,6 +148,20 @@ inline void enumerateMasks(const Backtracker& bt, std::size_t slot, std::uint64_
         if (masks[i] & used) continue;
         enumerateMasks(bt, slot + 1, used | masks[i], i + 1, out);
     }
+}
+
+// Every configuration of an unconstrained instance, as occupancy masks.
+//
+// Six sections opened with the same three lines: an all-free constraint
+// vector, a Backtracker over it with no node cap, and an enumerateMasks from
+// the root. Two of them sized the vector as a literal 16 rather than from the
+// instance, which is the sort of copy that stays right until an instance
+// changes shape underneath it.
+[[nodiscard]] inline std::vector<std::uint64_t> enumerateAll(const Instance& inst) {
+    const Backtracker bt(inst, freeConstraints(inst).cells, ~0ull);
+    std::vector<std::uint64_t> out;
+    enumerateMasks(bt, 0, 0, 0, out);
+    return out;
 }
 
 }  // namespace mayflower::m9

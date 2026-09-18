@@ -27,12 +27,11 @@ inline void checkConstraints(const Instance& inst, const Constraints& constraint
         throw std::invalid_argument("constraint vector size must equal cellCount()");
 }
 
-// Every cell free, which is the observation-free case. Leaving allowH and
-// allowV empty is what permits every placement; see Constraints::gated().
-[[nodiscard]] inline Constraints freeConstraints(const Instance& inst) {
-    Constraints c;
-    c.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
-    return c;
-}
+// freeConstraints moved out to mayflower/constraints.hpp and is re-exported
+// here so the sweeps' detail::freeConstraints calls keep reading the same.
+// It left because the twenty-six sites in tools/ and tests/ that write the
+// idiom out longhand cannot reach src/core/detail, and a helper only half the
+// callers can see retires only half the copies.
+using mayflower::freeConstraints;
 
 }  // namespace mayflower::detail

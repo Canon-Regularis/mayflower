@@ -8,10 +8,13 @@
 
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/flows.hpp"
 // For the rung agreement on CountResult.exact. The overflow flag is part of the
 // ladder's contract, so it is checked across the ladder rather than on V0 alone.
 #include "mayflower/profile_dp_blocked.hpp"
+#include "mayflower/platform.hpp"
 
 #include "harness.hpp"
 #include "oracle/brute_force.hpp"
@@ -173,8 +176,7 @@ void testConstraints() {
     const Instance inst(6, 6, {4, 3, 2});
     const std::uint64_t base = mayflower::countConfigurations(inst).count;
 
-    std::vector<CellConstraint> cells(static_cast<std::size_t>(inst.cellCount()),
-                                      CellConstraint::Free);
+    std::vector<CellConstraint> cells = freeConstraints(inst).cells;
     cells[static_cast<std::size_t>(inst.cellIndex(2, 2))] = CellConstraint::MustBeEmpty;
     const std::uint64_t afterMiss = mayflower::countConfigurations(inst, cells).count;
     expect(afterMiss < base, "a miss strictly reduces the count here");
@@ -290,6 +292,6 @@ int main() {
     testIndistinguishableShips();
     testCountOverflowIsReported();
 
-    const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const auto dt = mf::test::elapsed(t0);
     return mf::test::report(dt);
 }

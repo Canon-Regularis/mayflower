@@ -7,6 +7,8 @@
 
 #include "core.hpp"
 
+#include "mayflower/counting.hpp"
+
 namespace mayflower::m9 {
 
 // 5. Salvo. Fire k cells and hear how many hit, without hearing which.
@@ -23,8 +25,7 @@ struct SalvoStats {
 
 SalvoStats salvoRun(const Instance& inst, const std::vector<std::uint64_t>& configs,
                     int k, int games, std::size_t unionCap) {
-    const std::vector<CellConstraint> blank(static_cast<std::size_t>(inst.cellCount()),
-                                            CellConstraint::Free);
+    const std::vector<CellConstraint> blank = freeConstraints(inst).cells;
     SalvoStats out;
     Rng rng(UINT64_C(0x5A1F0) + static_cast<std::uint64_t>(inst.cellCount() * 8 + k));
 
@@ -101,11 +102,7 @@ void salvo() {
     struct C { int w, h; std::vector<int> f; };
     for (const C& k : std::vector<C>{{4,4,{3,2}},{5,5,{4,3,2}}}) {
         const Instance inst(k.w, k.h, k.f);
-        const std::vector<CellConstraint> blank(static_cast<std::size_t>(inst.cellCount()),
-                                                CellConstraint::Free);
-        const Backtracker bt(inst, blank, ~0ull);
-        std::vector<std::uint64_t> configs;
-        enumerateMasks(bt, 0, 0, 0, configs);
+        const std::vector<std::uint64_t> configs = enumerateAll(inst);
 
         std::printf("  %s, %llu boards, 60 games per row\n", inst.describe().c_str(),
                     static_cast<unsigned long long>(configs.size()));
