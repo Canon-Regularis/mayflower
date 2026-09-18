@@ -275,12 +275,11 @@ public:
     }
 
     [[nodiscard]] int chooseShot(const Instance& inst, const History& h) override {
-        std::uint64_t total = 0;
-        const auto dist = outcomeDistribution(inst, h, total);
+        const auto dist = outcomeDistribution(inst, h);
         int best = -1;
         double bestScore = -1.0;
         for (int c = 0; c < inst.cellCount(); ++c) {
-            const auto& d = dist[static_cast<std::size_t>(c)];
+            const auto& d = dist.cells[static_cast<std::size_t>(c)];
             if (!d.shootable) continue;
             const double v = objective_ == Objective::MaxHitProbability ? d.hitProbability()
                                                                         : d.informationBits();

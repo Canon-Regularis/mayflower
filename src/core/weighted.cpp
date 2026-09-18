@@ -1,10 +1,12 @@
 #include "mayflower/weighted.hpp"
+#include "mayflower/random.hpp"
 
 #include "detail/fleet_counter.hpp"
 #include "detail/placement_gate.hpp"
 #include "detail/hashing.hpp"
 #include "detail/profile_key.hpp"
 #include "detail/cell_ctx.hpp"
+#include "detail/flat_layer_map.hpp"
 #include "detail/entry.hpp"
 
 #include <algorithm>
@@ -30,116 +32,44 @@ using detail::packAux;
 
 using detail::FleetCounter;
 
-// Same shape as ProfileMap, carrying a double instead of a count.
-class WeightMap {
+// The same layer map as the counting sweeps, carrying a double.
+//
+// It used to be a full copy, opening with the comment "Same shape as
+// ProfileMap, carrying a double instead of a count", which is an accurate
+// description of a copy rather than a reason for one. What is genuinely
+// specific to the weighted path is below: a layer is rescaled by a power of
+// two, and its maximum and sum are what the exactness argument reads.
+class WeightMap : public detail::FlatLayerMap<Key, double, detail::KeyHash> {
+    using Base = detail::FlatLayerMap<Key, double, detail::KeyHash>;
+
 public:
-    explicit WeightMap(std::size_t capacityPow2 = 1024) { reserve(capacityPow2); }
-
-    void reserve(std::size_t capacityPow2) {
-        capacity_ = 1;
-        while (capacity_ < capacityPow2) capacity_ <<= 1;
-        mask_ = capacity_ - 1;
-        keys_.assign(capacity_, Key{});
-        vals_.assign(capacity_, 0.0);
-        used_.assign(capacity_, false);
-        dense_.clear();
-        dense_.reserve(capacityPow2);
-    }
-
-    void clear() {
-        for (std::size_t slot : dense_) used_[slot] = false;
-        dense_.clear();
-    }
-
-    [[nodiscard]] std::size_t size() const { return dense_.size(); }
-
-    void add(const Key& key, double value) {
-        std::size_t slot = probe(key);
-        while (true) {
-            if (!used_[slot]) {
-                if (dense_.size() * 10 >= capacity_ * 7) {
-                    grow();
-                    add(key, value);
-                    return;
-                }
-                used_[slot] = true;
-                keys_[slot] = key;
-                vals_[slot] = value;
-                dense_.push_back(slot);
-                return;
-            }
-            if (keys_[slot] == key) {
-                vals_[slot] += value;
-                return;
-            }
-            slot = (slot + 1) & mask_;
-        }
-    }
-
-    template <typename Fn>
-    void forEach(Fn&& fn) const {
-        for (std::size_t slot : dense_) fn(keys_[slot], vals_[slot]);
-    }
-
-    [[nodiscard]] double get(const Key& key) const {
-        std::size_t slot = probe(key);
-        while (used_[slot]) {
-            if (keys_[slot] == key) return vals_[slot];
-            slot = (slot + 1) & mask_;
-        }
-        return 0.0;
-    }
-
-    template <typename Fn>
-    void forEachSlot(Fn&& fn) const {
-        for (std::size_t slot : dense_) fn(keys_[slot], vals_[slot]);
-    }
+    explicit WeightMap(std::size_t capacityPow2 = 1024) : Base(capacityPow2) {}
 
     // Exact while the result stays normal. One power of two serves the whole
     // layer, so bringing the maximum into range sends anything 1e308 behind it
     // to zero; returns whether that happened.
     [[nodiscard]] bool scaleByPowerOfTwo(int exponent) {
         bool lost = false;
-        for (std::size_t slot : dense_) {
-            const double before = vals_[slot];
+        for (std::size_t slot : occupied()) {
+            const double before = values()[slot];
             const double after = std::ldexp(before, exponent);
             if (after == 0.0 && before != 0.0) lost = true;
-            vals_[slot] = after;
+            values()[slot] = after;
         }
         return lost;
     }
 
     [[nodiscard]] double maxValue() const {
         double m = 0;
-        for (std::size_t slot : dense_) m = std::max(m, vals_[slot]);
+        for (std::size_t slot : occupied()) m = std::max(m, values()[slot]);
         return m;
     }
 
     [[nodiscard]] double sum() const {
         double s = 0;
-        for (std::size_t slot : dense_) s += vals_[slot];
+        for (std::size_t slot : occupied()) s += values()[slot];
         return s;
     }
-
-private:
-    [[nodiscard]] std::size_t probe(const Key& key) const {
-        return splitmix64(key.ext ^ (std::uint64_t{key.aux} * 0x9E3779B1u)) & mask_;
-    }
-
-    void grow() {
-        std::vector<std::pair<Key, double>> old;
-        old.reserve(dense_.size());
-        for (std::size_t slot : dense_) old.emplace_back(keys_[slot], vals_[slot]);
-        reserve(capacity_ * 2);
-        for (const auto& e : old) add(e.first, e.second);
-    }
-
-    std::size_t capacity_ = 0;
-    std::size_t mask_ = 0;
-    std::vector<Key> keys_;
-    std::vector<double> vals_;
-    std::vector<bool> used_;
-    std::vector<std::size_t> dense_;
 };
 
 std::vector<std::pair<Key, double>> snapshotOf(const WeightMap& m) {
@@ -405,9 +335,8 @@ WeightedResult weightedCount(const Instance& inst, const Constraints& constraint
     // bit-exact once no layer reached that far, no rescale ran and nothing
     // underflowed. The run reports the condition rather than the argument,
     // because the layer bound is instance-dependent.
-    constexpr double kExactLimit = 9007199254740992.0;   // 2^53
     result.exact = weights.trivial() && !result.rescaled && !result.underflowed &&
-                   result.maxLayerSum < kExactLimit;
+                   result.maxLayerSum < kExactIntegerLimit;
 
     // scale.apply is ldexp, which rounds once and saturates. Multiplying by
     // exp(scale.exponent * ln 2) would overflow the intermediate past 709 even
@@ -471,13 +400,8 @@ std::vector<double> weightedMarginalsByRecount(const Instance& inst,
     return out;
 }
 
-constexpr const char* kUnderflowMessage =
-    "weightedMarginals: the weights span more than a double holds, so a product of "
-    "two representable factors underflowed and configurations were dropped. Use "
-    "weightedMarginalsByRecount, which divides two equally scaled counts.";
-
-std::vector<double> weightedMarginals(const Instance& inst, const Constraints& constraints,
-                                      const Weights& weights) {
+WeightedMarginals weightedMarginals(const Instance& inst, const Constraints& constraints,
+                                    const Weights& weights) {
     detail::checkConstraints(inst, constraints);
 
     const int W = inst.width, H = inst.height;
@@ -527,8 +451,7 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
         // Zero here means either that no configuration survives the record or
         // that every one of them underflowed away, and those want opposite
         // answers from the caller.
-        if (underflowed) throw std::runtime_error(kUnderflowMessage);
-        return out;
+        return {std::move(out), total, underflowed};
     }
 
     // Backward, one column at a time, replaying the forward layers inside it.
@@ -594,8 +517,7 @@ std::vector<double> weightedMarginals(const Instance& inst, const Constraints& c
             std::swap(bCur, bNext);
         }
     }
-    if (underflowed) throw std::runtime_error(kUnderflowMessage);
-    return out;
+    return {std::move(out), total, underflowed};
 }
 
 }  // namespace mayflower

@@ -133,8 +133,21 @@ double weightedMarginal(const Instance& inst, const Constraints& constraints,
 // Holding every layer would need roughly 600 MB, so the forward pass keeps only
 // the eleven column boundaries and the backward pass replays each column from
 // its boundary. That is the same trade the unweighted analyse() makes.
-std::vector<double> weightedMarginals(const Instance& inst, const Constraints& constraints,
-                                      const Weights& weights);
+//
+// The underflow is reported, not thrown. WeightedResult above carries the same
+// condition as a bool, so one fault had two shapes and which one a caller met
+// depended on which function it reached for. `occupancy` is a lower bound when
+// `underflowed` is set and must not be read as a posterior; the route that
+// survives it is weightedMarginalsByRecount below, which divides two counts
+// carrying the same scale.
+struct WeightedMarginals {
+    std::vector<double> occupancy;   // per cell, row-major
+    double total = 0;                // the partition function over the record
+    bool underflowed = false;        // as WeightedResult::underflowed
+};
+
+WeightedMarginals weightedMarginals(const Instance& inst, const Constraints& constraints,
+                                    const Weights& weights);
 
 // The same marginals by the slow route, one constrained sweep per cell. Kept
 // because it shares no code with the fast path, so the two agreeing is a real

@@ -23,6 +23,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "mayflower/random.hpp"
+
 namespace mayflower {
 
 enum class Fold { Train, Val, Test };
@@ -36,23 +38,30 @@ inline const char* foldName(Fold f) {
     return "?";
 }
 
+// A fixed salt, so fold membership is independent of every other use of the
+// same board id.
+inline constexpr std::uint64_t kFoldSalt = 0x5DEECE66Dull;
+
 namespace detail {
 
-// splitmix64, matching the mixer used across the repository and mirrored in
-// python/stats.py. Keyed with a fixed salt so fold membership is independent of
-// any other use of the same id.
+// splitmix64 at a salted counter position. random.hpp used to describe this as
+// "a salted variant" of splitmix64 that "must stay separate", and it is not a
+// variant: splitmix64(x) is mix64(x + kGoldenGamma), and the three lines
+// written out here were mix64(boardId + kGoldenGamma + kFoldSalt). The salt is
+// an input to the same function, not a different function, and this header did
+// not even include the one that defines it.
+//
+// The rewrite is bit-identical, which is what lets the vector pinned in
+// tests/test_folds.cpp and the mirror in python/stats.py stand unchanged.
 inline std::uint64_t foldHash(std::uint64_t boardId) {
-    std::uint64_t z = boardId + 0x9E3779B97F4A7C15ull + 0x5DEECE66Dull;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-    return z ^ (z >> 31);
+    return splitmix64(boardId + kFoldSalt);
 }
 
 }  // namespace detail
 
 // The fraction a board hashes to, in [0, 1).
 [[nodiscard]] inline double foldFraction(std::uint64_t boardId) {
-    return static_cast<double>(detail::foldHash(boardId) >> 11) / 9007199254740992.0;
+    return static_cast<double>(detail::foldHash(boardId) >> 11) / kTwoPow53;
 }
 
 // 60 / 20 / 20. The thresholds are the only place the split is written down.

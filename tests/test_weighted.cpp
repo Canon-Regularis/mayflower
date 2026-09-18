@@ -12,7 +12,9 @@
 #include <vector>
 
 #include "mayflower/constants.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/random.hpp"
 #include "mayflower/weighted.hpp"
 
 #include "harness.hpp"
@@ -159,8 +161,8 @@ void testUnweightedBridge() {
     check(!tilted.exact, "a weighted run does not claim to be exact");
 
     // The exactness argument rests on this staying below 2^53.
-    const double limit = 9007199254740992.0;
-    check(wr.maxLayerSum < limit, "largest layer sum stays below 2^53");
+    check(wr.maxLayerSum < mayflower::kExactIntegerLimit,
+          "largest layer sum stays below 2^53");
     std::printf("      largest layer sum %.6g, which is 2^%.2f, against 2^53\n",
                 wr.maxLayerSum, std::log2(wr.maxLayerSum));
 
@@ -174,7 +176,7 @@ void testUnweightedBridge() {
     // times past it.
     const mayflower::Instance crowded(16, 8, {2, 2, 2, 2, 2, 2, 2, 2, 2, 2});
     const auto big = mayflower::weightedCount(crowded, mayflower::Weights::uniform());
-    check(big.maxLayerSum > limit,
+    check(big.maxLayerSum > mayflower::kExactIntegerLimit,
           "16x8 with ten 2-ships carries a layer sum past 2^53");
     check(!big.exact, "so the run refuses to certify itself exact");
     // Pinned so the refusal cannot pass for one of the other reasons: the
@@ -183,7 +185,7 @@ void testUnweightedBridge() {
     check(!big.rescaled && !big.underflowed,
           "and the layer sum is what withholds it, not a rescale or an underflow");
     std::printf("      that layer sum is %.6g, which is 2^%.2f, %.2f times the limit\n",
-                big.maxLayerSum, std::log2(big.maxLayerSum), big.maxLayerSum / limit);
+                big.maxLayerSum, std::log2(big.maxLayerSum), big.maxLayerSum / mayflower::kExactIntegerLimit);
 }
 
 void testAgainstEnumeration() {
@@ -246,7 +248,7 @@ void testNoisyChannel() {
     // That record is one no board satisfies. Read truthfully it is a
     // contradiction; read through a channel it is merely unlikely, and the
     // evidence stays positive. Noise removes infeasibility as a category.
-    std::vector<mayflower::CellConstraint> hard(16, mayflower::CellConstraint::Free);
+    std::vector<mayflower::CellConstraint> hard = mayflower::freeConstraints(inst).cells;
     for (int c : {0, 3, 5, 9, 12}) hard[static_cast<std::size_t>(c)] =
         mayflower::CellConstraint::MustBeOccupied;
     for (int c : {1, 7, 10}) hard[static_cast<std::size_t>(c)] =
@@ -260,7 +262,7 @@ void testNoisyChannel() {
     for (int c : {0, 1, 2, 8, 9}) feasible[static_cast<std::size_t>(c)] = 1;
     for (int c : {5, 7}) feasible[static_cast<std::size_t>(c)] = 0;
 
-    std::vector<mayflower::CellConstraint> hard2(16, mayflower::CellConstraint::Free);
+    std::vector<mayflower::CellConstraint> hard2 = mayflower::freeConstraints(inst).cells;
     for (int c : {0, 1, 2, 8, 9}) hard2[static_cast<std::size_t>(c)] =
         mayflower::CellConstraint::MustBeOccupied;
     for (int c : {5, 7}) hard2[static_cast<std::size_t>(c)] =
@@ -283,12 +285,12 @@ void testNoisyChannel() {
 void testMarginalsSum() {
     std::printf("[marginals under weights]\n");
     const mayflower::Instance inst(5, 5, {4, 3, 2});
-    mayflower::Constraints free;
-    free.cells.assign(25, mayflower::CellConstraint::Free);
+    const mayflower::Constraints free = mayflower::freeConstraints(inst);
 
     // The two routes share no code: one is a forward-backward pass, the other a
     // constrained recount per cell. Agreement is a real check.
-    const auto flat = mayflower::weightedMarginals(inst, free, mayflower::Weights::uniform());
+    const auto flat = mayflower::weightedMarginals(inst, free,
+                                                  mayflower::Weights::uniform()).occupancy;
     const auto slow = mayflower::weightedMarginalsByRecount(inst, free,
                                                             mayflower::Weights::uniform());
     double worst = 0;
@@ -301,7 +303,7 @@ void testMarginalsSum() {
           "uniform weights: marginals sum to the ship-cell count");
 
     const mayflower::Weights w = drawWeights(inst, 2024);
-    const auto tilted = mayflower::weightedMarginals(inst, free, w);
+    const auto tilted = mayflower::weightedMarginals(inst, free, w).occupancy;
     const auto tiltedSlow = mayflower::weightedMarginalsByRecount(inst, free, w);
     worst = 0;
     for (std::size_t i = 0; i < tilted.size(); ++i)
@@ -509,8 +511,8 @@ void testRejectsBadInput() {
 
         // The same question asked of the integer path: how many
         // configurations leave cell 0 empty.
-        std::vector<mayflower::CellConstraint> cellsFree(
-            cells, mayflower::CellConstraint::Free);
+        std::vector<mayflower::CellConstraint> cellsFree =
+            mayflower::freeConstraints(inst).cells;
         cellsFree[0] = mayflower::CellConstraint::MustBeEmpty;
         const std::uint64_t want =
             mayflower::countConfigurations(inst, cellsFree).count;
@@ -608,11 +610,9 @@ void testUnderflowIsReported() {
 void testMarginalsRefuseWhatTheyCannotHold() {
     std::printf("[marginals under a weight that cancels]\n");
     const mayflower::Instance inst(5, 5, {3, 2, 2});
-    mayflower::Constraints cons;
-    cons.cells.assign(static_cast<std::size_t>(inst.cellCount()),
-                      mayflower::CellConstraint::Free);
+    const mayflower::Constraints cons = mayflower::freeConstraints(inst);
     const auto reference =
-        mayflower::weightedMarginals(inst, cons, mayflower::Weights::uniform());
+        mayflower::weightedMarginals(inst, cons, mayflower::Weights::uniform()).occupancy;
 
     // A uniform weight on occupied and empty alike cancels in every ratio, so
     // the marginals must not move at all.
@@ -632,27 +632,25 @@ void testMarginalsRefuseWhatTheyCannotHold() {
 
     {
         const auto w = marginalsAt(1e-6);
-        const double d = worstAgainstReference(mayflower::weightedMarginals(inst, cons, w));
+        const auto got = mayflower::weightedMarginals(inst, cons, w);
+        const double d = worstAgainstReference(got.occupancy);
         char buf[128];
         std::snprintf(buf, sizeof buf,
                       "a weight the range holds moves nothing (largest move %.3e)", d);
         check(d < 1e-12, buf);
+        // Both directions, or the flag is decoration rather than a report.
+        check(!got.underflowed, "and it does not claim to have underflowed");
     }
 
     // 1e-13 used to move them by 0.047 and 1e-14 used to return all zeros, which
     // is what an unsatisfiable record returns and means the opposite thing.
     for (double u : {1e-13, 1e-14}) {
         const auto w = marginalsAt(u);
-        bool threw = false;
-        try {
-            (void)mayflower::weightedMarginals(inst, cons, w);
-        } catch (const std::runtime_error&) {
-            threw = true;
-        }
+        const auto got = mayflower::weightedMarginals(inst, cons, w);
         char buf[128];
         std::snprintf(buf, sizeof buf,
-                      "at u = %.0e the forward-backward refuses rather than answers", u);
-        check(threw, buf);
+                      "at u = %.0e the forward-backward says it underflowed", u);
+        check(got.underflowed, buf);
 
         // And the path it names in the message is still right, since it divides
         // two counts carrying the same scale.

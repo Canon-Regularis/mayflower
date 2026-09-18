@@ -43,8 +43,15 @@ struct OutcomeDistribution {
     [[nodiscard]] double hitProbability() const;
 };
 
-std::vector<OutcomeDistribution> outcomeDistribution(const Instance& inst,
-                                                     const History& history,
-                                                     std::uint64_t& total);
+// The one-ply channel for every cell, and the |Omega| the distributions are
+// taken over. Returned together for the reason OccupancyMap gives in
+// flows.hpp: the pair was a vector plus a std::uint64_t& out-parameter, which
+// is the one shape in this interface that made the caller hold the two apart.
+struct OutcomeMap {
+    std::uint64_t total = 0;                   // |Omega| under the record
+    std::vector<OutcomeDistribution> cells;    // per cell, row-major
+};
+
+OutcomeMap outcomeDistribution(const Instance& inst, const History& history);
 
 }  // namespace mayflower

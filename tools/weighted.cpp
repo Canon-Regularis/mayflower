@@ -17,9 +17,10 @@
 
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
 #include "mayflower/weighted.hpp"
 #include "mayflower/random.hpp"
+#include "mayflower/platform.hpp"
 
 namespace {
 
@@ -74,7 +75,7 @@ void bridge() {
     const auto t0 = std::chrono::steady_clock::now();
     const WeightedResult r = weightedCount(inst, Weights::uniform());
     const double seconds =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        platform::elapsed(t0);
 
     std::printf("  expected           %llu\n",
                 static_cast<unsigned long long>(constants::kOmega0));
@@ -105,7 +106,7 @@ void evidence() {
             const auto t0 = std::chrono::steady_clock::now();
             const WeightedResult r = weightedCount(inst, w);
             const double seconds =
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+                platform::elapsed(t0);
             // Against the prior: how much mass the record kept, in bits.
             const double bits = (r.logTotal - std::log(static_cast<double>(constants::kOmega0))) /
                                 std::log(2.0);
@@ -139,8 +140,7 @@ void marginals() {
     std::printf("about five under load, so the timing below is not a constant.\n\n");
 
     const Instance inst;
-    Constraints free;
-    free.cells.assign(100, CellConstraint::Free);
+    const Constraints free = freeConstraints(inst);
     const std::vector<bool> occ = truthMask();
 
     for (double eps : {0.05, 0.20}) {
@@ -148,9 +148,9 @@ void marginals() {
         const Weights w = Weights::noisyChannel(inst, answers, eps);
 
         const auto t0 = std::chrono::steady_clock::now();
-        const std::vector<double> m = weightedMarginals(inst, free, w);
+        const std::vector<double> m = weightedMarginals(inst, free, w).occupancy;
         const double seconds =
-            std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            platform::elapsed(t0);
 
         std::printf("  eps = %.2f, 30 shots, %.1f s for the whole board\n", eps, seconds);
         std::printf("     ");
@@ -216,8 +216,7 @@ void prior() {
                 static_cast<unsigned long long>(constants::kOmega0),
                 flat.total == static_cast<double>(constants::kOmega0) ? "exact" : "*** OFF ***");
 
-    Constraints free;
-    free.cells.assign(100, CellConstraint::Free);
+    const Constraints free = freeConstraints(inst);
 
     // Cells (0,4) and (4,0) are mirror images under the board's diagonal
     // symmetry, so a symmetric prior has to give them the same marginal and an

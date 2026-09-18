@@ -11,7 +11,11 @@
 
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/flows.hpp"
+#include "mayflower/sampler.hpp"
+#include "mayflower/platform.hpp"
 
 #include "harness.hpp"
 #include "oracle/brute_force.hpp"
@@ -224,10 +228,10 @@ void testSamplerAgreesWithMarginals() {
             }
         }
     }
-    std::uint64_t exactTotal = 0;
-    const auto exact = mayflower::occupancyMap(inst, exactTotal);
-    checkEq(exactTotal, total, "totals agree");
-    expect(counted == exact, "occupancy counted over all ranks equals the exact marginals");
+    const auto exact = mayflower::occupancyMap(inst);
+    checkEq(exact.total, total, "totals agree");
+    expect(counted == exact.counts,
+           "occupancy counted over all ranks equals the exact marginals");
     std::printf("  all %d cells agree across %llu enumerated ranks\n", inst.cellCount(),
                 static_cast<unsigned long long>(total));
 }
@@ -243,7 +247,6 @@ int main() {
     testSamplingUnderObservations();
     testSamplerAgreesWithMarginals();
 
-    const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
-    return gFailures == 0 ? 0 : 1;
+    const auto dt = mf::test::elapsed(t0);
+    return mf::test::report(dt);
 }

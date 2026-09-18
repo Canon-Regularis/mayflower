@@ -4,11 +4,14 @@
 // configurations occupy it and how each sunk length would be reported. So the
 // exact one-ply channel costs nothing beyond the pass the marginals already
 // paid for, which is what makes exact information gain affordable.
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/outcomes.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/flows.hpp"
 
 
 #include <cmath>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace mayflower {
@@ -34,17 +37,14 @@ double OutcomeDistribution::informationBits() const {
     return h;
 }
 
-std::vector<OutcomeDistribution> outcomeDistribution(const Instance& inst,
-                                                     const History& history,
-                                                     std::uint64_t& total) {
+OutcomeMap outcomeDistribution(const Instance& inst, const History& history) {
     const Constraints constraints = constraintsFrom(inst, history);
     const LatticeFlows flows = analyse(inst, constraints);
-    total = flows.total;
 
     const int W = inst.width, H = inst.height;
     const std::vector<int> lengths = inst.distinctLengths();
     std::vector<OutcomeDistribution> out(static_cast<std::size_t>(inst.cellCount()));
-    if (flows.total == 0) return out;
+    if (flows.total == 0) return {flows.total, std::move(out)};
 
     for (int row = 0; row < H; ++row) {
         for (int col = 0; col < W; ++col) {
@@ -87,7 +87,7 @@ std::vector<OutcomeDistribution> outcomeDistribution(const Instance& inst,
             }
         }
     }
-    return out;
+    return {flows.total, std::move(out)};
 }
 
 }  // namespace mayflower

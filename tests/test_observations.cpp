@@ -8,7 +8,10 @@
 
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/flows.hpp"
+#include "mayflower/platform.hpp"
 
 #include "harness.hpp"
 #include "oracle/brute_force.hpp"
@@ -241,8 +244,9 @@ void testForwardBackwardMarginals() {
     };
     for (const Case& c : cases) {
         const Instance inst(c.w, c.h, c.fleet);
-        std::uint64_t total = 0;
-        const auto map = mayflower::occupancyMap(inst, total);
+        const auto occ = mayflower::occupancyMap(inst);
+        const std::uint64_t total = occ.total;
+        const auto& map = occ.counts;
         checkEq(total, mayflower::countConfigurations(inst).count, "total from occupancyMap");
 
         std::uint64_t sum = 0;
@@ -274,8 +278,9 @@ void testMarginalsUnderObservations() {
     h.add(4, 4, Outcome::Miss);
 
     const Constraints c = mayflower::constraintsFrom(inst, h);
-    std::uint64_t total = 0;
-    const auto map = mayflower::occupancyMap(inst, c, total);
+    const auto occ = mayflower::occupancyMap(inst, c);
+    const std::uint64_t total = occ.total;
+    const auto& map = occ.counts;
     checkEq(total, mayflower::countConfigurations(inst, c).count, "total under observations");
     expect(total > 0, "history is feasible");
 
@@ -305,6 +310,6 @@ int main() {
     testForwardBackwardMarginals();
     testMarginalsUnderObservations();
 
-    const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const auto dt = mf::test::elapsed(t0);
     return mf::test::report(dt);
 }
