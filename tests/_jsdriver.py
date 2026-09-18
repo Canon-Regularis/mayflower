@@ -27,6 +27,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from typing import Any
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -63,12 +64,12 @@ def write_engine_script(suffix: str = "_engine.js") -> str:
 # "+". A reader who learned the vocabulary from one read the other wrong. It is
 # stated here once, and each widget's test asserts against what it actually
 # painted rather than against the other's source text.
-GLYPHS = {"miss": ".", "hit": "o", "sunk": "x"}
+GLYPHS: dict[str, str] = {"miss": ".", "hit": "o", "sunk": "x"}
 
 
-def painted_glyphs(pairs):
+def painted_glyphs(pairs: str) -> dict[str, set[str]]:
     """class -> glyph, from what a widget painted. `pairs` is "class|glyph" ..."""
-    out = {}
+    out: dict[str, set[str]] = {}
     for pair in pairs.split():
         cls, _, glyph = pair.partition("|")
         state = next((k for k in GLYPHS if k in cls), None)
@@ -109,7 +110,7 @@ console.log(JSON.stringify(out));
 """
 
 
-def run_js(jobs):
+def run_js(jobs: list[dict[str, Any]]) -> Any:
     driver = os.path.join(ROOT, "_engine_probe.mjs")
     io.open(driver, "w", encoding="utf-8", newline="\n").write(DRIVER)
     try:
@@ -137,7 +138,8 @@ def run_js(jobs):
 # the same checks pass in 130 s idle. These sweeps are CPU-bound and the clock
 # is the only thing about them that varies, since the widget is deterministic
 # and Math.random is pinned, so a slow machine is not a failing one.
-def run_widget_probe(name, source, pool, engine_script, timeout, env):
+def run_widget_probe(name: str, source: str, pool: str, engine_script: str,
+                     timeout: float, env: dict[str, str]) -> Any:
     """Run `source` as a node harness over the pool, engine and live.js."""
     out_dir = os.path.join(ROOT, "out")
     os.makedirs(out_dir, exist_ok=True)

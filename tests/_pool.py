@@ -23,6 +23,7 @@ return per-cell counts as well.
 from __future__ import annotations
 
 import io
+from collections.abc import Sequence
 
 W = H = 10
 CELLS = W * H
@@ -33,12 +34,12 @@ SHIP_CELLS = sum(LENS)
 MISS, HIT, SUNK = 0, 1, 2
 
 
-def slot_count(L, w=W, h=H):
+def slot_count(L: int, w: int = W, h: int = H) -> int:
     """How many placement indices a length-L ship has."""
     return h * (w - L + 1) + (w * (h - L + 1) if L > 1 else 0)
 
 
-def placement_cells(idx, L, w=W, h=H):
+def placement_cells(idx: int, L: int, w: int = W, h: int = H) -> list[int]:
     """The cells a placement index covers."""
     hcount = h * (w - L + 1)
     if idx < hcount:
@@ -49,18 +50,18 @@ def placement_cells(idx, L, w=W, h=H):
     return [(r + k) * w + c for k in range(L)]
 
 
-def placement_table(L, w=W, h=H):
+def placement_table(L: int, w: int = W, h: int = H) -> list[list[int]]:
     """Every placement of a length-L ship, in index order."""
     return [placement_cells(i, L, w, h) for i in range(slot_count(L, w, h))]
 
 
-def read_pool(path):
+def read_pool(path: str) -> tuple[bytes, int]:
     """The raw bytes and the board count."""
     raw = io.open(path, "rb").read()
     return raw, len(raw) // len(LENS)
 
 
-def board_owner(raw, bi):
+def board_owner(raw: bytes, bi: int) -> dict[int, int]:
     """cell -> which ship of board bi occupies it."""
     base = bi * len(LENS)
     owner = {}
@@ -70,7 +71,8 @@ def board_owner(raw, bi):
     return owner
 
 
-def board_consistent(owner, history):
+def board_consistent(owner: dict[int, int],
+                     history: Sequence[tuple[int, int, int]]) -> bool:
     """Whether one board satisfies the record, by the widget's own rule.
 
     Mirrors consistent() in web/live.js: a shot on no ship must be a miss, a
@@ -95,7 +97,8 @@ def board_consistent(owner, history):
     return True
 
 
-def survivors(raw, n, history):
+def survivors(raw: bytes, n: int,
+              history: Sequence[tuple[int, int, int]]) -> tuple[int, list[int]]:
     """(count, per-cell occupancy counts) over the boards the record allows."""
     alive = 0
     counts = [0] * CELLS
