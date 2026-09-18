@@ -53,8 +53,8 @@ per-ship-length breakdown is a headline, and any such number is exploratory.
 - Round robin: Holm step-down over the family of pairwise comparisons. No
   independence assumption is available, so no procedure that needs one is used.
 
-The interval code is calibrated rather than trusted. `python/stats.py` checks
-every interval it produces against a known ground truth and asserts that a 95%
+The interval code is calibrated rather than trusted. `python/stats_test.py` checks
+every interval `python/stats.py` produces against a known ground truth and asserts that a 95%
 interval covers 95% of the time. Binomial coverage is summed exactly rather than
 simulated, because it can be; the rest is simulated at 2,000 replicates. That
 check is part of the fast test suite.

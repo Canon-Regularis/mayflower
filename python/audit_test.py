@@ -15,12 +15,16 @@ import tempfile
 from audit import (GENESIS, audit_entries, is_unsealed, read_head, record,
                    require_unseal, verify_audit, write_head)
 
-# The printer stays in stats.py, which owns the console convention for the
-# whole self test. Imported lazily inside the function because stats.py imports
-# this module, so the two would otherwise be a cycle at import time.
+# The console convention, from the module both self tests take it from.
+# This used to read "from stats import check" inside the function body,
+# deferred because stats.py imported this module and the two would have been
+# a cycle. stats.py no longer imports a test, so the deferral is gone and the
+# docstring below is a docstring again rather than a statement after an
+# import.
+from _report import check
+
 
 def test_audit():
-    from stats import check
     """The seal, checked by breaking it."""
     print("[the seal]")
     fails = 0

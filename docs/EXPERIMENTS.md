@@ -23,8 +23,8 @@ recompute the history. What the chain buys is that tampering costs a rewrite of
 the log, the head and the version history containing them, rather than an edit to
 one line. Git is the anchor.
 
-Every interval `stats.py` produces is calibrated by simulating from a known ground
-truth and counting how often the interval covers it. Coverage of a binomial
+Every interval `stats.py` produces is calibrated by `stats_test.py`, which simulates
+from a known ground truth and counting how often the interval covers it. Coverage of a binomial
 interval is a finite sum, so it is computed rather than sampled. Wilson lands
 closer to 95% than the normal approximation at every `p` at or below 0.10, by a
 factor of fifty at `p = 0.01`, and the two coincide at `p = 0.5`.
