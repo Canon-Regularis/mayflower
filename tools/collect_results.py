@@ -121,8 +121,14 @@ def required(cell: str | None, source: str, what: str) -> str:
     table() turns a "-" into None because a dash means "not measured", and a
     column that is sometimes a dash is a real thing in these transcripts. The
     columns below are not those: an instance name or a row key that arrived as
-    a dash means the table moved, and silently building "noisy--None" out of it
-    is how a wrong id reaches experiments/results.json.
+    a dash means the table moved, and an id built from it is wrong.
+
+    On the two sites that join with "+" this upgrades a TypeError to a message
+    naming the file and the column, which is worth having and is all it does.
+    The site it exists for is the "opp-worst-{}-{}".format below, where
+    str.format renders None as the text "None": that one really did build
+    opp-worst-4x4{3,2}-None and report success. An audit found the guard on
+    the two that already refused and missing from the one that did not.
     """
     if cell is None:
         raise ValueError("{}: {} is '-' where a value is required".format(source, what))
@@ -271,14 +277,28 @@ def opponent(results: list[Result]) -> None:
     for occurrence, instance in enumerate(("4x4 {3,2}", "5x5 {4,3,2}")):
         for r in table(t, header, src, occurrence=occurrence):
             results.append(dict(source=src, family="opponent",
-                                id="opp-worst-{}-{}".format(instance.replace(" ", ""), r[0]),
+                                id="opp-worst-{}-{}".format(
+                                    instance.replace(" ", ""),
+                                    required(r[0], src, "the believed theta")),
                                 instance=instance, metric="worst case over opponents",
                                 value=num(r[1]), unit="shots", exact=True,
                                 believesTheta=num(r[0]), regret=num(r[2])))
 
 
 def headline(results: list[Result]) -> None:
-    """The pre-registered run, on whichever folds have been played."""
+    """The pre-registered run, on whichever folds have been played.
+
+    Only games and the per-policy rows are read. The commit field is not, and
+    on headline_test.json it is the empty string: run_headline used to build it
+    from a stats.COMMIT that never existed, and the file predates the fix.
+
+    It stays that way on purpose. Rewriting it means running the TEST fold,
+    which needs a recorded unseal, and section 21 declined to spend one to
+    tidy a field with no reader. The two files also differ in shape for the
+    same reason, since headline_train.json was regenerated after the paired
+    block gained `identical` and headline_test.json was not. Both facts are
+    invisible from here unless this says so, which is why it does.
+    """
     for fold in ("train", "test"):
         target = path("experiments", "headline_{}.json".format(fold))
         if not os.path.exists(target):
@@ -465,21 +485,58 @@ def _transcripts_against_sweep(results: Sequence[Result]) -> list[dict[str, Any]
     return out
 
 
-def _by_instance(results: Sequence[Result]) -> dict[str, dict[str, Any]]:
-    """Every metric, keyed by instance then metric name.
+def _by_instance(results: Sequence[Result]) -> tuple[dict[str, dict[str, Any]],
+                                                     dict[str, set[str]]]:
+    """Every metric that names one value on its instance, plus the ones that do not.
 
     Built once and passed to the two checks that read it. It used to be a
     local shared by the tail of one long function, which is the kind of
-    coupling a split has to make explicit rather than inherit."""
-    per_instance: dict[str, dict[str, Any]] = {}
+    coupling a split has to make explicit rather than inherit.
+
+    A metric name is not unique within an instance. Ten pairs carry between two
+    and six rows: beta(L) is four lengths, "shots to identify the board" is six
+    noise levels, "mean shots to clear" is one row per policy. Written as a
+    plain last-write-wins dict this discarded 32 of the 118 rows, and a rule
+    naming one of those metrics would have compared whichever row happened to
+    be parsed last and reported an instance count that looked like coverage.
+
+    No rule names one today, so nothing was ever wrong. That is the whole
+    reason to separate them now rather than after one does: an ambiguous
+    metric is returned in the second map, and the two checks below raise on it
+    instead of quietly picking a row.
+    """
+    seen: dict[tuple[str, str], int] = {}
     for r in results:
+        key = (r["instance"], r["metric"])
+        seen[key] = seen.get(key, 0) + 1
+
+    per_instance: dict[str, dict[str, Any]] = {}
+    ambiguous: dict[str, set[str]] = {}
+    for r in results:
+        if seen[(r["instance"], r["metric"])] > 1:
+            ambiguous.setdefault(r["instance"], set()).add(r["metric"])
+            continue
         per_instance.setdefault(r["instance"], {})[r["metric"]] = r["value"]
 
-    return per_instance
+    return per_instance, ambiguous
+
+
+def _one_value(m: dict[str, Any], ambiguous: set[str], metric: str, rule: str) -> bool:
+    """Whether this instance names exactly one value for this metric.
+
+    Raises when the metric is present several times, because a rule that reads
+    one of several rows is not the check it prints itself as.
+    """
+    if metric in ambiguous:
+        raise ValueError(
+            "the rule {!r} reads {!r}, which carries more than one row on this "
+            "instance; name the rows apart before comparing them".format(rule, metric))
+    return metric in m
 
 
 def _orderings_by_definition(results: Sequence[Result],
-                             per_instance: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+                             per_instance: dict[str, dict[str, Any]],
+                             ambiguous: dict[str, set[str]]) -> list[dict[str, Any]]:
     """Orderings that hold by definition, between families rather than within one."""
     out = []
     compared, off = 0, []
@@ -500,8 +557,10 @@ def _orderings_by_definition(results: Sequence[Result],
     ]
     for inst in sorted(per_instance):
         m = per_instance[inst]
+        amb = ambiguous.get(inst, set())
         for left, rel, right in rules:
-            if left not in m or right not in m:
+            claim = "{} {} {}".format(left, rel, right)
+            if not _one_value(m, amb, left, claim) or not _one_value(m, amb, right, claim):
                 continue
             compared += 1
             ok = (m[left] >= m[right] - 1e-9 if rel == "ge"
@@ -519,7 +578,8 @@ def _orderings_by_definition(results: Sequence[Result],
 
 
 def _waste_within_misses(results: Sequence[Result],
-                         per_instance: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+                         per_instance: dict[str, dict[str, Any]],
+                         ambiguous: dict[str, set[str]]) -> list[dict[str, Any]]:
     """Waste counts misses, so it cannot exceed the misses a game has."""
     out = []
     # Waste is a subset of the misses, not a separate quantity: it counts the
@@ -549,8 +609,10 @@ def _waste_within_misses(results: Sequence[Result],
         if cells is None:
             continue
         m = per_instance[inst]
+        amb = ambiguous.get(inst, set())
         for waste, shots in waste_pairs:
-            if waste not in m or shots not in m:
+            claim = "{} <= {} - shipCells".format(waste, shots)
+            if not _one_value(m, amb, waste, claim) or not _one_value(m, amb, shots, claim):
                 continue
             counted += 1
             misses = m[shots] - cells
@@ -562,6 +624,136 @@ def _waste_within_misses(results: Sequence[Result],
         out.append({"quantity": "waste is a subset of the misses",
                        "sources": ["objective", "waste"], "instances": counted,
                        "agree": not over, "disagreements": over})
+    return out
+
+
+def _regret_is_the_difference(results: Sequence[Result]) -> list[dict[str, Any]]:
+    """Regret against the flat prior is the difference it says it is.
+
+    believesTheta and regret were collected onto all eight opponent rows and
+    read by nothing, because render_results.py renders no opponent section.
+    They are not unrelated numbers: the tool prints the worst case and the
+    regret side by side, and regret is the worst case minus the theta = 0 row
+    on the same instance.
+
+    Two columns of one printed table, related by arithmetic, neither ever
+    compared. The tolerance is the transcript's own four decimal places, twice
+    over, since both sides are rounded before this ever sees them.
+    """
+    out, off, counted = [], [], 0
+    rows = [r for r in results if r["family"] == "opponent"]
+    for inst in sorted({r["instance"] for r in rows}):
+        group = [r for r in rows if r["instance"] == inst]
+        flat = [r for r in group if r.get("believesTheta") == 0]
+        if len(flat) != 1:
+            continue
+        base = flat[0]["value"]
+        for r in group:
+            if r.get("regret") is None:
+                continue
+            counted += 1
+            if abs(r["value"] - base - r["regret"]) > 2e-4:
+                off.append({"instance": inst, "believes": r.get("believesTheta"),
+                            "claim": "regret == worst case - worst case at theta 0",
+                            "worst case": r["value"], "flat": base,
+                            "regret": r["regret"]})
+    if counted:
+        out.append({"quantity": "regret is the difference from the flat prior",
+                    "sources": ["docs/OPPONENT.txt"], "instances": counted,
+                    "agree": not off, "disagreements": off})
+    return out
+
+
+def _maxcover_rung_stays_withdrawn(results: Sequence[Result]) -> list[dict[str, Any]]:
+    """The withdrawn rung is still withdrawn, and the one that bounds still bounds.
+
+    maxcov and kMaxcov were collected onto every maxcover row and read by
+    nothing. kMaxcov is worse than unread: docs/MAXCOVER.txt says it "exceeds
+    it on 6 of 6 instances, so it is not a bound on anything", so the record
+    published a withdrawn quantity with no statement that it is withdrawn.
+
+    Both halves are checkable and both are asserted here. K*maxcov must stay
+    strictly above the adaptive optimum, which is the negative regression that
+    stops the rung being quoted again; maxcov must stay at or below the
+    non-adaptive optimum, which is what it does bound. tools/maxcover selftest
+    already pins this, and nothing in the collected record did.
+    """
+    off = []
+    rows = [r for r in results if r["family"] == "maxcover"]
+    for r in rows:
+        k, adaptive = r.get("kMaxcov"), r.get("adaptive")
+        cov, non = r.get("maxcov"), r.get("nonAdaptive")
+        if k is not None and adaptive is not None and k <= adaptive:
+            off.append({"instance": r["instance"],
+                        "claim": "K*maxcov is not a lower bound on the adaptive optimum",
+                        "K*maxcov": k, "adaptive": adaptive})
+        if cov is not None and non is not None and cov > non + 1e-9:
+            off.append({"instance": r["instance"],
+                        "claim": "maxcov <= the non-adaptive optimum",
+                        "maxcov": cov, "non-adaptive": non})
+    if not rows:
+        return []
+    return [{"quantity": "the max-coverage rung stays withdrawn",
+             "sources": ["docs/MAXCOVER.txt"], "instances": len(rows),
+             "agree": not off, "disagreements": off}]
+
+
+def _omega_paths_agree(results: Sequence[Result]) -> list[dict[str, Any]]:
+    """The hypothesis space, from the two places report_data derives it.
+
+    meta.omega0 comes from the standard instance's own sweep; scaling[n=10].omega
+    comes from the board-size ladder's tenth rung. Same quantity, same instance,
+    two code paths through the same tool, and until this check nothing compared
+    them: they collided on (instance, metric) and _by_instance kept one.
+
+    This is the shape section 21f describes. The comparison costs nothing, both
+    numbers are already collected, and the one it resembles most is the policy
+    check that caught the fold leak on the day it landed. 15,046,987,768 is the
+    number the whole report is built on, so two routes to it is worth pinning.
+    """
+    by_id = {r["id"]: r for r in results}
+    a, b = by_id.get("omega0"), by_id.get("omega-10x10")
+    if a is None or b is None:
+        return []
+    off = []
+    if a["value"] != b["value"]:
+        off.append({"quantity": "configurations on 10x10 {5,4,3,3,2}",
+                    "meta.omega0": a["value"], "scaling[n=10].omega": b["value"]})
+    return [{"quantity": "both routes to the hypothesis space",
+             "sources": ["out/figures.json meta", "out/figures.json scaling"],
+             "instances": 1, "agree": not off, "disagreements": off}]
+
+
+def _differences(committed: dict[str, Any], fresh: dict[str, Any]) -> list[str]:
+    """Where the committed record and a fresh collection disagree.
+
+    Everything but `commit`, which names the tree that wrote the file and is
+    therefore expected to be older than the tree checking it.
+    """
+    out: list[str] = []
+
+    def walk(a: Any, b: Any, where: str) -> None:
+        if isinstance(a, dict) and isinstance(b, dict):
+            for k in sorted(set(a) | set(b)):
+                if where == "" and k == "commit":
+                    continue
+                at = "{}.{}".format(where, k) if where else k
+                if k not in a:
+                    out.append("{} is new".format(at))
+                elif k not in b:
+                    out.append("{} has gone".format(at))
+                else:
+                    walk(a[k], b[k], at)
+        elif isinstance(a, list) and isinstance(b, list):
+            if len(a) != len(b):
+                out.append("{}: {} entries against {}".format(where, len(a), len(b)))
+                return
+            for i, (x, y) in enumerate(zip(a, b)):
+                walk(x, y, "{}[{}]".format(where, i))
+        elif a != b:
+            out.append("{}: committed {!r}, sources say {!r}".format(where, a, b))
+
+    walk(committed, fresh, "")
     return out
 
 
@@ -577,9 +769,12 @@ def cross_checks(results: Sequence[Result]) -> list[dict[str, Any]]:
     checks += _pairs_agree(results)
     checks += _policy_against_headline(results)
     checks += _transcripts_against_sweep(results)
-    per_instance = _by_instance(results)
-    checks += _orderings_by_definition(results, per_instance)
-    checks += _waste_within_misses(results, per_instance)
+    checks += _omega_paths_agree(results)
+    checks += _maxcover_rung_stays_withdrawn(results)
+    checks += _regret_is_the_difference(results)
+    per_instance, ambiguous = _by_instance(results)
+    checks += _orderings_by_definition(results, per_instance, ambiguous)
+    checks += _waste_within_misses(results, per_instance, ambiguous)
     return checks
 
 
@@ -635,6 +830,36 @@ def main() -> int:
     if failed:
         print("\nFAILED: two tools disagree about the same quantity")
         return 1
+
+    # Under --check, against the committed record as well as against itself.
+    #
+    # Everything above compares freshly parsed sources to each other. None of
+    # it opened experiments/results.json, so the file the dossier renders from
+    # was checked by nothing: --check verified that the sources agree among
+    # themselves and never that the committed record still matches them. A
+    # transcript that moved, or a figure sweep that moved, left the record
+    # stale and CI said nothing.
+    #
+    # The commit stamp is excluded because it names the tree that wrote the
+    # file, which is by construction older than the tree checking it. That is
+    # the same "identical except the commit stamp" rule the figure data is
+    # already held to.
+    if args.check:
+        target = path("experiments", "results.json")
+        if not os.path.exists(target):
+            print("\nFAILED: experiments/results.json is missing")
+            return 1
+        committed = json.loads(io.open(target, encoding="utf-8").read())
+        drift = _differences(committed, out)
+        if drift:
+            print("\nFAILED: experiments/results.json is not what the sources now say")
+            for d in drift[:20]:
+                print("   " + d)
+            if len(drift) > 20:
+                print("   ... and {} more".format(len(drift) - 20))
+            print("  regenerate with python tools/collect_results.py")
+            return 1
+        print("\nand experiments/results.json matches, apart from the commit stamp")
 
     if not args.check:
         target = path("experiments", "results.json")
