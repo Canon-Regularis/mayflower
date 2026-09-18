@@ -29,7 +29,8 @@
 #include "mayflower/constants.hpp"
 #include "mayflower/game.hpp"
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/flows.hpp"
+#include "mayflower/sampler.hpp"
 #include "mayflower/random.hpp"
 
 #include "harness.hpp"
@@ -43,7 +44,21 @@ using mf::test::check;
 }  // namespace
 
 int main(int argc, char** argv) {
+    // Four tools guard their count argument this way and this test did not,
+    // although it divides by the value twice: once for the standard error of
+    // each cell's rate and once for the rate itself. atoi turns an unparsable
+    // argument into 0, so the sweep drew nothing and then divided by it, and
+    // every comparison against the resulting NaN is false, which reports a
+    // uniform generator as non-uniform. tests/test_tool_cli.py covers this
+    // class for the four tools; nothing covered it here.
     const int draws = argc > 1 ? std::atoi(argv[1]) : 300000;
+    if (draws < 1) {
+        std::fprintf(stderr,
+                     "draw count must be a positive integer; got \"%s\".\n"
+                     "usage: test_uniformity [draws]\n",
+                     argc > 1 ? argv[1] : "");
+        return 2;
+    }
     const Instance inst = standardInstance();
     const int cells = inst.cellCount();
 
@@ -51,8 +66,9 @@ int main(int argc, char** argv) {
     std::printf("  %s, %d boards\n\n", inst.describe().c_str(), draws);
 
     // The truth to compare against, exact and from a different code path.
-    std::uint64_t total = 0;
-    const std::vector<std::uint64_t> exact = occupancyMap(inst, total);
+    const OccupancyMap map = occupancyMap(inst);
+    const std::uint64_t total = map.total;
+    const std::vector<std::uint64_t>& exact = map.counts;
     std::vector<double> p(static_cast<std::size_t>(cells), 0.0);
     for (int c = 0; c < cells; ++c)
         p[static_cast<std::size_t>(c)] =
