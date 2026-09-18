@@ -67,7 +67,7 @@ order-free  |Omega| = 26      (over by 4, 18%)
 
 ## Current status
 
-`include/mayflower/profile_dp.hpp` exposes per-cell constraints only (`Free`,
+`include/mayflower/constraints.hpp` exposes per-cell constraints only (`Free`,
 `MustBeEmpty`, `MustBeOccupied`), so no caller can obtain wrong sunk semantics
 today. `python/oracle.py` implements the correct ordered model and is the
 reference the C++ sunk predicate must match when it lands in M1.

@@ -24,7 +24,7 @@
 
 #include "mayflower/instance.hpp"
 #include "mayflower/notouch.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/counting.hpp"
 #include "mayflower/profile_dp_blocked.hpp"
 #include "mayflower/weighted.hpp"
 

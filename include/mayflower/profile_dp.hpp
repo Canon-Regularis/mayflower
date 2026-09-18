@@ -32,9 +32,18 @@
 // START transitions, so they shrink the live state set: on the standard instance
 // 10 misses cut it to 12.7% of the prior, 30 misses to 0.4%.
 //
-// This header is now an umbrella. The declarations live in five focused headers
-// and are included here so that no consumer has to change. Reach for the narrow
-// one when a translation unit needs only part of this.
+// No declaration lives here. This is the overview, and the five headers below
+// are the map: constraints.hpp for the per-cell filter and the placement gate,
+// counting.hpp for the sweep itself, flows.hpp for forward-backward marginals,
+// outcomes.hpp for the one-ply channel, sampler.hpp for the unranker.
+//
+// It was an umbrella when the split landed, so that no consumer had to change,
+// and it told the reader to reach for the narrow header instead. Nobody did:
+// every one of the 31 consumers kept taking all five, and so did the four
+// implementations that exist to define them. The consumers have since been
+// migrated to what they name, which left this header with no includer at all
+// apart from the self-test that compiles it. Including it is not wrong, but it
+// is wider than anything has needed so far, so prefer the narrow one.
 #pragma once
 
 #include "mayflower/constraints.hpp"

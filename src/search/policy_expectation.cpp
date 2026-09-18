@@ -19,7 +19,10 @@
 
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/sampler.hpp"
+#include "mayflower/platform.hpp"
 
 namespace mayflower {
 
@@ -74,7 +77,7 @@ PolicyExpectation exactPolicyExpectation(const Instance& inst, Policy& policy,
     }
     out.expectedShots = static_cast<double>(sum) / static_cast<double>(total);
     out.missesAfterCertainty = static_cast<double>(wasted) / static_cast<double>(total);
-    out.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    out.seconds = platform::elapsed(t0);
     return out;
 }
 

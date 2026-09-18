@@ -31,7 +31,8 @@
 #include "search/detail/outcome.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/flows.hpp"
+#include "mayflower/sampler.hpp"
 #include "mayflower/random.hpp"
 
 namespace {

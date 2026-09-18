@@ -4,7 +4,9 @@
 // measured against and must match bit for bit. It is a straightforward
 // implementation rather than a deliberately slow one, because a baseline that
 // is worse than it needs to be inflates every speedup measured against it.
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/flows.hpp"
 
 #include "detail/v0_sweep.hpp"
 #include "detail/entry.hpp"

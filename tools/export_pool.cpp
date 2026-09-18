@@ -18,7 +18,7 @@
 
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/sampler.hpp"
 #include "mayflower/random.hpp"
 
 namespace {

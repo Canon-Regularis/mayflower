@@ -5,7 +5,7 @@
 // whether a ship of a given length may start at a given cell facing a given
 // way. The gate is what carries the order dependence into a sweep that has no
 // notion of time.
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
 
 
 #include <vector>
