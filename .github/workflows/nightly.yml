@@ -141,8 +141,8 @@ jobs:
           ./build/report_data 20000 > out/figures.json
 
       # ctest reports Skipped, and exits zero, when out/figures.json is absent.
-      # That is right for the per-push suite and wrong here, where running these
-      # three for real is the whole point of the job.
+      # That is right for the per-push suite and wrong here, where running the
+      # figure-data tests for real is the whole point of the job.
       - name: The figure data is there to check
         run: |
           python - <<'EOF'
@@ -161,10 +161,15 @@ jobs:
       #
       # provenance arrived later and landed in exactly the same hole, which
       # is the argument for this list being the one place a figure-data
-      # test is named. Four now.
+      # test is named. Five now, with figure_marks.
+      #
+      # Do not write the count into prose elsewhere: docs/CI.md named three
+      # here for two rounds after this list reached five. The list is the
+      # fact and everything else is derived from it.
+      #
       # A skip still exits zero, which is how scrubber_js stayed missing without
       # anything going red, so a skip is an error in the one job that supplies
-      # what these three are gated on.
+      # what they are gated on.
       - name: The figure-data contract
         run: |
           ctest --test-dir build -R '^(report_data|results|scrubber_js|provenance|figure_marks)$' \
@@ -175,6 +180,64 @@ jobs:
             echo 'a figure-data test skipped in the job that exists to run it'
             exit 1
           fi
+
+      # The captured transcripts, against the tools that print them.
+      #
+      # docs/*.txt feeds 43 of the dossier's 118 rows and had no link back to
+      # the engine. tests/test_provenance.py names them in RESULT_SOURCES, but
+      # only as mtime inputs deciding whether experiments/results.json is
+      # stale, so they were checked as sources of the record and never as
+      # artefacts of the tools. On a fresh clone every mtime is checkout time,
+      # so an mtime rule could not have covered it here either.
+      #
+      # The gate is the collected values, not the bytes. docs/M9_RESULTS.txt
+      # carries a "DP mean us" column in its constraint-density table, so it
+      # is not byte-reproducible: regenerating it on a loaded machine moves
+      # every figure in that column and the "DP cost peaks at N hits" line
+      # under it. None of that is published. collect_results reads three
+      # tables from that file and the density table is not one of them, which
+      # was confirmed by parsing both copies: 29 rows out, zero different.
+      #
+      # So the transcripts are regenerated over the checkout and the record is
+      # recollected. --check compares every collected value against the
+      # committed experiments/results.json, so a transcript whose published
+      # numbers moved fails here and one whose timings moved does not. The
+      # byte diff is printed either way, because a change outside the parsed
+      # tables is worth seeing even when it cannot move a row.
+      #
+      # build/weighted is excluded: section 3 of its output reports its own
+      # wall-clock seconds, and it is the one transcript no published row
+      # reads at all.
+      - name: The captured transcripts still match their tools
+        run: |
+          mkdir -p out/transcripts
+          for tool in m9 maxcover opponent; do
+            ./build/$tool > out/transcripts/$tool.txt
+          done
+          cp docs/M9_RESULTS.txt docs/MAXCOVER.txt docs/OPPONENT.txt out/transcripts/
+          for pair in "m9:M9_RESULTS" "maxcover:MAXCOVER" "opponent:OPPONENT"; do
+            tool=${pair%%:*}; doc=${pair##*:}
+            if diff -u "docs/$doc.txt" "out/transcripts/$tool.txt"                  > "out/transcripts/$tool.diff"; then
+              echo "docs/$doc.txt is byte identical to build/$tool"
+            else
+              echo "docs/$doc.txt differs from build/$tool:"
+              head -30 "out/transcripts/$tool.diff"
+            fi
+            cp "out/transcripts/$tool.txt" "docs/$doc.txt"
+          done
+
+      # The gate. Every row the regenerated transcripts produce, against the
+      # committed record, which is what a reader of the dossier is shown.
+      - name: And the values they publish are the recorded ones
+        run: |
+          python tools/collect_results.py --check || {
+            echo 'a published number moved. The step above regenerated the'
+            echo 'three transcripts and the job regenerated out/figures.json,'
+            echo 'so the drift is in one of those rather than in the record;'
+            echo 'the lines above name which rows.'
+            exit 1
+          }
+          git checkout -- docs/
 
       - name: Render the report
         run: python tools/render_report.py out/figures.json out/report.html
