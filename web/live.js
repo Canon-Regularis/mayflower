@@ -113,7 +113,10 @@
 
   function consistent(bi) {
     loadBoard(bi);
-    const rem = [5, 4, 3, 3, 2];
+    // LENS, not a second copy of it. This loop indexes rem by o and compares
+    // against LENS[o] two lines down, so the two had to stay in step and
+    // nothing made them.
+    const rem = LENS.slice();
     for (const s of history) {
       const o = ownerOf(s.cell);
       if (o < 0) { if (s.outcome !== MISS) return false; continue; }

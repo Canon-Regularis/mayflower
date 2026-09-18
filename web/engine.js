@@ -280,8 +280,6 @@ export function count(inst, cells, gate) {
 
   for (let col = 0; col < inst.width; col++) {
     for (let row = 0; row < inst.height; row++) {
-      const c = row * inst.width + col;
-      const cc = cells[c];
       const ctx = cellCtx(inst, cells, gate, row, col);
       next.clear();
       checkExact(cur, "count");
@@ -322,10 +320,13 @@ export function marginals(inst, cells, gate) {
   const boundary = [cur.snapshot()];
   for (let col = 0; col < W; col++) {
     for (let row = 0; row < H; row++) {
-      const c = row * W + col, cc = cells[c];
       const ctx = cellCtx(inst, cells, gate, row, col);
       next.clear();
-      checkExact(cur, "count");
+      // Labelled for the function it is in. This read "count" until a
+      // survey noticed, because the sweep was copied from count() and the
+      // string came with it, so an overflow raised here reported the wrong
+      // entry point.
+      checkExact(cur, "marginals");
       for (let k = 0; k < cur.n; k++) {
         const i = cur.dense[k];
         const e = cur.ext[i], a = cur.aux[i], n = cur.cnt[i];
@@ -358,7 +359,13 @@ export function marginals(inst, cells, gate) {
     let a = replay, b = replayNext;
     for (let row = 0; row < H; row++) {
       fLayers[row] = a.snapshot();
-      const c = row * W + col, cc = cells[c];
+      // No checkExact here or in the backward pass below, and that is not
+      // an omission. This loop rebuilds the very layers the forward sweep
+      // already checked, from the same column boundary, so its sums are
+      // the same numbers. The backward flows are bounded by total, which
+      // is bounded by the last forward layer. One check per forward layer
+      // covers the pass, and repeating it would cost a walk of every live
+      // state per cell in a widget that runs in the reader's browser.
       const ctx = cellCtx(inst, cells, gate, row, col);
       b.clear();
       for (let k = 0; k < a.n; k++) {
@@ -370,7 +377,7 @@ export function marginals(inst, cells, gate) {
       const t = a; a = b; b = t;
     }
     for (let row = H - 1; row >= 0; row--) {
-      const c = row * W + col, cc = cells[c];
+      const c = row * W + col;
       const ctx = cellCtx(inst, cells, gate, row, col);
       const F = fLayers[row];
       let emptyFlow = 0;
