@@ -22,10 +22,13 @@ against the thing that decides it:
 CMakeLists.txt is parsed rather than ctest queried, so this works on a clean
 checkout with no build directory, which is where a documentation check belongs.
 
-Deliberately not covered: docs/BENCHMARKS.md's ladder check count. That number
-is what test_ladder prints at the end of a seven second run, and there is no
-honest way to derive it from source without running it. It stays the one count
-maintained by hand.
+Not covered here: docs/BENCHMARKS.md's ladder check count. That number is what
+test_ladder prints at the end of a seven second run, and there is no honest way
+to derive it from source, which is what this file does. It was the one count
+maintained by hand, and it drifted a third time the moment test_ladder gained a
+second assertion per rung comparison. It is now checked by running the thing:
+tests/test_tools_output.py starts binaries and reads what they print already,
+and seven seconds is nothing beside what that test already spends.
 """
 
 from __future__ import annotations
@@ -77,9 +80,16 @@ def mf_tests(text):
     return out
 
 
-def guard_names(text):
-    """The test names the ci.yml registration loop walks."""
+def guard_lists(text):
+    """Every test-name list a ci.yml registration loop walks, in file order.
+
+    Every one of them, because there are two: the linux build job writes the
+    loop out and the windows job writes it out again. This returned after the
+    first for years, so the windows copy was guarded by nothing, which is the
+    silent-smaller-suite failure this file's docstring says it exists to catch.
+    """
     lines = text.split("\n")
+    out = []
     for i, ln in enumerate(lines):
         if "for t in" in ln:
             block, j = [], i
@@ -89,8 +99,8 @@ def guard_names(text):
                     break
                 j += 1
             joined = " ".join(b.replace("\\", " ") for b in block)
-            return joined.split("for t in", 1)[1].split("; do")[0].split()
-    return []
+            out.append(joined.split("for t in", 1)[1].split("; do")[0].split())
+    return out
 
 
 def stated(text, pattern):
@@ -119,8 +129,16 @@ def main():
     check(bool(node_block), "the Python-and-Node block was located in CMakeLists.txt")
     node_gated = re.findall(CALL, node_block.group(1), re.M) if node_block else []
 
-    names = guard_names(ci)
-    check(len(names) > 5, "the ci.yml registration guard list was located",
+    lists = guard_lists(ci)
+    check(len(lists) >= 2, "ci.yml's registration guard lists were located",
+          "found {} of them, where the linux and windows jobs carry one each".format(len(lists)))
+    disagree = [i for i, l in enumerate(lists) if l != lists[0]]
+    check(not disagree,
+          "and every job walks the same list",
+          "list(s) {} differ from the first: {}".format(
+              disagree, [sorted(set(lists[i]) ^ set(lists[0])) for i in disagree]))
+    names = lists[0] if lists else []
+    check(len(names) > 5, "which names more than a handful of tests",
           "found {} names".format(len(names)))
 
     # Not every SKIPPABLE test waits on out/figures.json: the label also covers
@@ -168,9 +186,60 @@ def main():
         check(got == actual, what + " matches the configuration",
               "prose says {!r}, configuration says {}".format(got, actual))
 
+    # 3. One constant, three languages' worth of homes.
+    #
+    # The 95 percent normal quantile is written in C++, in the report layer and
+    # in the analysis layer, because none of the three can include either of the
+    # others. That is the arrangement folds.hpp and python/stats.py already have,
+    # and it is only safe with the pin those two have. Without one it drifted:
+    # 1.959963985 here, 1.959964 there, both reaching the same page.
+    homes = [
+        ("include/mayflower/constants.hpp", r"kZ95\s*=\s*([0-9.]+)"),
+        ("tools/report_style.py", r"^Z_95\s*=\s*([0-9.]+)"),
+        ("python/stats.py", r"^Z_95\s*=\s*([0-9.]+)"),
+    ]
+    found = {}
+    for rel, pattern in homes:
+        m = re.search(pattern, read(os.path.join(ROOT, rel)), re.M)
+        check(bool(m), "the 95 percent quantile was located in " + rel)
+        if m:
+            found[rel] = m.group(1)
+    check(len(set(found.values())) == 1,
+          "and every language writes the same digits",
+          "; ".join("{} says {}".format(p, v) for p, v in found.items()))
+    # Correctly rounded, not merely agreeing. Three copies of a wrong value
+    # agree too, and the previous two spellings were out by 4.6e-10 and 1.5e-8.
+    # Every home, not one of them: checking a single home passes while another
+    # drifts, which is the hole the agreement check above exists to cover and
+    # no reason for this one to leave the same hole open.
+    wrong = {p: v for p, v in found.items()
+             if abs(float(v) - 1.959963984540054) >= 1e-15}
+    check(not wrong,
+          "and it is the value, to the last bit a double carries",
+          "; ".join("{} says {}".format(p, v) for p, v in wrong.items()))
+
+    # 4. The fleet, likewise.
+    #
+    # constants.hpp opens "Every module imports from here; nothing hardcodes
+    # them", and web/live.js repeats that rule in its own comment and then
+    # hardcodes {5,4,3,3,2} anyway, as does tools/sweep_timing.mjs. Generating
+    # constants into JavaScript was considered and declined; a pin costs three
+    # lines and catches the same drift.
+    m = re.search(r"kFleet\[kFleetSize\]\s*=\s*\{([^}]*)\}",
+                  read(os.path.join(ROOT, "include", "mayflower", "constants.hpp")))
+    check(bool(m), "the fleet was located in constants.hpp")
+    fleet = [s.strip() for s in m.group(1).split(",")] if m else []
+    for rel, pattern in [("web/live.js", r"LENS\s*=\s*\[([^\]]*)\]"),
+                         ("tools/sweep_timing.mjs", r"makeInstance\(10, 10, \[([^\]]*)\]")]:
+        m2 = re.search(pattern, read(os.path.join(ROOT, rel)))
+        got = [s.strip() for s in m2.group(1).split(",")] if m2 else None
+        check(got == fleet, rel + " carries the fleet constants.hpp declares",
+              "{} against {}".format(got, fleet))
+
     print("  ({} fast, {} gated on the figure data, {} interpreter-gated, "
-          "{} needing Node)".format(len(fast), len(figure_gated), len(names),
-                                    len(node_gated)))
+          "{} needing Node, {} guard lists agreeing, fleet {})".format(
+              len(fast), len(figure_gated), len(names), len(node_gated), len(lists),
+              ",".join(fleet)))
     return report()
 
 

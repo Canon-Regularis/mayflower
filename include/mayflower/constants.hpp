@@ -77,6 +77,31 @@ inline constexpr double kMaxBitsPerShot      = 2.5849625007211562;  // log2(6)
 inline constexpr double kEntropyBound        = kPriorEntropyBits / kMaxBitsPerShot;
 
 // ---------------------------------------------------------------------------
+// Statistics.
+// ---------------------------------------------------------------------------
+
+// The two-sided normal quantile at 95 percent, to full double precision, which
+// is the same standard kMaxBitsPerShot above is written to.
+//
+// It had seven typed sites in two spellings. tools/report_style.py declared
+// 1.959963985 and its docstring said the retyping had been fixed in three
+// places; it had been fixed in the three Python renderer places, and
+// tools/selfplay.cpp, tools/report_data.cpp and python/stats.py went on writing
+// the shorter 1.959964. The two reached the same page: report_data computed a
+// policy's interval with one and tools/collect_results.py computed further
+// intervals over that same data with the other.
+//
+// Neither spelling was right. The value is 1.959963984540054, so the long form
+// was out by 4.6e-10 and the short by 1.5e-8. Both are far below anything the
+// report prints, which is why this drifted for so long without showing.
+//
+// python/stats.py and tools/report_style.py carry their own copy, because the
+// analysis and report layers cannot include a C++ header. tests/test_folds.cpp
+// pins the fold vector across that same boundary and test_stated_counts pins
+// these three against each other for the same reason.
+inline constexpr double kZ95 = 1.959963984540054;
+
+// ---------------------------------------------------------------------------
 // Symmetry.
 // ---------------------------------------------------------------------------
 
@@ -86,11 +111,27 @@ inline constexpr int kD4OrbitCount = 15;
 
 // ---------------------------------------------------------------------------
 
-namespace detail {
-consteval int placementsFor(int L, int w, int h) {
-    // Horizontal only at L = 1; both branches would emit the same single cell.
-    return h * (w - L + 1) + (L > 1 ? w * (h - L + 1) : 0);
+// Placements of a length-L ship on a w by h board, ignoring other ships.
+//
+// A length-1 ship has one orientation, not two: counting the vertical branch as
+// well returns twice the truth, which is the double-count four of the sweeps
+// carried. The two dimension guards matter for the same reason the length one
+// does, and this had them on only one of its two copies: Instance::placementsFor
+// checked width >= L and height >= L and the consteval twin here did not, so a
+// ship longer than the board gave a negative term rather than zero. Unreachable
+// from the static_asserts below, which pass 10x10 and L <= 5, and one formula
+// with two spellings all the same.
+//
+// constexpr rather than consteval, because Instance::placementsFor is the
+// runtime caller and now defers to this.
+[[nodiscard]] constexpr int placementsFor(int L, int w, int h) {
+    int n = 0;
+    if (w >= L) n += h * (w - L + 1);
+    if (L > 1 && h >= L) n += w * (h - L + 1);
+    return n;
 }
+
+namespace detail {
 consteval int shipCellSum() {
     int s = 0;
     for (int L : kFleet) s += L;
@@ -98,10 +139,10 @@ consteval int shipCellSum() {
 }
 }  // namespace detail
 
-static_assert(detail::placementsFor(5, kBoardWidth, kBoardHeight) == kPlacements5);
-static_assert(detail::placementsFor(4, kBoardWidth, kBoardHeight) == kPlacements4);
-static_assert(detail::placementsFor(3, kBoardWidth, kBoardHeight) == kPlacements3);
-static_assert(detail::placementsFor(2, kBoardWidth, kBoardHeight) == kPlacements2);
+static_assert(placementsFor(5, kBoardWidth, kBoardHeight) == kPlacements5);
+static_assert(placementsFor(4, kBoardWidth, kBoardHeight) == kPlacements4);
+static_assert(placementsFor(3, kBoardWidth, kBoardHeight) == kPlacements3);
+static_assert(placementsFor(2, kBoardWidth, kBoardHeight) == kPlacements2);
 static_assert(detail::shipCellSum() == kShipCells, "fleet cell count must be 17");
 static_assert(kCellCount <= 128, "the board must stay inside the 128-cell bound");
 static_assert(kMaxAccumulator < (std::uint64_t{1} << 38), "accumulator headroom check");

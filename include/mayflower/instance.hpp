@@ -62,14 +62,10 @@ struct Instance {
         return out;
     }
 
-    // Placements of a length-L ship ignoring other ships. A length-1 ship has
-    // one orientation, not two: counting the vertical branch as well would
-    // return twice the truth, which is the same double-count the sweeps carried.
+    // Placements of a length-L ship ignoring other ships. The formula, and the
+    // length-1 rule that makes it awkward, live in constants.hpp.
     [[nodiscard]] int placementsFor(int L) const {
-        int n = 0;
-        if (width  >= L) n += height * (width  - L + 1);
-        if (L > 1 && height >= L) n += width * (height - L + 1);
-        return n;
+        return constants::placementsFor(L, width, height);
     }
 
     [[nodiscard]] std::string describe() const {

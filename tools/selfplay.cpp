@@ -20,6 +20,7 @@
 #include "mayflower/instance.hpp"
 #include "mayflower/policy.hpp"
 #include "mayflower/random.hpp"
+#include "mayflower/platform.hpp"
 
 namespace {
 
@@ -48,7 +49,7 @@ Summary summarise(const std::string& name, std::vector<int> shots, double second
     double ss = 0;
     for (int v : shots) ss += (v - s.mean) * (v - s.mean);
     s.sd = std::sqrt(ss / (n - 1));
-    s.ciHalfWidth = 1.959964 * s.sd / std::sqrt(n);
+    s.ciHalfWidth = mayflower::constants::kZ95 * s.sd / std::sqrt(n);
     s.median = static_cast<int>(quantile(shots, 0.50));
     s.p95 = static_cast<int>(quantile(shots, 0.95));
     s.best = *std::min_element(shots.begin(), shots.end());
@@ -93,29 +94,24 @@ void pairedComparison(const Summary& a, const Summary& b) {
         dss += d * d;
     }
     const double dsd = std::sqrt(dss / static_cast<double>(n - 1));
-    const double half = 1.959964 * dsd / std::sqrt(static_cast<double>(n));
+    const double half = mayflower::constants::kZ95 * dsd / std::sqrt(static_cast<double>(n));
 
     // Correlation across the shared board pool, which is what the pairing buys.
-    double ca = 0, cb = 0;
-    for (std::size_t i = 0; i < n; ++i) { ca += a.shots[i]; cb += b.shots[i]; }
-    ca /= static_cast<double>(n);
-    cb /= static_cast<double>(n);
-    double cov = 0, va = 0, vb = 0;
-    for (std::size_t i = 0; i < n; ++i) {
-        const double x = a.shots[i] - ca, y = b.shots[i] - cb;
-        cov += x * y; va += x * x; vb += y * y;
-    }
-    // Both ratios below divide by a spread that can be zero, and one of them
-    // does on the standard pool. density(b=50) and density(b=200) saturate to
-    // the same play, so every paired difference is zero, half is zero, and the
-    // variance ratio printed "CRN saves infx": a division by zero with an "x"
-    // appended. run_headline copies this table verbatim into the headline
-    // record, so that is what the run would have preserved. rho goes the same
-    // way, as 0/0, when a policy has no spread of its own.
-    const double spread = std::sqrt(va * vb);
-    const double rho = spread > 0.0 ? cov / spread : 0.0;
+    // correlation() sat directly above this function and was called by nothing,
+    // because these eighteen lines were written out here instead. Its zero
+    // guard reads va <= 0 || vb <= 0 where the copy read sqrt(va * vb) > 0, and
+    // for sums of squares those are the same test.
+    const double rho = correlation(a, b);
+    // The ratio below divides by a spread that can be zero, and does on the
+    // standard pool. density(b=50) and density(b=200) saturate to the same
+    // play, so every paired difference is zero, half is zero, and the variance
+    // ratio printed "CRN saves infx": a division by zero with an "x" appended.
+    // run_headline copies this table verbatim into the headline record, so that
+    // is what the run would have preserved. rho goes the same way, as 0/0, when
+    // a policy has no spread of its own, which is what correlation() returns 0
+    // for.
     const double independentHalf =
-        1.959964 * std::sqrt(a.sd * a.sd + b.sd * b.sd) / std::sqrt(static_cast<double>(n));
+        mayflower::constants::kZ95 * std::sqrt(a.sd * a.sd + b.sd * b.sd) / std::sqrt(static_cast<double>(n));
 
     // Pairing removed the whole difference rather than some fraction of it,
     // which is an outcome and not a number.
@@ -244,7 +240,7 @@ int main(int argc, char** argv) {
             shots.push_back(playGame(inst, boards[static_cast<std::size_t>(i)], *policy,
                                      policySeeds[static_cast<std::size_t>(i)])
                                 .shots);
-        const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        const double dt = platform::elapsed(t0);
         results.push_back(summarise(names[results.size()], std::move(shots), dt));
     }
 
