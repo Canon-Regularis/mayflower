@@ -61,7 +61,7 @@ def _digest(previous: str, payload: str) -> str:
     return hashlib.sha256((previous + "|" + payload).encode("utf-8")).hexdigest()
 
 
-def audit_entries(path=None):
+def audit_entries(path: str | None = None) -> list[tuple[str, str]]:
     """Every entry as (payload, recorded_hash), in file order."""
     path = path or AUDIT_PATH
     if not os.path.exists(path):
@@ -76,11 +76,11 @@ def audit_entries(path=None):
     return out
 
 
-def _head_path(path):
+def _head_path(path: str | None) -> str:
     return (path or AUDIT_PATH) + ".head"
 
 
-def read_head(path=None):
+def read_head(path: str | None = None) -> tuple[int, str] | None:
     """The expected (count, hash). Absent head means an unanchored log."""
     hp = _head_path(path)
     if not os.path.exists(hp):
@@ -91,12 +91,12 @@ def read_head(path=None):
     return int(text[0]), text[1]
 
 
-def write_head(count, digest, path=None):
+def write_head(count: int, digest: str, path: str | None = None) -> None:
     with io.open(_head_path(path), "w", encoding="utf-8", newline="\n") as fh:
         fh.write("{} {}\n".format(count, digest))
 
 
-def verify_audit(path=None):
+def verify_audit(path: str | None = None) -> tuple[bool, int]:
     """Recompute the chain and check it against the head.
 
     Returns (ok, index of the first bad entry), with -1 for a chain that is
@@ -122,7 +122,8 @@ def verify_audit(path=None):
     return True, -1
 
 
-def record(event: str, experiment: str, detail: str, path=None, when=None):
+def record(event: str, experiment: str, detail: str,
+           path: str | None = None, when: str | None = None) -> str:
     """Append one entry, extend the chain, and move the head."""
     path = path or AUDIT_PATH
     ok, bad = verify_audit(path)
@@ -160,7 +161,7 @@ def record(event: str, experiment: str, detail: str, path=None, when=None):
     return payload
 
 
-def is_unsealed(experiment: str, path=None) -> bool:
+def is_unsealed(experiment: str, path: str | None = None) -> bool:
     ok, bad = verify_audit(path)
     if not ok:
         raise RuntimeError("audit chain or head is broken at entry {}".format(bad))
@@ -172,7 +173,7 @@ def is_unsealed(experiment: str, path=None) -> bool:
     return False
 
 
-def require_unseal(experiment: str, path=None):
+def require_unseal(experiment: str, path: str | None = None) -> None:
     """Guards TEST-fold data. Raises unless the unseal is already on record."""
     if not is_unsealed(experiment, path):
         raise PermissionError(

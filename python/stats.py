@@ -22,19 +22,14 @@ here.
 
 from __future__ import annotations
 
-import argparse
-import datetime
 import functools
-import hashlib
-import io
 import math
-import os
 import random
-import sys
+from collections.abc import Callable, Sequence
 
 # --- folds ----------------------------------------------------------------
 
-MASK64 = (1 << 64) - 1
+MASK64: int = (1 << 64) - 1
 TRAIN_SHARE = 0.60
 VAL_SHARE = 0.20
 
@@ -208,7 +203,8 @@ def student_t_quantile(p: float, df: int) -> float:
     return 0.5 * (lo + hi)
 
 
-def mean_interval(xs, alpha=0.05):
+def mean_interval(xs: Sequence[float],
+                  alpha: float = 0.05) -> tuple[float, float, float]:
     """Student-t interval for a mean. Reported by the harness.
 
     A t interval, not a z one. The variance is estimated from the same sample as
@@ -237,7 +233,8 @@ def mean_interval(xs, alpha=0.05):
     return m, m - half, m + half
 
 
-def wilson_interval(successes, n, alpha=0.05):
+def wilson_interval(successes: int, n: int,
+                    alpha: float = 0.05) -> tuple[float, float, float]:
     """Wilson score interval for a proportion. The plain normal interval is
     badly wrong near 0 and 1, which is exactly where win rates live."""
     if n < 0 or successes < 0:
@@ -257,7 +254,8 @@ def wilson_interval(successes, n, alpha=0.05):
     return p, max(0.0, centre - half), min(1.0, centre + half)
 
 
-def wald_interval(successes, n, alpha=0.05):
+def wald_interval(successes: int, n: int,
+                  alpha: float = 0.05) -> tuple[float, float, float]:
     """The textbook normal approximation, here only to be compared against.
 
     The count guards are wilson_interval's, because nonsense in is nonsense
@@ -282,7 +280,12 @@ def wald_interval(successes, n, alpha=0.05):
     return p, p - half, p + half
 
 
-def exact_coverage(p_true, n, interval, alpha=0.05):
+# `interval` is any of the three above: it takes (successes, trials, alpha)
+# and returns (point, low, high). This is the one place the shape is passed
+# around rather than called directly, so it is the one place worth naming.
+def exact_coverage(p_true: float, n: int,
+                   interval: Callable[[int, int, float], tuple[float, float, float]],
+                   alpha: float = 0.05) -> float:
     """Coverage of a binomial interval, summed rather than sampled.
 
     The binomial is discrete, so coverage oscillates with p and a simulation
@@ -298,7 +301,8 @@ def exact_coverage(p_true, n, interval, alpha=0.05):
     return total
 
 
-def paired_interval(xs, ys, alpha=0.05):
+def paired_interval(xs: Sequence[float], ys: Sequence[float],
+                    alpha: float = 0.05) -> tuple[float, float, float]:
     """Interval for a paired difference. Under common random numbers the board
     difficulty is shared, so the difference carries the variance.
 
@@ -312,7 +316,9 @@ def paired_interval(xs, ys, alpha=0.05):
     return mean_interval([x - y for x, y in zip(xs, ys)], alpha)
 
 
-def bootstrap_interval(xs, alpha=0.05, resamples=2000, rng=None):
+def bootstrap_interval(xs: Sequence[float], alpha: float = 0.05,
+                       resamples: int = 2000,
+                       rng: random.Random | None = None) -> tuple[float, float, float]:
     """Percentile bootstrap, resampling boards rather than moves.
 
     The same two-observation minimum mean_interval carries, for a sharper
@@ -343,7 +349,8 @@ def bootstrap_interval(xs, alpha=0.05, resamples=2000, rng=None):
 
 # --- sample sizes ---------------------------------------------------------
 
-def games_needed(effect, sigma, alpha=0.05, power=0.80, rho=0.0):
+def games_needed(effect: float, sigma: float, alpha: float = 0.05,
+                 power: float = 0.80, rho: float = 0.0) -> int:
     """Games per arm to resolve `effect` shots.
 
     With common random numbers the paired variance is 2*sigma^2*(1-rho), so the
@@ -374,7 +381,7 @@ def games_needed(effect, sigma, alpha=0.05, power=0.80, rho=0.0):
 
 # --- multiplicity ---------------------------------------------------------
 
-def holm(pvalues, alpha=0.05):
+def holm(pvalues: Sequence[float], alpha: float = 0.05) -> list[bool]:
     """Holm step-down. Controls the family-wise error rate with no independence
     assumption, which a round robin cannot offer.
 
@@ -412,8 +419,19 @@ def holm(pvalues, alpha=0.05):
 # resolves these through the module attribute, stats.require_unseal rather
 # than a bare name, and tests/test_run_headline.py replaces them the same
 # way. Importing them here keeps both working.
-from audit import (AUDIT_PATH, GENESIS, HEAD_PATH, audit_entries, is_unsealed,
-                   read_head, record, require_unseal, verify_audit, write_head)
+#
+# Three names, not the ten this used to carry. The other seven had no reader
+# anywhere: AUDIT_PATH, GENESIS, HEAD_PATH, audit_entries, is_unsealed,
+# read_head and write_head were re-exported for nobody, and anything wanting
+# them can say `from audit import ...` as this line does.
+#
+# The `as` spelling is what makes the re-export explicit rather than
+# incidental. Under mypy --strict an imported name is private to its module
+# unless it is imported under its own name, so this turns the paragraph above
+# from a comment into something the checker enforces.
+from audit import record as record
+from audit import require_unseal as require_unseal
+from audit import verify_audit as verify_audit
 
 # The self test lives in python/stats_test.py, beside python/audit_test.py,
 # which is the arrangement audit.py already had. It moved because this module

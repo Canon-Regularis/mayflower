@@ -12,7 +12,7 @@ tests/_harness.py is the same idea for the tests/ directory.
 from __future__ import annotations
 
 
-def check(ok, what, detail=""):
+def check(ok: bool, what: str, detail: str = "") -> int:
     print("  {:<58} {}".format(what, "ok" if ok else "FAILED"))
     if detail:
         print("      " + detail)
