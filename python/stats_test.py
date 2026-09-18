@@ -17,30 +17,25 @@ was imported by every production caller of the analysis layer.
 from __future__ import annotations
 
 import argparse
-import datetime
-import io
 import math
 import os
 import random
 import sys
+from collections.abc import Callable
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _report import check  # noqa: E402
-from audit import (AUDIT_PATH, GENESIS, HEAD_PATH, audit_entries, is_unsealed,  # noqa: E402
-                   read_head, record, require_unseal, verify_audit, write_head)
-from stats import (TRAIN_SHARE, VAL_SHARE, Z_95, bootstrap_interval,  # noqa: E402
-                   exact_coverage, fold_fraction, fold_hash, fold_of,
-                   games_needed, holm, mean_interval, normal_quantile,
-                   paired_interval, regularised_beta, student_t_quantile,
-                   wald_interval, wilson_interval)
+from stats import (VAL_SHARE, Z_95, bootstrap_interval, exact_coverage, fold_fraction,
+                   fold_of, games_needed, holm, mean_interval, paired_interval,
+                   wald_interval, wilson_interval)  # noqa: E402
 
 # The seal is tested where it lives, and driven from here so one --quick
 # entry point still runs everything.
 from audit_test import test_audit
 
 
-def test_folds():
+def test_folds() -> int:
     print("[folds]")
     fails = 0
     n = 200000
@@ -86,7 +81,7 @@ def test_folds():
     return fails
 
 
-def test_domains():
+def test_domains() -> int:
     """Arguments outside their domain must be refused, not evaluated.
 
     Each of these returned a confident answer. paired_interval let zip() stop at
@@ -99,7 +94,8 @@ def test_domains():
     print("[argument domains]")
     fails = 0
 
-    def refuses(what, fn, exc=ValueError):
+    def refuses(what: str, fn: Callable[[], object],
+                exc: type[BaseException] = ValueError) -> int:
         try:
             got = fn()
         except exc:
@@ -138,7 +134,7 @@ def test_domains():
     return fails
 
 
-def test_multiplicity(replicates):
+def test_multiplicity(replicates: int) -> int:
     """The two pre-registered procedures that nothing called.
 
     experiments/preregistration.md commits to Holm step-down over the pairwise
@@ -253,12 +249,15 @@ def test_multiplicity(replicates):
                    "95% [{:.3f}, {:.3f}] against 99% [{:.3f}, {:.3f}]".format(
                        lo95, hi95, lo99, hi99))
 
-    # Domains, the same way the rest of this file refuses them.
-    for label, call in (
-            ("no observations", lambda: bootstrap_interval([])),
-            ("one observation", lambda: bootstrap_interval([1.0])),
-            ("no resamples", lambda: bootstrap_interval([1.0, 2.0], resamples=0)),
-            ("alpha outside (0, 1)", lambda: bootstrap_interval([1.0, 2.0], alpha=0.0))):
+    # Domains, the same way the rest of this file refuses them. Declared,
+    # because a lambda inside a tuple literal has no context to take its type
+    # from and every call below then reads as a call to something untyped.
+    cases: tuple[tuple[str, Callable[[], object]], ...] = (
+        ("no observations", lambda: bootstrap_interval([])),
+        ("one observation", lambda: bootstrap_interval([1.0])),
+        ("no resamples", lambda: bootstrap_interval([1.0, 2.0], resamples=0)),
+        ("alpha outside (0, 1)", lambda: bootstrap_interval([1.0, 2.0], alpha=0.0)))
+    for label, call in cases:
         try:
             call()
             fails += check(False, "the bootstrap refuses {}".format(label),
@@ -269,7 +268,7 @@ def test_multiplicity(replicates):
     return fails
 
 
-def test_calibration(replicates):
+def test_calibration(replicates: int) -> int:
     """Simulate from a known truth and count how often the interval covers it.
     A 95% interval must cover about 95% of the time; anything else is a bug in
     the interval, not in the data."""
@@ -361,7 +360,7 @@ def test_calibration(replicates):
     return fails
 
 
-def test_power(replicates):
+def test_power(replicates: int) -> int:
     """The sample-size formula is a promise about power. Simulate at exactly the
     prescribed n and count how often the difference is actually detected."""
     print("[sample sizes, checked by simulation]")
@@ -387,7 +386,7 @@ def test_power(replicates):
     return fails
 
 
-def report_tables():
+def report_tables() -> None:
     print("[games needed, re-derived from the measured spread]")
     sigma = 8.87
     print("  sigma = {:.2f} shots, measured over 20,000 games".format(sigma))
@@ -416,7 +415,7 @@ def report_tables():
     print()
 
 
-def main():
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
     args = ap.parse_args()

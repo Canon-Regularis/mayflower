@@ -37,13 +37,21 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterable, Sequence
 
 from oracle import all_boards
 
 PRIME = (1 << 61) - 1
 
+# A ship is the set of cells it covers; a part is the set of ships on one
+# side of a cut. python/oracle.py builds both, and naming them here keeps
+# the annotations below readable.
+Cell = tuple[int, int]
+Ship = frozenset[Cell]
+Part = frozenset[Ship]
 
-def rank_mod_p(rows, p=PRIME):
+
+def rank_mod_p(rows: Iterable[dict[int, int]], p: int = PRIME) -> int:
     """Gaussian elimination over GF(p). `rows` holds dicts column -> value."""
     pivots = {}
     rank = 0
@@ -66,14 +74,16 @@ def rank_mod_p(rows, p=PRIME):
     return rank
 
 
-def split(board, cut):
-    left, right = [], []
+def split(board: Iterable[Ship], cut: int) -> tuple[Part, Part]:
+    left: list[Ship] = []
+    right: list[Ship] = []
     for ship in board:
         (left if min(c for _, c in ship) < cut else right).append(ship)
     return frozenset(left), frozenset(right)
 
 
-def boundary_state(left, cut, height):
+def boundary_state(left: Iterable[Ship], cut: int,
+                   height: int) -> tuple[tuple[int, ...], tuple[int, ...]]:
     """Exactly what the engine carries across a column boundary."""
     residual = [0] * height
     for ship in left:
@@ -84,7 +94,9 @@ def boundary_state(left, cut, height):
     return (tuple(residual), tuple(sorted(len(s) for s in left)))
 
 
-def analyse(width, height, fleet, verbose=True):
+# One row per cut: (cut, rank, nerode, engine).
+def analyse(width: int, height: int, fleet: Sequence[int],
+            verbose: bool = True) -> list[tuple[int, int, int, int]]:
     boards = all_boards(width, height, fleet)
     if verbose:
         print(f"{width}x{height} {fleet}: {len(boards):,} configurations")
@@ -97,7 +109,7 @@ def analyse(width, height, fleet, verbose=True):
         rights = sorted({r for _, r in pairs}, key=lambda s: sorted(map(sorted, s)))
         rindex = {r: i for i, r in enumerate(rights)}
 
-        by_left = {l: {} for l in lefts}
+        by_left: dict[Part, dict[int, int]] = {l: {} for l in lefts}
         for l, r in pairs:
             by_left[l][rindex[r]] = 1
 
@@ -111,7 +123,7 @@ def analyse(width, height, fleet, verbose=True):
         # counting boards that do not exist. This is the direction that is an
         # engine bug rather than a missed optimisation, so it is checked rather
         # than reported.
-        completions = {}
+        completions: dict[object, frozenset[int]] = {}
         for left in lefts:
             state = boundary_state(left, cut, height)
             row = frozenset(by_left[left])
@@ -135,7 +147,7 @@ def analyse(width, height, fleet, verbose=True):
     return rows_out
 
 
-def self_test():
+def self_test() -> int:
     """A case small enough to reason about by hand. One length-4 ship on a 4x4
     board has eight placements. Cut after the first column: the four horizontal
     ships all start at column 0 and cross, the vertical at column 0 does not, and
@@ -150,7 +162,7 @@ def self_test():
     return ok
 
 
-def main():
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
     args = ap.parse_args()

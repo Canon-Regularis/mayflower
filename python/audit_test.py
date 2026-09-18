@@ -7,13 +7,11 @@ break stays beside the chain it breaks.
 
 from __future__ import annotations
 
-import datetime
 import io
 import os
 import tempfile
 
-from audit import (GENESIS, audit_entries, is_unsealed, read_head, record,
-                   require_unseal, verify_audit, write_head)
+from audit import is_unsealed, record, require_unseal, verify_audit
 
 # The console convention, from the module both self tests take it from.
 # This used to read "from stats import check" inside the function body,
@@ -24,11 +22,10 @@ from audit import (GENESIS, audit_entries, is_unsealed, read_head, record,
 from _report import check
 
 
-def test_audit():
+def test_audit() -> int:
     """The seal, checked by breaking it."""
     print("[the seal]")
     fails = 0
-    import tempfile
 
     tmp = os.path.join(tempfile.mkdtemp(), "audit.log")
     io.open(tmp, "w", encoding="utf-8", newline="\n").write(

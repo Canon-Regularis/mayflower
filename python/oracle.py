@@ -14,18 +14,27 @@ ordered history; permuting hits among themselves can change it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import argparse
 import random
 import sys
 
 MISS, HIT, SUNK = "MISS", "HIT", "SUNK"
 
+# A ship is the set of cells it covers; a board is the ships on it; an
+# outcome is the tag and, for SUNK, the length of the ship that sank.
+Cell = tuple[int, int]
+Ship = frozenset[Cell]
+Board = tuple[Ship, ...]
+Outcome = tuple[str, int]
+
 
 # --------------------------------------------------------------------------- #
 # Enumeration
 # --------------------------------------------------------------------------- #
 
-def placements(width, height, length):
+def placements(width: int, height: int, length: int) -> list[Ship]:
     """Every legal placement of a length-L ship, as a frozenset of cells."""
     out = []
     for r in range(height):
@@ -57,7 +66,8 @@ LADDER = [
 ]
 
 
-def all_boards(width, height, fleet):
+def all_boards(width: int, height: int,
+               fleet: Sequence[int]) -> list[Board]:
     """Every physical board. Increasing placement indices within a length group
     make equal-length ships interchangeable."""
     groups = []
@@ -66,13 +76,13 @@ def all_boards(width, height, fleet):
 
     boards = []
 
-    def go(gi, chosen, occupied):
+    def go(gi: int, chosen: list[Ship], occupied: frozenset[Cell]) -> None:
         if gi == len(groups):
             boards.append(tuple(chosen))
             return
         options, multiplicity = groups[gi]
 
-        def pick(need, start, occ):
+        def pick(need: int, start: int, occ: frozenset[Cell]) -> None:
             if need == 0:
                 go(gi + 1, chosen, occ)
                 return
@@ -94,7 +104,7 @@ def all_boards(width, height, fleet):
 # Observation model
 # --------------------------------------------------------------------------- #
 
-def simulate(board, shots):
+def simulate(board: Board, shots: Sequence[Cell]) -> list[Outcome]:
     """Play `shots` against `board`. A ship reports SUNK on the shot that
     completes it, and only then."""
     remaining = [len(s) for s in board]
@@ -120,13 +130,15 @@ def simulate(board, shots):
     return outcomes
 
 
-def posterior(boards, shots, outcomes):
+def posterior(boards: Sequence[Board], shots: Sequence[Cell],
+              outcomes: Sequence[Outcome]) -> list[Board]:
     """Boards consistent with the ordered observation record."""
     want = list(outcomes)
     return [b for b in boards if simulate(b, shots) == want]
 
 
-def posterior_order_free(boards, shots, outcomes):
+def posterior_order_free(boards: Sequence[Board], shots: Sequence[Cell],
+                         outcomes: Sequence[Outcome]) -> list[Board]:
     """The order-free predicate, kept so tests can assert that it disagrees with
     `posterior`. Looks only at which cells are hits or misses and which lengths
     were sunk."""
@@ -151,7 +163,10 @@ def posterior_order_free(boards, shots, outcomes):
 # Searches
 # --------------------------------------------------------------------------- #
 
-def find_order_dependence(width, height, fleet, trials=3000, seed=12345):
+def find_order_dependence(
+        width: int, height: int, fleet: Sequence[int], trials: int = 3000,
+        seed: int = 12345) -> tuple[list[Cell], list[Outcome], int,
+                                    list[Cell], list[Outcome], int] | None:
     """Two orderings of the same shots giving the same outcome multiset but
     different ordered posteriors."""
     rng = random.Random(seed)
@@ -178,7 +193,9 @@ def find_order_dependence(width, height, fleet, trials=3000, seed=12345):
     return None
 
 
-def find_overcount(width, height, fleet, trials=3000, seed=999):
+def find_overcount(
+        width: int, height: int, fleet: Sequence[int], trials: int = 3000,
+        seed: int = 999) -> tuple[list[Cell], list[Outcome], int, int] | None:
     """A history where the order-free predicate over-counts."""
     rng = random.Random(seed)
     boards = all_boards(width, height, fleet)
@@ -197,7 +214,7 @@ def find_overcount(width, height, fleet, trials=3000, seed=999):
     return None
 
 
-def fmt(shots, outcomes):
+def fmt(shots: Sequence[Cell], outcomes: Sequence[Outcome]) -> str:
     parts = []
     for c, o in zip(shots, outcomes):
         tag = o[0] if o[0] != SUNK else "SUNK%d" % o[1]
@@ -207,7 +224,7 @@ def fmt(shots, outcomes):
 
 # --------------------------------------------------------------------------- #
 
-def main():
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--order-dependence", action="store_true")
     args = ap.parse_args()
@@ -248,9 +265,9 @@ def main():
 
         print("\n[2] the order-free predicate over-counts")
         for w, h, f in [(5, 5, [3, 2, 2]), (5, 4, [3, 3, 2]), (5, 5, [4, 3, 2])]:
-            res = find_overcount(w, h, f)
-            if res:
-                shots, outcomes, exact, naive = res
+            over = find_overcount(w, h, f)
+            if over:
+                shots, outcomes, exact, naive = over
                 print("  INSTANCE %dx%d %s" % (w, h, f))
                 print("    history  %s" % fmt(shots, outcomes))
                 print("    ordered     |Omega| = %d" % exact)
