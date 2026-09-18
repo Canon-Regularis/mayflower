@@ -291,6 +291,43 @@ def _check_counts(d: Payload) -> None:
     if not d["crossChecks"]:
         raise ValueError("crossChecks is empty; the agreement section would be blank")
 
+    # The unit field, which until now nothing read.
+    #
+    # 102 of the 118 rows carry one and the page renders none of them: every
+    # "shots" and "bits" on this page is a word in this file, on a page whose
+    # standfirst says nothing is typed in. Reading it per row would mean a unit
+    # column the design does not have, so instead it is held to the labels that
+    # are typed: a row drawn on an axis this file calls shots has to say shots.
+    #
+    # That makes the field contradictable, which is the whole point of keeping
+    # it. A count row that arrived labelled "shots", or a shots row that lost
+    # its unit, now stops the page instead of being rendered under a heading
+    # that silently disagrees with it.
+    by_metric: dict[str, set[str | None]] = {}
+    for r in results:
+        by_metric.setdefault(r["metric"], set()).add(r.get("unit"))
+    mixed = {m: u for m, u in by_metric.items() if len(u) > 1}
+    if mixed:
+        raise ValueError(
+            "one metric carries two units: "
+            + ", ".join("{} is {}".format(m, sorted(map(str, u)))
+                        for m, u in sorted(mixed.items())))
+
+    IN_SHOTS = ("bounds", "policy", "headline", "adaptivity", "adversary",
+                "maxcover", "opponent", "objective", "waste")
+    # The bounds family is not all one unit: beta(L) counts cells and the
+    # transcript count counts transcripts, and both are drawn as numbers rather
+    # than on the shots axis. Naming them is what makes the rest of the family
+    # a real claim instead of a family-wide shrug.
+    COUNTED = ("blocking number beta(L)", "feasible hit-transcripts")
+    wrong = [r["id"] for r in results
+             if r["family"] in IN_SHOTS and r["metric"] not in COUNTED
+             and r.get("unit") != "shots"]
+    if wrong:
+        raise ValueError(
+            "these rows are drawn on an axis labelled shots and do not say shots: "
+            + ", ".join(sorted(wrong)))
+
 
 def _context(d: Payload) -> tuple[
         list[Result], dict[str, Result], dict[str, float], list[Result],
