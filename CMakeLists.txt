@@ -53,7 +53,7 @@ add_library(mayflower_core
   src/certify/transcripts.cpp
   src/search/exact_solver.cpp
   src/search/policy_expectation.cpp
-  src/platform/bench_platform_win.cpp
+  src/platform/bench_platform.cpp
   src/lattice/spectrum.cpp)
 target_include_directories(mayflower_core PUBLIC include)
 
@@ -130,6 +130,43 @@ file(WRITE ${MF_ORACLE_TU} "#include \"oracle/brute_force.hpp\"
 add_library(mayflower_oracle_isolated OBJECT ${MF_ORACLE_TU})
 target_link_libraries(mayflower_oracle_isolated PRIVATE mf_flags)
 target_include_directories(mayflower_oracle_isolated PRIVATE tests)
+
+# src/core sits at the bottom of the layering: it is the sweeps, and it knows
+# nothing about policies, the game loop, the search, the bounds or the figures.
+# That was stated in the plan and in README and enforced by nothing, because
+# target_include_directories(mayflower_core PUBLIC include) puts all twenty one
+# public headers on its own search path. A sweep could include policy.hpp
+# tomorrow and no check would notice.
+#
+# The oracle's trick does not transfer: the oracle includes nothing from
+# include/, so narrowing its path to tests/ states the whole rule, while
+# src/core legitimately takes ten of those headers and they sit in the same
+# directory as the seven it must not.
+#
+# So the path is widened rather than narrowed, with a stub of each forbidden
+# header placed ahead of the real one. A quoted include resolves to the stub,
+# the stub is an #error, and the build stops with the rule as its message. This
+# catches the transitive case a grep over src/core would miss: a sweep that
+# takes notouch.hpp fails here if notouch.hpp later grows an include of
+# policy.hpp, which is the likelier way this breaks.
+#
+# profile_dp.hpp is in the set for a second reason. It is the umbrella, and an
+# implementation reaching for it instead of the header it defines is exactly
+# the state the migration found and undid in all four of them.
+set(MF_CORE_FORBIDDEN certify exact_solver folds game platform policy profile_dp spectrum)
+foreach(hdr IN LISTS MF_CORE_FORBIDDEN)
+  file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/core_boundary/mayflower/${hdr}.hpp
+       "#error \"src/core must not include mayflower/${hdr}.hpp: it is the sweeps, and the layers above it are not its business. See the boundary gate in CMakeLists.txt.\"\n")
+endforeach()
+file(GLOB MF_CORE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cpp)
+add_library(mayflower_core_isolated OBJECT ${MF_CORE_SOURCES})
+target_link_libraries(mayflower_core_isolated PRIVATE mf_flags Threads::Threads)
+target_include_directories(mayflower_core_isolated PRIVATE
+                           ${CMAKE_CURRENT_BINARY_DIR}/core_boundary include src src/core)
+# Nothing links this, so only the parse matters. -O0 comes after the build
+# type's -O3 and wins, which keeps the second compile of every sweep cheap.
+target_compile_options(mayflower_core_isolated PRIVATE -O0)
+
 target_link_libraries(mayflower_core PUBLIC mf_flags Threads::Threads)
 
 add_executable(omega0 tools/omega0.cpp)
@@ -186,6 +223,24 @@ function(mf_test name)
   set_tests_properties(${name} PROPERTIES ${props})
 endfunction()
 
+# One declaration per C++ test binary, the companion to mf_test above.
+#
+# The same three statements appeared eighteen times, and inconsistently: four of
+# the eighteen lacked the target_include_directories line and compiled anyway,
+# because a quoted include resolves relative to the including file first. So the
+# line was doing nothing in all eighteen places, and tests/harness.hpp told the
+# reader it was the mechanism that made the include work.
+#
+# Keeping it rather than dropping it. It is the documented and explicit route to
+# tests/, it is what lets a test reach oracle/brute_force.hpp by that path, and
+# stated once here it costs a line instead of fourteen. What was wrong was that
+# it was true of only three quarters of the targets.
+function(mf_test_exe name)
+  add_executable(test_${name} tests/test_${name}.cpp)
+  target_include_directories(test_${name} PRIVATE tests)
+  target_link_libraries(test_${name} PRIVATE mayflower_core)
+endfunction()
+
 mf_test(opponent COMMAND opponent selftest LABEL fast)
 
 add_executable(maxcover tools/maxcover.cpp)
@@ -228,56 +283,35 @@ enable_testing()
 
 # tests/oracle is header-only and must never link against mayflower_core's
 # algorithms.
-add_executable(test_counting tests/test_counting.cpp)
-target_include_directories(test_counting PRIVATE tests)
-target_link_libraries(test_counting PRIVATE mayflower_core)
+mf_test_exe(counting)
 
-add_executable(test_observations tests/test_observations.cpp)
-target_include_directories(test_observations PRIVATE tests)
-target_link_libraries(test_observations PRIVATE mayflower_core)
+mf_test_exe(observations)
 
-add_executable(test_sampler tests/test_sampler.cpp)
-target_include_directories(test_sampler PRIVATE tests)
-target_link_libraries(test_sampler PRIVATE mayflower_core)
+mf_test_exe(sampler)
 
-add_executable(test_outcomes tests/test_outcomes.cpp)
-target_include_directories(test_outcomes PRIVATE tests)
-target_link_libraries(test_outcomes PRIVATE mayflower_core)
+mf_test_exe(outcomes)
 
-add_executable(test_harness tests/test_harness.cpp)
-target_include_directories(test_harness PRIVATE tests)
-target_link_libraries(test_harness PRIVATE mayflower_core)
+mf_test_exe(harness)
 
-add_executable(test_bounds tests/test_bounds.cpp)
-target_include_directories(test_bounds PRIVATE tests)
-target_link_libraries(test_bounds PRIVATE mayflower_core)
+mf_test_exe(bounds)
 
-add_executable(test_exact tests/test_exact.cpp)
-target_include_directories(test_exact PRIVATE tests)
-target_link_libraries(test_exact PRIVATE mayflower_core)
+mf_test_exe(exact)
 
-add_executable(test_uniformity tests/test_uniformity.cpp)
-target_link_libraries(test_uniformity PRIVATE mayflower_core)
+mf_test_exe(uniformity)
 mf_test(uniformity COMMAND test_uniformity 300000 LABEL nightly TIMEOUT 3600)
 
-add_executable(test_parallel tests/test_parallel.cpp)
-target_link_libraries(test_parallel PRIVATE mayflower_core)
+mf_test_exe(parallel)
 mf_test(parallel COMMAND test_parallel LABEL pr TIMEOUT 900)
 
 # Degenerate fleets and shapes. Four of the five sweeps were wrong on a fleet of
 # length-1 ships, which the ladder never used and both oracles always handled.
-add_executable(test_degenerate tests/test_degenerate.cpp)
-target_include_directories(test_degenerate PRIVATE tests)
-target_link_libraries(test_degenerate PRIVATE mayflower_core)
+mf_test_exe(degenerate)
 mf_test(degenerate COMMAND test_degenerate LABEL fast)
 
-add_executable(test_gated tests/test_gated.cpp)
-target_include_directories(test_gated PRIVATE tests)
-target_link_libraries(test_gated PRIVATE mayflower_core)
+mf_test_exe(gated)
 mf_test(gated COMMAND test_gated LABEL fast)
 
-add_executable(test_folds tests/test_folds.cpp)
-target_link_libraries(test_folds PRIVATE mayflower_core)
+mf_test_exe(folds)
 mf_test(folds COMMAND test_folds LABEL fast)
 
 # Random instances against literal enumeration. The hand-written case lists all
@@ -285,9 +319,7 @@ mf_test(folds COMMAND test_folds LABEL fast)
 # a sweep's two orientation branches cannot disagree, so a rung that emitted a
 # length-1 ship twice passed every one of them. Seeds are fixed, so this is a
 # generated case list rather than a search: a failure replays exactly.
-add_executable(test_fuzz tests/test_fuzz.cpp)
-target_include_directories(test_fuzz PRIVATE tests)
-target_link_libraries(test_fuzz PRIVATE mayflower_core)
+mf_test_exe(fuzz)
 mf_test(fuzz COMMAND test_fuzz 250 0x5EED LABEL fast)
 
 # A wider draw on a different seed, for the slower gate.
@@ -296,8 +328,7 @@ mf_test(fuzz_wide COMMAND test_fuzz 1200 0xA17E LABEL pr TIMEOUT 900)
 # Every number in docs/BENCHMARKS.md assumes the pin took. SetThreadAffinityMask
 # reporting success is not the same as the thread having moved, so this asks the
 # OS which processor the thread is on rather than trusting the return code.
-add_executable(test_platform tests/test_platform.cpp)
-target_link_libraries(test_platform PRIVATE mayflower_core)
+mf_test_exe(platform)
 mf_test(platform COMMAND test_platform LABEL fast SKIPPABLE)
 
 if(Python3_Interpreter_FOUND)
@@ -310,7 +341,7 @@ mf_test(python_names
   LABEL fast)
 
 mf_test(stats
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/stats.py --quick
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/stats_test.py --quick
   LABEL fast)
 
 # Counts written into README, docs/CI.md and ci.yml's own comments, against
@@ -459,23 +490,15 @@ mf_test(live_js
   SKIPPABLE)
 endif()
 
-add_executable(test_weighted tests/test_weighted.cpp)
-target_include_directories(test_weighted PRIVATE tests)
-target_link_libraries(test_weighted PRIVATE mayflower_core)
+mf_test_exe(weighted)
 mf_test(weighted COMMAND test_weighted LABEL fast)
 
-add_executable(test_notouch tests/test_notouch.cpp)
-target_include_directories(test_notouch PRIVATE tests)
-target_link_libraries(test_notouch PRIVATE mayflower_core)
+mf_test_exe(notouch)
 mf_test(notouch COMMAND test_notouch LABEL fast)
 
-add_executable(test_ladder tests/test_ladder.cpp)
-target_include_directories(test_ladder PRIVATE tests)
-target_link_libraries(test_ladder PRIVATE mayflower_core)
+mf_test_exe(ladder)
 
-add_executable(test_spectrum tests/test_spectrum.cpp)
-target_include_directories(test_spectrum PRIVATE tests)
-target_link_libraries(test_spectrum PRIVATE mayflower_core)
+mf_test_exe(spectrum)
 
 mf_test(counting COMMAND test_counting LABEL fast TIMEOUT 300)
 
