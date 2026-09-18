@@ -224,8 +224,8 @@ void testNoTouchGated() {
 void testMarginalsGated() {
     std::printf("[forward-backward marginals, constrained and gated]\n");
     Rng rng(0x0FF1CE99);
-    int agreed = 0, trials = 0, forcedChecked = 0;
-    bool forcedOk = true;
+    int agreed = 0, trials = 0, forcedChecked = 0, totalsAgreed = 0;
+    bool forcedOk = true, everUnderflowed = false;
 
     struct Case { int w, h; std::vector<int> fleet; };
     for (const Case& c : std::vector<Case>{{5, 5, {3, 2}}, {5, 5, {4, 3, 2}},
@@ -263,9 +263,27 @@ void testMarginalsGated() {
                     w.empty[static_cast<std::size_t>(i)] = 0.6 + 0.8 * (rng.below(100) / 100.0);
                 }
             }
-            const auto fast = weightedMarginals(inst, cons, w).occupancy;
+            const WeightedMarginals wm = weightedMarginals(inst, cons, w);
+            const auto& fast = wm.occupancy;
             const auto slow = weightedMarginalsByRecount(inst, cons, w);
             ++trials;
+
+            // The flag says occupancy is a lower bound rather than a
+            // posterior, and everything below reads it as a posterior. These
+            // instances sit far from the limit, so this states the assumption
+            // rather than tolerating a breach of it.
+            if (wm.underflowed) everUnderflowed = true;
+
+            // total is the same partition function weightedCount returns, and
+            // until this line nothing read it: it was computed, returned and
+            // consumed by nobody, which is the shape this project keeps
+            // finding. Two sweeps that disagree here is a real fault.
+            const WeightedResult wc = weightedCount(inst, cons, w);
+            const double scale = std::max(std::abs(wc.total), 1.0);
+            if (std::abs(wm.total - wc.total) <= 1e-9 * scale) ++totalsAgreed;
+            else
+                std::printf("      %s trial %d: marginals total %.17g against count %.17g\n",
+                            inst.describe().c_str(), t, wm.total, wc.total);
             double worst = 0;
             for (std::size_t i = 0; i < fast.size(); ++i)
                 worst = std::max(worst, std::abs(fast[i] - slow[i]));
@@ -303,6 +321,11 @@ void testMarginalsGated() {
     std::snprintf(label, sizeof label,
                   "%d forced cells read exactly 0 or exactly 1", forcedChecked);
     check(forcedOk && forcedChecked > 0, label);
+    std::snprintf(label, sizeof label,
+                  "%d/%d partition functions match weightedCount", totalsAgreed, trials);
+    check(totalsAgreed == trials && trials > 0, label);
+    check(!everUnderflowed,
+          "and no case underflowed, so occupancy is a posterior throughout");
 }
 
 }  // namespace

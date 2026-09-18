@@ -42,9 +42,11 @@
 // value 1e308 behind the maximum reaches zero when the maximum is brought back
 // into range, and the guard watches only the maximum. Weights whose live range
 // exceeds a double therefore lose configurations silently, and underflowed is
-// set at the multiply and at the rescale to say so. weightedMarginals refuses
-// outright, since the forward and backward values are each representable where
-// their product is not.
+// set at the multiply and at the rescale to say so. weightedMarginals reports
+// the same condition on its own result rather than throwing, since the forward
+// and backward values are each representable where their product is not. This
+// said "refuses outright" for one round after the throw became a flag, which
+// contradicted the contract stated on WeightedMarginals below in this file.
 #pragma once
 
 #include <cstdint>

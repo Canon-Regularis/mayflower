@@ -129,7 +129,7 @@ void evidence() {
     std::printf("  It does, which prices the rest of the column.\n\n");
 }
 
-void marginals() {
+bool marginals() {
     std::printf("3. The posterior heatmap under noise\n");
     std::printf("------------------------------------\n\n");
     std::printf("One forward and one backward pass for all hundred cells. The empty\n");
@@ -148,9 +148,23 @@ void marginals() {
         const Weights w = Weights::noisyChannel(inst, answers, eps);
 
         const auto t0 = std::chrono::steady_clock::now();
-        const std::vector<double> m = weightedMarginals(inst, free, w).occupancy;
+        const WeightedMarginals wm = weightedMarginals(inst, free, w);
         const double seconds =
             platform::elapsed(t0);
+
+        // occupancy is a lower bound when the sweep underflowed, and this
+        // block prints it as a posterior and ranks the true ship cells by it.
+        // weightedMarginals used to throw here, which made that unreachable;
+        // the throw became a flag and both call sites dropped it, so the
+        // protection was removed rather than moved. Reading it restores it.
+        if (wm.underflowed) {
+            std::fprintf(stderr,
+                         "eps = %.2f: the weighted sweep underflowed, so occupancy is a lower"
+                         " bound rather than a posterior. Refusing to print it as one.\n",
+                         eps);
+            return false;
+        }
+        const std::vector<double>& m = wm.occupancy;
 
         std::printf("  eps = %.2f, 30 shots, %.1f s for the whole board\n", eps, seconds);
         std::printf("     ");
@@ -180,6 +194,7 @@ void marginals() {
                     sum, hitsInTop17);
         std::fflush(stdout);
     }
+    return true;
 }
 
 void prior() {
@@ -265,6 +280,6 @@ int main(int argc, char** argv) {
     if (all || only == "bridge") bridge();
     if (all || only == "evidence") evidence();
     if (all || only == "prior") prior();
-    if (all || only == "marginals") marginals();
+    if ((all || only == "marginals") && !marginals()) return 2;
     return 0;
 }
