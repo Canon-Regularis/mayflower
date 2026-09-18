@@ -303,8 +303,10 @@ mf_test(uniformity COMMAND test_uniformity 300000 LABEL nightly TIMEOUT 3600)
 mf_test_exe(parallel)
 mf_test(parallel COMMAND test_parallel LABEL pr TIMEOUT 900)
 
-# Degenerate fleets and shapes. Four of the five sweeps were wrong on a fleet of
-# length-1 ships, which the ladder never used and both oracles always handled.
+# Degenerate fleets and shapes. Four of the five C++ sweeps were wrong on a
+# fleet of length-1 ships, which the ladder never used and both oracles always
+# handled. README and docs/CORRECTNESS.md say five of six because they count
+# web/engine.js, which was wrong too; the populations differ, not the facts.
 mf_test_exe(degenerate)
 mf_test(degenerate COMMAND test_degenerate LABEL fast)
 
@@ -446,10 +448,16 @@ mf_test(tool_cli
 # The same three tools, run for real and read. Each builds the unranking sampler
 # for the standard instance first, about twenty-five seconds whatever size is
 # asked for, so this sits in the slower gate.
+# 1800 rather than 900. This test already cost about 524 s, and comparing the
+# committed web/pool.bin against a fresh export adds a full 200,000-board run
+# at the exporter's own defaults, measured at 104 s on a loaded machine. The
+# two exports above it are 64 boards each, so that cost is new. 628 s under a
+# 900 s ceiling is the kind of headroom section 22 found wanting on the
+# nightly job, where three tests at TIMEOUT 3600 sat under a 180 minute budget.
 mf_test(tools_output
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tools_output.py
   LABEL pr
-  TIMEOUT 900
+  TIMEOUT 1800
   SKIPPABLE)
 
 # The order-aware reference the browser engine is validated against. It printed

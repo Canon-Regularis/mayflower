@@ -87,6 +87,40 @@ def test_export_pool() -> None:
     check(os.path.exists(other) and io.open(other, "rb").read() != raw,
           "and a different key gives a different pool")
 
+    # And the committed artefact, which is the one the browser decodes.
+    #
+    # Everything above this line compares fresh exports to each other, and
+    # tests/test_pool.py checks that web/pool.bin is a legal, non-degenerate,
+    # correctly distributed pool. Nothing compared the committed bytes to what
+    # the exporter produces today, so a changed sampler, key or RNG stream
+    # would give a different million bytes that every existing check accepts:
+    # they are all properties of any correct pool.
+    #
+    # That is the lesson section 17 recorded against random.hpp, where all four
+    # planted faults survived because the assertions were true of any decent
+    # stream. The property at risk is reproducibility, not uniformity.
+    #
+    # No arguments beyond the path, because the defaults are the provenance:
+    # export_pool writes 200,000 boards at key 0x5A17C0DE, which is the only
+    # record anywhere of how the committed file was made. Passing a path
+    # matters too, since a bare run would overwrite web/pool.bin.
+    committed = os.path.join(ROOT, "web", "pool.bin")
+    if not os.path.exists(committed):
+        print("  web/pool.bin is absent, skipping the committed comparison")
+    else:
+        fresh = os.path.join(tmp, "pool_defaults.bin")
+        r = run([require_exe("export_pool"), fresh], timeout=900)
+        check(r.returncode == 0, "export_pool runs on its own defaults",
+              r.stderr.strip()[:70])
+        want = io.open(committed, "rb").read()
+        got = io.open(fresh, "rb").read() if os.path.exists(fresh) else b""
+        where = next((i for i in range(min(len(want), len(got)))
+                      if want[i] != got[i]), None)
+        check(got == want,
+              "the committed web/pool.bin is what export_pool writes today",
+              "{} bytes against {}, first difference at {}".format(
+                  len(got), len(want), where))
+
 
 def test_selfplay() -> None:
     """Run it and hold its summary to what the numbers must satisfy."""
