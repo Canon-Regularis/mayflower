@@ -29,7 +29,8 @@
 #include <stdexcept>
 #include <vector>
 
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
 
 #include "detail/hashing.hpp"
 #include "detail/profile_key.hpp"
@@ -222,6 +223,17 @@ CountResult countConfigurationsFast(const Instance& inst, const Constraints& con
 
             result.peakStates = std::max(result.peakStates, cur.size());
             result.stateVisits += cur.size();
+            // The third line of this block was missing here and present in the
+            // other three sweeps, so V1 alone returned an empty layerSizes and
+            // nothing said so. That is the shape CountResult::exact was added
+            // to all four sweeps to avoid: a field only some rungs fill reads
+            // as a real answer on the ones that do not.
+            //
+            // One push per cell layer, so at most 128 of them against 2.87e7
+            // edge relaxations. The ladder's A/A noise floor is 1.05x and this
+            // is 5e-6 of a pass, which is the same way the 128-bit layer sum
+            // was argued rather than benchmarked.
+            result.layerSizes.push_back(static_cast<std::uint32_t>(cur.size()));
             next.clear();
             std::uint64_t edges = 0;
 

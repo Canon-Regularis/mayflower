@@ -26,9 +26,12 @@ V3  merge across 8 threads                     2.66x     (turns over at 10)
 noise floor, A/A control                       1.02x
 ```
 
-Every rung is bit-identical to V0 across 984 checks covering the small-board
+Every rung is bit-identical to V0 across 1,959 checks covering the small-board
 ladder, single-cell fleets, the pinned order-dependence cases, 180 fuzzed ordered
-histories and thread counts of 1, 2, 4 and 7. The decomposition guarantees it: counts are integers,
+histories and thread counts of 1, 2, 4 and 7. Each comparison asserts twice: the
+count, and the layer profile behind it. The second was added when a survey found
+that `countConfigurationsFast` returned an empty `layerSizes` where its three
+siblings filled it, which nothing here had ever looked at. The decomposition guarantees it: counts are integers,
 integer addition is associative, and the buckets partition the destination keys so
 no two merges touch one counter.
 

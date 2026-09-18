@@ -12,8 +12,11 @@
 
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/sampler.hpp"
 #include "mayflower/profile_dp_blocked.hpp"
+#include "mayflower/platform.hpp"
 
 #include "harness.hpp"
 
@@ -27,26 +30,38 @@ using mf::test::Rng;
 // Every rung, against V0, on the same constraints. Counts are integers, so this
 // is exact equality and there is no tolerance to argue about.
 bool agree(const Instance& inst, const Constraints& c, const std::string& label) {
-    const std::uint64_t v0 = countConfigurations(inst, c).count;
+    const CountResult v0 = countConfigurations(inst, c);
 
     // Prints only on failure. This runs about 980 times, so one line per rung
     // comparison would hide a failure.
-    const auto same = [&](std::uint64_t got, const std::string& rung) {
-        expect(v0 == got, label + ": V0 against " + rung,
-               "V0 " + std::to_string(v0) + ", " + rung + " " + std::to_string(got));
-        return v0 == got;
+    const auto same = [&](const CountResult& got, const std::string& rung) {
+        const bool ok = v0.count == got.count;
+        expect(ok, label + ": V0 against " + rung,
+               "V0 " + std::to_string(v0.count) + ", " + rung + " " +
+                   std::to_string(got.count));
+        if (!ok) return false;
+        // The lattice statistics, not just the answer. layerSizes is a public
+        // field three of the four rungs filled and the fast path did not, and
+        // nothing here looked at it, so the omission survived until a survey
+        // read the four sweeps side by side. A rung agreeing on the count while
+        // describing a different lattice is a rung to know about.
+        const bool shape = v0.layerSizes == got.layerSizes;
+        expect(shape, label + ": V0 against " + rung + ", layer profile",
+               "V0 has " + std::to_string(v0.layerSizes.size()) + " layers, " +
+                   rung + " has " + std::to_string(got.layerSizes.size()));
+        return shape;
     };
 
-    if (!same(countConfigurationsFast(inst, c).count, "V1")) return false;
+    if (!same(countConfigurationsFast(inst, c), "V1")) return false;
     if (!blockedPathSupports(inst)) return true;
 
     // V2 is the radix-partitioned merge at one thread, V3 the same work spread
     // over several. Buckets partition the destination keys, so no two merges
     // touch one counter and the thread count cannot change the answer.
-    if (!same(countConfigurationsBlocked(inst, c, 1).count, "V2")) return false;
+    if (!same(countConfigurationsBlocked(inst, c, 1), "V2")) return false;
     for (int threads : {2, 4, 7}) {
-        const std::uint64_t v3 = countConfigurationsBlocked(inst, c, threads).count;
-        if (!same(v3, "V3(" + std::to_string(threads) + " threads)")) return false;
+        if (!same(countConfigurationsBlocked(inst, c, threads),
+                  "V3(" + std::to_string(threads) + " threads)")) return false;
     }
     return true;
 }
@@ -69,8 +84,7 @@ void testUnconstrained() {
     for (const Case& c : cases) {
         const Instance inst(c.w, c.h, c.fleet);
         if (!fastPathSupports(inst)) continue;
-        Constraints free;
-        free.cells.assign(static_cast<std::size_t>(inst.cellCount()), CellConstraint::Free);
+        const Constraints free = freeConstraints(inst);
         if (agree(inst, free, inst.describe()))
             std::printf("  %-18s %14llu  identical\n", inst.describe().c_str(),
                         static_cast<unsigned long long>(countConfigurationsFast(inst).count));
@@ -200,6 +214,6 @@ int main() {
     testFuzzedHistories();
     testFastPathLimits();
 
-    const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const auto dt = mf::test::elapsed(t0);
     return mf::test::report(dt);
 }

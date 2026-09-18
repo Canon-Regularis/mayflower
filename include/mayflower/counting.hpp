@@ -18,7 +18,12 @@ struct CountResult {
     std::size_t   peakStates = 0;  // largest live layer
     std::uint64_t stateVisits = 0; // states processed across all cells
     std::uint64_t edges = 0;       // transitions relaxed
-    std::vector<std::uint32_t> layerSizes;   // live states entering each cell layer
+    // Live states entering each cell layer, one entry per cell, filled by
+    // every rung. tools/report_data.cpp publishes it and render_report draws
+    // the layer-profile figure from it, so a rung that left it empty would
+    // give that figure a blank plate with nothing to explain why.
+    // countConfigurationsFast was that rung until the omission was found.
+    std::vector<std::uint32_t> layerSizes;
 
     // False when an accumulator passed 2^64 and `count` is the true answer
     // modulo 2^64. The counting path is unsigned, so it wraps in silence: no
