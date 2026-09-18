@@ -34,6 +34,7 @@ and seven seconds is nothing beside what that test already spends.
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import sys
@@ -41,6 +42,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ROOT, check, report  # noqa: E402
 
+RESULTS = os.path.join(ROOT, "experiments", "results.json")
 CMAKE = os.path.join(ROOT, "CMakeLists.txt")
 CI = os.path.join(ROOT, ".github", "workflows", "ci.yml")
 NIGHTLY = os.path.join(ROOT, ".github", "workflows", "nightly.yml")
@@ -192,6 +194,33 @@ def main() -> int:
         got = stated(read(path), pattern)
         check(got == actual, what + " matches the configuration",
               "prose says {!r}, configuration says {}".format(got, actual))
+
+    # 2b. The dossier's own counts, which README states and nothing checked.
+    #
+    # README is the only hand-kept copy of these three. out/results.html
+    # renders them from experiments/results.json two lines from where README
+    # states them, and the two drifted once already: section 22 found README
+    # saying 96 and 71 where the page rendered 118 and 93. The file is tracked,
+    # so unlike the figure data it is here on a clean clone and this needs no
+    # skip.
+    record = json.loads(read(RESULTS))
+    counts = record["counts"]
+    check(counts["results"] == len(record["results"]),
+          "results.json's own count matches the rows it carries",
+          "counts says {}, there are {}".format(counts["results"],
+                                                len(record["results"])))
+    readme = read(README)
+    for pattern, key, what in [
+            (r"companion:\s*([\d,]+) recorded quantities", "results", "the dossier row count"),
+            (r"recorded quantities,\s*([\d,]+) exact", "exact", "the exact count"),
+            (r"exact and\s+([\d,]+)\s+measured", "measured", "the measured count")]:
+        m = re.search(pattern, readme)
+        check(bool(m), "README states " + what)
+        if m:
+            got = int(m.group(1).replace(",", ""))
+            check(got == counts[key],
+                  "and " + what + " matches experiments/results.json",
+                  "README says {}, the record says {}".format(got, counts[key]))
 
     # 3. One constant, three languages' worth of homes.
     #
