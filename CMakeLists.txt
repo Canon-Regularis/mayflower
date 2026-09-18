@@ -344,6 +344,22 @@ mf_test(stats
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/python/stats_test.py --quick
   LABEL fast)
 
+# The Python layer's type gate, the counterpart to -Werror on the C++.
+#
+# Registered whatever is installed, and SKIPPABLE, because mypy is the one
+# thing here that is not standard library. Gating the registration on finding
+# it would leave the test absent on the CI runners, and ci.yml asserts that
+# every interpreter-gated test is registered on every leg, so the guard would
+# go red for the wrong reason. The script returns SKIP when mypy is missing.
+#
+# A test that skips everywhere ran nowhere, which is what nightly.yml records
+# about scrubber_js. The reference-models job installs a pinned mypy and treats
+# a skip as a failure, so the gate is hard in exactly one place.
+mf_test(static_types
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_static_types.py
+  LABEL fast
+  SKIPPABLE)
+
 # Counts written into README, docs/CI.md and ci.yml's own comments, against
 # the registrations and guard list that decide them. Every one of them had
 # drifted, and the commit that last corrected them was followed within one

@@ -52,6 +52,13 @@ WORDS = {
     "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
     "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
     "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+    # Through thirty because twenty was the ceiling when static_types took the
+    # count from nineteen to twenty, and a table one short of the next test is
+    # a trap: stated() would return None and the failure would read "prose says
+    # None", accusing a correct sentence of drifting.
+    "twenty-one": 21, "twenty-two": 22, "twenty-three": 23, "twenty-four": 24,
+    "twenty-five": 25, "twenty-six": 26, "twenty-seven": 27, "twenty-eight": 28,
+    "twenty-nine": 29, "thirty": 30,
 }
 
 # mf_test calls are not all at column zero: the ones inside an if() block are
@@ -61,11 +68,11 @@ WORDS = {
 CALL = r"^[ \t]*mf_test\(\s*(\w+)"
 
 
-def read(path):
+def read(path: str) -> str:
     return io.open(path, encoding="utf-8").read()
 
 
-def mf_tests(text):
+def mf_tests(text: str) -> list[tuple[str, str]]:
     """Every mf_test registration, as (name, body).
 
     The call spans lines, so the body runs to the next registration. Good
@@ -80,7 +87,7 @@ def mf_tests(text):
     return out
 
 
-def guard_lists(text):
+def guard_lists(text: str) -> list[list[str]]:
     """Every test-name list a ci.yml registration loop walks, in file order.
 
     Every one of them, because there are two: the linux build job writes the
@@ -103,7 +110,7 @@ def guard_lists(text):
     return out
 
 
-def stated(text, pattern):
+def stated(text: str, pattern: str) -> int | None:
     """A count written as a word or a numeral, or None when absent."""
     m = re.search(pattern, text, re.I)
     if m is None:
@@ -112,7 +119,7 @@ def stated(text, pattern):
     return WORDS.get(token, int(token) if token.isdigit() else None)
 
 
-def main():
+def main() -> int:
     print("counts in prose, against the configuration that decides them")
     print("============================================================")
 
@@ -193,10 +200,14 @@ def main():
     # others. That is the arrangement folds.hpp and python/stats.py already have,
     # and it is only safe with the pin those two have. Without one it drifted:
     # 1.959963985 here, 1.959964 there, both reaching the same page.
+    # The Python patterns allow an optional annotation. Neither constant carries
+    # one, and both would have stopped matching the moment it did, reporting the
+    # quantile as missing from a file that states it correctly.
+    PY = r"^Z_95\s*(?::\s*[\w.\[\]]+\s*)?=\s*([0-9.]+)"
     homes = [
         ("include/mayflower/constants.hpp", r"kZ95\s*=\s*([0-9.]+)"),
-        ("tools/report_style.py", r"^Z_95\s*=\s*([0-9.]+)"),
-        ("python/stats.py", r"^Z_95\s*=\s*([0-9.]+)"),
+        ("tools/report_style.py", PY),
+        ("python/stats.py", PY),
     ]
     found = {}
     for rel, pattern in homes:
@@ -232,9 +243,9 @@ def main():
     for rel, pattern in [("web/live.js", r"LENS\s*=\s*\[([^\]]*)\]"),
                          ("tools/sweep_timing.mjs", r"makeInstance\(10, 10, \[([^\]]*)\]")]:
         m2 = re.search(pattern, read(os.path.join(ROOT, rel)))
-        got = [s.strip() for s in m2.group(1).split(",")] if m2 else None
-        check(got == fleet, rel + " carries the fleet constants.hpp declares",
-              "{} against {}".format(got, fleet))
+        carried = [s.strip() for s in m2.group(1).split(",")] if m2 else None
+        check(carried == fleet, rel + " carries the fleet constants.hpp declares",
+              "{} against {}".format(carried, fleet))
 
     print("  ({} fast, {} gated on the figure data, {} interpreter-gated, "
           "{} needing Node, {} guard lists agreeing, fleet {})".format(

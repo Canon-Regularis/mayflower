@@ -11,4 +11,4 @@ out/
 *.gcov
 .coverage
 __pycache__/
-
+.mypy_cache/
