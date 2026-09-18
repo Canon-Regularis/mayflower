@@ -5,7 +5,8 @@
 // configurations that leave room for the later ships, which would bias every
 // statistic computed on top of it. This walks the lattice instead, so the map
 // from rank to configuration is a bijection.
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/sampler.hpp"
+#include "mayflower/constraints.hpp"
 
 #include "detail/v0_sweep.hpp"
 #include "detail/entry.hpp"
@@ -25,6 +26,10 @@ using detail::FleetCounter;
 using detail::Kind;
 using detail::makeCtx;
 using detail::ProfileMap;
+using detail::ForwardSweep;
+using detail::forwardBoundaries;
+using detail::Layer;
+using detail::replayColumn;
 using detail::transitions;
 using detail::Key;
 using detail::packAux;
@@ -50,29 +55,10 @@ struct Sampler::Impl {
     }
 
     void build() {
-        using Layer = std::vector<std::pair<Key, std::uint64_t>>;
-
         // Forward sweep, snapshotting column boundaries.
-        std::vector<Layer> boundary(static_cast<std::size_t>(W) + 1);
-        ProfileMap cur(1024), next(1024);
-        cur.add(Key{0, packAux(0, 0)}, 1);
-        boundary[0] = cur.snapshot();
-        for (int col = 0; col < W; ++col) {
-            for (int row = 0; row < H; ++row) {
-                const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
-                next.clear();
-                cur.forEach([&](const Key& key, std::uint64_t count) {
-                    transitions(key, ctx, fc, W, H,
-                                [&](const Key& dst, Kind, int) { next.add(dst, count); });
-                });
-                std::swap(cur, next);
-            }
-            boundary[static_cast<std::size_t>(col) + 1] = cur.snapshot();
-        }
-        total = 0;
-        cur.forEach([&](const Key& key, std::uint64_t count) {
-            if (accepting(key, fc)) total += count;
-        });
+        const ForwardSweep fwd = forwardBoundaries(inst, constraints, fc);
+        const std::vector<Layer>& boundary = fwd.boundary;
+        total = fwd.total;
 
         // Backward sweep, filling every layer. F is replayed one column at a
         // time from its left boundary, so only one column of forward layers is
@@ -84,17 +70,8 @@ struct Sampler::Impl {
         ProfileMap replayCur(1024), replayNext(1024);
         std::vector<Layer> fLayers(static_cast<std::size_t>(H));
         for (int col = W - 1; col >= 0; --col) {
-            replayCur.load(boundary[static_cast<std::size_t>(col)]);
-            for (int row = 0; row < H; ++row) {
-                fLayers[static_cast<std::size_t>(row)] = replayCur.snapshot();
-                const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
-                replayNext.clear();
-                replayCur.forEach([&](const Key& key, std::uint64_t count) {
-                    transitions(key, ctx, fc, W, H,
-                                [&](const Key& dst, Kind, int) { replayNext.add(dst, count); });
-                });
-                std::swap(replayCur, replayNext);
-            }
+            replayColumn(inst, constraints, fc, col, boundary[static_cast<std::size_t>(col)],
+                         fLayers, replayCur, replayNext);
             for (int row = H - 1; row >= 0; --row) {
                 const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
                 const std::size_t layer = static_cast<std::size_t>(col * H + row);

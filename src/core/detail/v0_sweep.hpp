@@ -18,6 +18,8 @@
 #include <utility>
 #include <vector>
 
+#include "flat_layer_map.hpp"
+
 #include "mayflower/constraints.hpp"
 
 #include "fleet_counter.hpp"
@@ -28,102 +30,19 @@
 
 namespace mayflower::detail {
 
-// Flat open-addressed map, power-of-two capacity, linear probing, O(live) clear
-// via a dense slot list. std::unordered_map costs a pointer chase per probe and
-// deallocates on every layer clear.
+// The V0 layer map: flat, open-addressed, power-of-two capacity, linear
+// probing, O(live) clear via a dense slot list. std::unordered_map costs a
+// pointer chase per probe and deallocates on every layer clear.
 //
 // V0 rung of the optimisation ladder. Later rungs are measured against this, so
 // it is a straightforward implementation and not a deliberately slow one.
-class ProfileMap {
-public:
-    ProfileMap() { reserve(16); }
-    explicit ProfileMap(std::size_t capacityPow2) { reserve(capacityPow2); }
-
-    void reserve(std::size_t capacityPow2) {
-        capacity_ = 1;
-        while (capacity_ < capacityPow2) capacity_ <<= 1;
-        mask_ = capacity_ - 1;
-        keys_.assign(capacity_, Key{});
-        vals_.assign(capacity_, 0);
-        used_.assign(capacity_, false);
-        dense_.clear();
-        dense_.reserve(capacityPow2);
-    }
-
-    void clear() {
-        for (std::size_t slot : dense_) used_[slot] = false;
-        dense_.clear();
-    }
-
-    [[nodiscard]] std::size_t size() const { return dense_.size(); }
-
-    void add(const Key& key, std::uint64_t count) {
-        std::size_t slot = probe(key);
-        while (true) {
-            if (!used_[slot]) {
-                if (dense_.size() * 10 >= capacity_ * 7) {  // load factor 0.7
-                    grow();
-                    add(key, count);
-                    return;
-                }
-                used_[slot] = true;
-                keys_[slot] = key;
-                vals_[slot] = count;
-                dense_.push_back(slot);
-                return;
-            }
-            if (keys_[slot] == key) {
-                vals_[slot] += count;
-                return;
-            }
-            slot = (slot + 1) & mask_;
-        }
-    }
-
-    [[nodiscard]] std::uint64_t get(const Key& key) const {
-        std::size_t slot = probe(key);
-        while (used_[slot]) {
-            if (keys_[slot] == key) return vals_[slot];
-            slot = (slot + 1) & mask_;
-        }
-        return 0;
-    }
-
-    template <typename Fn>
-    void forEach(Fn&& fn) const {
-        for (std::size_t slot : dense_) fn(keys_[slot], vals_[slot]);
-    }
-
-    [[nodiscard]] std::vector<std::pair<Key, std::uint64_t>> snapshot() const {
-        std::vector<std::pair<Key, std::uint64_t>> out;
-        out.reserve(dense_.size());
-        for (std::size_t slot : dense_) out.emplace_back(keys_[slot], vals_[slot]);
-        return out;
-    }
-
-    void load(const std::vector<std::pair<Key, std::uint64_t>>& entries) {
-        clear();
-        for (const auto& e : entries) add(e.first, e.second);
-    }
-
-private:
-    [[nodiscard]] std::size_t probe(const Key& key) const {
-        return splitmix64(key.ext ^ (std::uint64_t{key.aux} * 0x9E3779B1u)) & mask_;
-    }
-
-    void grow() {
-        const auto old = snapshot();
-        reserve(capacity_ * 2);
-        for (const auto& e : old) add(e.first, e.second);
-    }
-
-    std::size_t capacity_ = 0;
-    std::size_t mask_ = 0;
-    std::vector<Key>           keys_;
-    std::vector<std::uint64_t> vals_;
-    std::vector<bool>          used_;
-    std::vector<std::size_t>   dense_;
-};
+//
+// The structure itself is in detail/flat_layer_map.hpp, shared with the
+// weighted sweep and the no-touching sweep, which each carried a copy and each
+// said so in a comment. What stays here is the probe: this key is two fields
+// and needs combining before the mixer sees it, so KeyHash lives beside Key
+// in profile_key.hpp, which the weighted sweep reaches without this header.
+using ProfileMap = FlatLayerMap<Key, std::uint64_t, KeyHash>;
 
 enum class Kind : std::uint8_t { HorizContinue, VertContinue, Empty, StartH, StartV };
 
@@ -173,6 +92,75 @@ inline void transitions(const Key& key, const CellCtx& ctx, const FleetCounter& 
 
 [[nodiscard]] inline bool accepting(const Key& key, const FleetCounter& fc) {
     return key.ext == 0 && auxVrem(key.aux) == 0 && auxFleet(key.aux) == fc.fullIndex;
+}
+
+// ---------------------------------------------------------------------------
+// The checkpointed sweep, shared by the flow analysis and the sampler.
+//
+// Both need the same thing: a forward pass that keeps only the W+1 column
+// boundaries, and a way to rebuild the H layers inside a column from its left
+// boundary while a backward pass walks through it. That is what holds the
+// working set to one column instead of the whole lattice. Both wrote it out,
+// identically apart from where the accepting total was stored.
+//
+// src/core/profile_dp.cpp is a third shape of the same loop and is NOT a
+// caller. It carries the ladder's instrumentation and the 128-bit overflow
+// detector, and it is the measured V0 baseline, so it keeps its own.
+// ---------------------------------------------------------------------------
+
+using Layer = std::vector<std::pair<Key, std::uint64_t>>;
+
+struct ForwardSweep {
+    std::vector<Layer> boundary;   // W + 1 snapshots, one per column boundary
+    std::uint64_t total = 0;       // |Omega| under the constraints
+};
+
+[[nodiscard]] inline ForwardSweep forwardBoundaries(const Instance& inst,
+                                                    const Constraints& constraints,
+                                                    const FleetCounter& fc) {
+    const int W = inst.width, H = inst.height;
+    ForwardSweep out;
+    out.boundary.resize(static_cast<std::size_t>(W) + 1);
+
+    ProfileMap cur(1024), next(1024);
+    cur.add(Key{0, packAux(0, 0)}, 1);
+    out.boundary[0] = cur.snapshot();
+    for (int col = 0; col < W; ++col) {
+        for (int row = 0; row < H; ++row) {
+            const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
+            next.clear();
+            cur.forEach([&](const Key& key, std::uint64_t count) {
+                transitions(key, ctx, fc, W, H,
+                            [&](const Key& dst, Kind, int) { next.add(dst, count); });
+            });
+            std::swap(cur, next);
+        }
+        out.boundary[static_cast<std::size_t>(col) + 1] = cur.snapshot();
+    }
+    cur.forEach([&](const Key& key, std::uint64_t count) {
+        if (accepting(key, fc)) out.total += count;
+    });
+    return out;
+}
+
+// Rebuild column `col`'s H forward layers from its left boundary. `cur` and
+// `next` are the caller's scratch maps, kept across columns so the sweep does
+// not reallocate per column.
+inline void replayColumn(const Instance& inst, const Constraints& constraints,
+                         const FleetCounter& fc, int col, const Layer& from,
+                         std::vector<Layer>& fLayers, ProfileMap& cur, ProfileMap& next) {
+    const int W = inst.width, H = inst.height;
+    cur.load(from);
+    for (int row = 0; row < H; ++row) {
+        fLayers[static_cast<std::size_t>(row)] = cur.snapshot();
+        const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
+        next.clear();
+        cur.forEach([&](const Key& key, std::uint64_t count) {
+            transitions(key, ctx, fc, W, H,
+                        [&](const Key& dst, Kind, int) { next.add(dst, count); });
+        });
+        std::swap(cur, next);
+    }
 }
 
 }  // namespace mayflower::detail

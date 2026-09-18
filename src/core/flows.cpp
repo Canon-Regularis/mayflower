@@ -1,5 +1,6 @@
 // Forward-backward flows, marginals and the placement index.
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/flows.hpp"
+#include "mayflower/constraints.hpp"
 
 #include "detail/v0_sweep.hpp"
 #include "detail/entry.hpp"
@@ -19,6 +20,10 @@ using detail::FleetCounter;
 using detail::Kind;
 using detail::makeCtx;
 using detail::ProfileMap;
+using detail::ForwardSweep;
+using detail::forwardBoundaries;
+using detail::Layer;
+using detail::replayColumn;
 using detail::transitions;
 using detail::Key;
 using detail::packAux;
@@ -59,34 +64,14 @@ LatticeFlows analyse(const Instance& inst, const Constraints& constraints) {
     const FleetCounter fc(inst);
     const std::size_t nLengths = fc.lengths.size();
 
-    using Layer = std::vector<std::pair<Key, std::uint64_t>>;
-
     LatticeFlows out;
     out.occupancy.assign(static_cast<std::size_t>(inst.cellCount()), 0);
     out.placement.assign(placementSlots(inst), 0);
 
     // Forward sweep, snapshotting column boundaries.
-    std::vector<Layer> boundary(static_cast<std::size_t>(W) + 1);
-    {
-        ProfileMap cur(1024), next(1024);
-        cur.add(Key{0, packAux(0, 0)}, 1);
-        boundary[0] = cur.snapshot();
-        for (int col = 0; col < W; ++col) {
-            for (int row = 0; row < H; ++row) {
-                const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
-                next.clear();
-                cur.forEach([&](const Key& key, std::uint64_t count) {
-                    transitions(key, ctx, fc, W, H,
-                                [&](const Key& dst, Kind, int) { next.add(dst, count); });
-                });
-                std::swap(cur, next);
-            }
-            boundary[static_cast<std::size_t>(col) + 1] = cur.snapshot();
-        }
-        cur.forEach([&](const Key& key, std::uint64_t count) {
-            if (accepting(key, fc)) out.total += count;
-        });
-    }
+    const ForwardSweep fwd = forwardBoundaries(inst, constraints, fc);
+    const std::vector<Layer>& boundary = fwd.boundary;
+    out.total = fwd.total;
     if (out.total == 0) return out;
 
     // Backward sweep, one column at a time.
@@ -100,17 +85,8 @@ LatticeFlows analyse(const Instance& inst, const Constraints& constraints) {
         lengthSlot[static_cast<std::size_t>(fc.lengths[li])] = static_cast<int>(li);
 
     for (int col = W - 1; col >= 0; --col) {
-        replayCur.load(boundary[static_cast<std::size_t>(col)]);
-        for (int row = 0; row < H; ++row) {
-            fLayers[static_cast<std::size_t>(row)] = replayCur.snapshot();
-            const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
-            replayNext.clear();
-            replayCur.forEach([&](const Key& key, std::uint64_t count) {
-                transitions(key, ctx, fc, W, H,
-                            [&](const Key& dst, Kind, int) { replayNext.add(dst, count); });
-            });
-            std::swap(replayCur, replayNext);
-        }
+        replayColumn(inst, constraints, fc, col, boundary[static_cast<std::size_t>(col)],
+                     fLayers, replayCur, replayNext);
 
         for (int row = H - 1; row >= 0; --row) {
             const CellCtx ctx = makeCtx(inst, constraints, fc, row, col);
@@ -143,17 +119,13 @@ LatticeFlows analyse(const Instance& inst, const Constraints& constraints) {
     return out;
 }
 
-std::vector<std::uint64_t> occupancyMap(const Instance& inst,
-                                        const Constraints& constraints,
-                                        std::uint64_t& total) {
+OccupancyMap occupancyMap(const Instance& inst, const Constraints& constraints) {
     LatticeFlows f = analyse(inst, constraints);
-    total = f.total;
-    return f.occupancy;
+    return {f.total, std::move(f.occupancy)};
 }
 
-std::vector<std::uint64_t> occupancyMap(const Instance& inst, std::uint64_t& total) {
-    Constraints c = detail::freeConstraints(inst);
-    return occupancyMap(inst, c, total);
+OccupancyMap occupancyMap(const Instance& inst) {
+    return occupancyMap(inst, detail::freeConstraints(inst));
 }
 
 }  // namespace mayflower
