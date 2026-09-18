@@ -34,29 +34,13 @@ import stats  # noqa: E402
 EXPERIMENT = "headline-policy-comparison"
 
 
-def commit():
-    """The build a headline number came from.
-
-    This used to read `stats.__dict__.get("COMMIT", "")`, and stats has no
-    COMMIT, so the field was the empty string on every run that ever wrote this
-    file. The default hid it: the one record meant to pin the TEST result to a
-    build recorded nothing, and would have gone on doing so silently. A tree
-    with uncommitted changes is marked, because the commit alone does not
-    identify what ran.
-    """
-    def git(*a):
-        try:
-            r = subprocess.run(["git"] + list(a), cwd=ROOT, capture_output=True,
-                               text=True, timeout=10)
-        except (OSError, subprocess.SubprocessError):
-            return None
-        return r.stdout.strip() if r.returncode == 0 else None
-
-    head = git("rev-parse", "HEAD")
-    if not head:
-        return "unknown"
-    dirty = git("status", "--porcelain")
-    return head + ("-dirty" if dirty else "")
+# The full hash with a dirty marker, from tools/_provenance.py.
+#
+# This used to read `stats.__dict__.get("COMMIT", "")`, and stats has no
+# COMMIT, so the field was the empty string on every run that ever wrote this
+# file. The default hid it: the one record meant to pin the TEST result to a
+# build recorded nothing, and would have gone on doing so silently.
+from _provenance import full_commit as commit  # noqa: E402
 
 
 def parse(text):

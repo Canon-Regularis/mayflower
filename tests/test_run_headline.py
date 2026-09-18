@@ -199,22 +199,28 @@ def test_provenance():
                       "and a clean tree is not marked dirty", "got {!r}".format(c))
 
     # The fallback itself, without needing a machine that has no git.
-    saved = run_headline.subprocess
+    #
+    # Patched on _provenance rather than on run_headline, because commit() is
+    # _provenance.full_commit imported under that name and looks subprocess up
+    # in the module it was defined in. The MSYS2 UCRT64 CI leg is the real
+    # case: no git, and the record has to say so rather than crash.
+    import _provenance
+    saved = _provenance.subprocess
 
     class NoGit:
-        # commit() catches subprocess.SubprocessError, and it looks the name up
-        # on whatever this module is, so the stub has to carry it.
+        # full_commit catches subprocess.SubprocessError, and it looks the name
+        # up on whatever this module is, so the stub has to carry it.
         SubprocessError = subprocess.SubprocessError
 
         @staticmethod
         def run(*a, **k):
             raise OSError("git is not installed")
 
-    run_headline.subprocess = NoGit
+    _provenance.subprocess = NoGit
     try:
         fallback = run_headline.commit()
     finally:
-        run_headline.subprocess = saved
+        _provenance.subprocess = saved
     check(fallback == "unknown",
           "and with no git at all it records the stated fallback",
           "got {!r}".format(fallback))

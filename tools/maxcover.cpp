@@ -48,7 +48,8 @@
 #include "mayflower/constants.hpp"
 #include "mayflower/exact_solver.hpp"
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
 
 namespace {
 
@@ -117,6 +118,14 @@ std::vector<std::uint64_t> enumerateConfigurations(const Instance& inst) {
 // One subset-sum transform gives c(S) for every S, and two scans over it give
 // both quantities: maxcov(t) as the maximum within each popcount class, and the
 // non-adaptive optimum as the best chain through the lattice.
+//
+// Deliberately a second copy of what tools/m9/core.hpp writes out, not a
+// shared helper. tools/collect_results.py compares the two tools' answers for
+// the configuration count and the non-adaptive optimum, and merging them would
+// leave that comparison checking nothing. It is a copy, so what it catches is a
+// transcription or build error rather than an error in the reasoning both
+// carry; collect_results says so per pair. src/search/detail/outcome.hpp
+// records the same call for buildWorld.
 struct SubsetAnalysis {
     std::vector<std::uint64_t> maxcov;   // indexed by t
     double nonAdaptive = 0;              // exact optimum over all n! cell orders

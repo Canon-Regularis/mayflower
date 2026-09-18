@@ -10,9 +10,18 @@ this loudly instead of quietly producing a wrong dataset.
 
 The point of pulling them together is not tidiness. Several quantities are
 produced by more than one tool, and once they sit in one place they can be
-checked against each other. The adaptive optimum of 4x4 {3,2}, for instance, is
-computed independently by the belief MDP in `m9` and again in `maxcover`; if
-those ever disagree, one of them is wrong and this is where it shows.
+checked against each other.
+
+What those checks establish is narrower than this paragraph used to claim. It
+said the adaptive optimum was "computed independently" by `m9` and `maxcover`,
+and it is not: `tools/m9/adaptivity.cpp` and `tools/maxcover.cpp` both call
+`solveOptimal` from the same library, differing only in the node cap they pass.
+The non-adaptive optimum and the configuration count are two transcriptions of
+one enumerator and one subset-lattice DP, written out in both tools. So none of
+the four pairs is a second implementation, and _pairs_agree now says per pair
+what it does catch. They are kept apart rather than merged because merging
+would leave nothing checking them at all; the same call `src/search/detail/
+outcome.hpp` records for buildWorld.
 
     python tools/collect_results.py            # writes experiments/results.json
     python tools/collect_results.py --check    # verify only, no write
@@ -29,7 +38,13 @@ import re
 import subprocess
 import sys
 
+# tools/ on the path. A no-op as long as this module is only ever run as a
+# script, which it is: Python puts a script's own directory first already. Kept
+# because tools/render_report.py carries the same line and needs it, being
+# imported from tests/, and a convention that holds in two files of three is
+# worse than one that holds in three.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _provenance import short_commit as git_commit  # noqa: E402
 from report_style import Z_95  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -309,6 +324,19 @@ def _pairs_agree(results):
         return {r["instance"]: r[key] for r in results
                 if r["family"] == family and key in r and r[key] is not None}
 
+    # What each pair catches, since none of them is a second implementation:
+    #
+    #   adaptive optimum    one solveOptimal against itself at node caps
+    #                       kAdaptiveLimit and 600. Catches an answer that
+    #                       depends on the cap, which a completed search must
+    #                       not, and catches either tool building the wrong
+    #                       instance.
+    #   committed E[T]      the same, across Adversary::Committed at caps
+    #                       60000 and kAdaptiveLimit.
+    #   non-adaptive opt.   two transcriptions of one subset-lattice DP.
+    #                       Catches a transcription or build error, not an
+    #                       error in the reasoning both carry.
+    #   configurations      two transcriptions of one enumerator, likewise.
     pairs = [
         ("adaptive optimum", pick("adaptivity", "adaptive"), pick("maxcover", "adaptive"),
          "m9 adaptivity", "maxcover"),
@@ -528,13 +556,6 @@ def cross_checks(results):
     checks += _waste_within_misses(results, per_instance)
     return checks
 
-def git_commit():
-    try:
-        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
-                                       cwd=ROOT, stderr=subprocess.DEVNULL
-                                       ).decode().strip()
-    except Exception:
-        return "unknown"
 
 
 # ctest reads this as "Skipped" via SKIP_RETURN_CODE. out/ is generated and
