@@ -104,3 +104,24 @@ LOG2_6 = math.log2(6)
 # Binary entropy at p = 0.9, the worked example of a shot the information
 # objective declines.
 BIN_H_09 = -(0.9 * math.log2(0.9) + 0.1 * math.log2(0.1))
+
+
+def two_sample_agrees(a_mean, a_sd, a_n, b_mean, b_sd, b_n, z):
+    """Whether two independent sample means are indistinguishable at level z.
+
+    The unpooled standard error of a difference, then the interval. Written out
+    inside tools/render_results.py's sealed-fold section, which is the one place
+    that page computed anything, complete with an `import math as _m` inside the
+    loop although the module already imports math. Its sibling moved its
+    arithmetic here for exactly this reason.
+
+    Zero sample sizes are refused rather than divided by: the caller reaches
+    this with whatever the collector recorded, and a games field that never
+    arrived should stop the page rather than produce a verdict from a NaN, for
+    which every comparison is false and so reads as "differs".
+    """
+    if a_n <= 0 or b_n <= 0:
+        raise ValueError("a two-sample comparison needs a positive count on both "
+                         "sides; got {!r} and {!r}".format(a_n, b_n))
+    se = math.sqrt(a_sd ** 2 / a_n + b_sd ** 2 / b_n)
+    return abs(a_mean - b_mean) <= z * se

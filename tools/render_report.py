@@ -12,6 +12,15 @@ import math
 import os
 import sys
 
+# tools/ on the path, and this one is load-bearing rather than belt and braces.
+#
+# Run as a script it is a no-op, because Python already puts a script's own
+# directory first. But tests/_jsdriver.py imports this module from a process
+# rooted at tests/, to inline the engine through the page's own loader rather
+# than a copy of it, and the build_report import below then has nothing to
+# resolve against. The identical-looking lines in collect_results.py and
+# render_results.py are the no-op case; this one is not, and the two cannot be
+# told apart by reading them.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from build_report import (BUCKETS, RAMP, blocking_boards, board_heatmap, bound_ladder, collapse,

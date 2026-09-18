@@ -17,7 +17,14 @@ import math
 import os
 import sys
 
+# tools/ on the path. A no-op as long as this module is only ever run as a
+# script, which it is: Python puts a script's own directory first already. Kept
+# because tools/render_report.py carries the same line and needs it, being
+# imported from tests/, and a convention that holds in two files of three is
+# worse than one that holds in three.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import report_style as style  # noqa: E402
+from report_stats import two_sample_agrees  # noqa: E402
 from report_style import Z_95, esc  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -267,8 +274,13 @@ def _check_counts(d):
         raise ValueError("crossChecks is empty; the agreement section would be blank")
 
 
-def build(d):
-    _check_counts(d)
+def _context(d):
+    """The values every section reads off the payload.
+
+    Derived once. Restating them in each of the eight sections would replace one
+    duplication with a larger one, which is the shape render_report._context
+    already settled on for the other page.
+    """
     R = d["results"]
     idx = by_id(R)
     b = {r["note"]: r["value"] for r in fam(R, "bounds") if r.get("note")}
@@ -282,9 +294,15 @@ def build(d):
                  for r in fam(R, "counting") if r["id"].startswith("omega-")
                  and "x" in r["id"] and r["id"] != "omega-notouch"]
     scale_pts.sort(key=lambda p: p["n"])
+    return (R, idx, b, pol, best_row, best, scale_pts)
 
-    o = io.StringIO()
-    w = o.write
+
+UNPACK = "    (R, idx, b, pol, best_row, best, scale_pts) = _context(d)\n"
+
+
+def section_head(w, d):
+    """The document head, the stylesheet and the wrapper."""
+    (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
 
     w("<title>Mayflower Results Dossier</title>\n")
     w('<link rel="preconnect" href="https://fonts.googleapis.com">\n')
@@ -296,6 +314,10 @@ def build(d):
 
     w('<div class="wrap">')
 
+
+def section_masthead(w, d):
+    """The hero, which is the number the engine exists to produce."""
+    (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # Masthead. The hero is the number the engine exists to produce.
     w('<header class="mast">')
     w('<div class="eyebrow">Mayflower &middot; exact inference over Battleships</div>')
@@ -320,6 +342,10 @@ def build(d):
         w('<div><span>{}</span><b>{}</b></div>'.format(esc(k), esc(v)))
     w("</div></header>")
 
+
+def section_bound_ladder(w, d):
+    """The certified interval and the rungs under it."""
+    (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # Bound ladder.
     w('<section><h2>What the optimum is bounded by</h2>')
     w('<p class="lede">The central quantitative claim. Every ship cell has to be '
@@ -383,6 +409,10 @@ def build(d):
                    group(p["games"])] for p in pol]))
     w("</section>")
 
+
+def section_sealed_fold(w, d):
+    """TRAIN against TEST, and what the seal cost to open."""
+    (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # The sealed fold.
     head = fam(R, "headline")
     if head:
@@ -398,12 +428,8 @@ def build(d):
         rows = []
         for r in head:
             t = trainby.get(r["note"])
-            import math as _m
-            if t:
-                se = _m.sqrt(t["sd"] ** 2 / t["games"] + r["sd"] ** 2 / r["games"])
-                inside = abs(t["value"] - r["value"]) <= Z_95 * se
-            else:
-                inside = False
+            inside = t is not None and two_sample_agrees(
+                t["value"], t["sd"], t["games"], r["value"], r["sd"], r["games"], Z_95)
             rows.append([r["note"],
                          "{:.3f}".format(t["value"]) if t else "&ndash;",
                          "{:.3f}".format(r["value"]),
@@ -421,6 +447,10 @@ def build(d):
           "measured 95.3387 against a theoretical 95.3889.</p>")
         w("</section>")
 
+
+def section_exact_optima(w, d):
+    """Where the optimum is known outright."""
+    (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # Exact optima.
     adapt = sorted(fam(R, "adaptivity"), key=lambda r: r["configurations"])
     w('<section><h2>Where both optima are computable</h2>')
@@ -449,6 +479,10 @@ def build(d):
                    "{:+.2f}".format(r["value"] - r["committed"])] for r in adv]))
     w("</section>")
 
+
+def section_noise(w, d):
+    """The noisy channel, twelve rows the page used to omit."""
+    (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # The collector gathered these twelve from docs/M9_RESULTS.txt and the page
     # had no section for them, so the noise channel appeared nowhere on it.
     noise = sorted(fam(R, "noisy"), key=lambda r: (r["instance"], r["eps"]))
@@ -480,6 +514,10 @@ def build(d):
           eps_low, min(at_low), max(at_low), min(above), max(above)))
     w("</section>")
 
+
+def section_cross_checks(w, d):
+    """Quantities two tools compute, and what that catches."""
+    (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # Cross checks.
     w('<section><h2>Where two tools compute the same thing</h2>')
     w('<p class="lede">Several quantities are produced independently by more than '
@@ -493,6 +531,10 @@ def build(d):
                   for c in d["crossChecks"]]))
     w("</section>")
 
+
+def section_retractions(w, d):
+    """What was withdrawn, the provenance, and the footer."""
+    (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     w('<section class="retract"><h2>Results that contradicted the plan</h2>')
     w('<p class="lede">Four investigations ended by refuting the thing that asked '
       "for them. Each is recorded with the measurement that settled it, so the "
@@ -533,35 +575,57 @@ def build(d):
     w('<footer>Mayflower &middot; exact Bayesian inference over Battleships '
       "&middot; every figure here is generated, none transcribed.</footer>")
     w("</div>")
+
+
+def build(d):
+    _check_counts(d)
+    o = io.StringIO()
+    w = o.write
+    # The eight sections in the order the page reads. Each appends to one
+    # growing document, so the order here is the page's order and nothing
+    # else decides it.
+    for section in (section_head, section_masthead, section_bound_ladder, section_sealed_fold, section_exact_optima, section_noise, section_cross_checks, section_retractions):
+        section(w, d)
     return o.getvalue()
 
 
+# One statement of each theme, interpolated wherever the cascade needs it.
+#
+# The dark half was written out twice, once under the media query and once
+# under [data-theme="dark"], which is the shape render_report.py had already
+# factored into its own DARK_TOKENS. The hexes come from report_style, which
+# out/report.html reads the same table for; only the names differ between the
+# two pages, and that difference is deliberate.
+#
+# --gapbar is not --gapfill and is not meant to match it. Both shade an
+# unresolved interval, but the report fills the area under a curve and this
+# fills a solid 18-pixel bar, which needs more opacity to read at that height.
+# They were 0.07/0.12 and 0.10/0.16 under one name, so the values looked like
+# drift; under two names they are two decisions.
+def _tokens(c, gapbar):
+    return (
+        "  --page:{page}; --surface:{surface}; --ink:{ink}; --ink-2:{ink-2};\n"
+        "  --muted:{muted}; --grid:{grid}; --axis:{axis}; --rule:{rule};\n"
+        "  --accent:{series-1}; --warn:{series-2}; --good:{series-3};\n"
+        "  --gapbar:" + gapbar + ";\n"
+    ).format(**c)
+
+
+LIGHT_TOKENS = _tokens(style.LIGHT, "rgba(42,120,214,0.10)")
+DARK_TOKENS = "  color-scheme:dark;\n" + _tokens(style.DARK, "rgba(57,135,229,0.16)")
+
 STYLE = """
 :root {
-  --page:#f9f9f7; --surface:#fcfcfb; --ink:#0b0b0b; --ink-2:#52514e;
-  --muted:#898781; --grid:#e1e0d9; --axis:#c3c2b7; --rule:#0d366b;
-  --accent:#2a78d6; --warn:#eb6834; --good:#1baf7a;
-  --gapfill:rgba(42,120,214,0.10);
-  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
-  --serif:"IBM Plex Serif",Georgia,serif;
+""" + LIGHT_TOKENS + """  --sans:""" + style.SANS + """;
+  --mono:""" + style.MONO + """;
+  --serif:""" + style.SERIF + """;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    color-scheme:dark;
-    --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink-2:#c3c2b7;
-    --muted:#898781; --grid:#2c2c2a; --axis:#383835; --rule:#86b6ef;
-    --accent:#3987e5; --warn:#d95926; --good:#199e70;
-    --gapfill:rgba(57,135,229,0.16);
-  }
+""" + DARK_TOKENS + """  }
 }
 :root[data-theme="dark"] {
-  color-scheme:dark;
-  --page:#0d0d0d; --surface:#1a1a19; --ink:#ffffff; --ink-2:#c3c2b7;
-  --muted:#898781; --grid:#2c2c2a; --axis:#383835; --rule:#86b6ef;
-  --accent:#3987e5; --warn:#d95926; --good:#199e70;
-  --gapfill:rgba(57,135,229,0.16);
-}
+""" + DARK_TOKENS + """}
 * { box-sizing:border-box; }
 body { margin:0; background:var(--page); color:var(--ink); font-family:var(--sans);
        font-size:16px; line-height:1.62; -webkit-font-smoothing:antialiased; }
@@ -605,7 +669,7 @@ h3 { font-family:var(--serif); font-weight:600; font-size:18px; line-height:1.3;
 .line { fill:none; stroke:var(--accent); stroke-width:2;
         stroke-linejoin:round; stroke-linecap:round; }
 .whisker { stroke:var(--axis); stroke-width:2; stroke-linecap:round; }
-.gapfill { fill:var(--gapfill); }
+.gapfill { fill:var(--gapbar); }
 .mk-exact { fill:var(--accent); stroke:var(--surface); stroke-width:2; }
 .mk-open  { fill:var(--surface); stroke:var(--muted); stroke-width:2; }
 .mk-meas  { fill:var(--warn); stroke:var(--surface); stroke-width:2; }
