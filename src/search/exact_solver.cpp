@@ -9,7 +9,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/sampler.hpp"
+#include "mayflower/platform.hpp"
 
 namespace mayflower {
 namespace {
@@ -379,7 +380,7 @@ ExactSolution solveOptimal(const Instance& inst, std::uint64_t configurationLimi
     out.nodesExpanded = solver.nodes;
     out.cellsPruned = solver.cellsPruned;
     out.branchesCut = solver.branchesCut;
-    out.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    out.seconds = platform::elapsed(t0);
     return out;
 }
 

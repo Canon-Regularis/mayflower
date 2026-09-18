@@ -15,9 +15,13 @@
 //     test_fuzz [trials] [seed]
 
 #include "mayflower/notouch.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/flows.hpp"
+#include "mayflower/sampler.hpp"
 #include "mayflower/profile_dp_blocked.hpp"
 #include "mayflower/weighted.hpp"
+#include "mayflower/platform.hpp"
 
 #include "harness.hpp"
 #include "oracle/brute_force.hpp"
@@ -183,8 +187,9 @@ int main(int argc, char** argv) {
 
         // The marginal identity, which holds whatever the record is.
         ++gChecks;
-        std::uint64_t total = 0;
-        const auto occ = occupancyMap(inst, cons, total);
+        const auto map = occupancyMap(inst, cons);
+        const std::uint64_t total = map.total;
+        const auto& occ = map.counts;
         std::uint64_t sum = 0;
         for (std::uint64_t v : occ) sum += v;
         if (sum != static_cast<std::uint64_t>(inst.shipCells()) * total)
@@ -204,7 +209,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    const double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const double dt = mf::test::elapsed(t0);
     std::printf("  %d instances, %d with a record, %d with a SUNK, %d holding a length-1 ship\n",
                 instances, withHistory, withSunk, withLength1);
     const int rc = mf::test::report(dt);

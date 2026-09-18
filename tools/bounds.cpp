@@ -10,13 +10,11 @@
 #include "mayflower/certify.hpp"
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/platform.hpp"
 
 namespace {
-
-double seconds(std::chrono::steady_clock::time_point t0) {
-    return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-}
 
 }  // namespace
 
@@ -63,14 +61,13 @@ int main() {
     std::printf("Cross-check: a beta(5) blocking set makes the fleet impossible.\n");
     const auto found = blockingWitness(inst.width, inst.height, 5);
     const std::vector<int>& witness = found.cells;
-    std::vector<CellConstraint> cells(static_cast<std::size_t>(inst.cellCount()),
-                                      CellConstraint::Free);
+    std::vector<CellConstraint> cells = freeConstraints(inst).cells;
     for (int c : witness) cells[static_cast<std::size_t>(c)] = CellConstraint::MustBeEmpty;
     const auto t0 = std::chrono::steady_clock::now();
     const std::uint64_t blocked = countConfigurations(inst, cells).count;
     std::printf("  %zu cells as misses -> |Omega| = %llu   %s  (%.2f s)\n", witness.size(),
                 static_cast<unsigned long long>(blocked),
-                blocked == 0 ? "as required" : "*** UNEXPECTED ***", seconds(t0));
+                blocked == 0 ? "as required" : "*** UNEXPECTED ***", platform::elapsed(t0));
 
     // Dropping any single cell must revive the space, so the witness is minimal
     // as a set. That is weaker than being globally smallest.

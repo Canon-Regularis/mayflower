@@ -9,18 +9,15 @@
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/notouch.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/platform.hpp"
 
 namespace {
-
-double seconds(std::chrono::steady_clock::time_point t0) {
-    return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-}
 
 void reportInstance(const mayflower::Instance& inst, const char* label) {
     const auto t0 = std::chrono::steady_clock::now();
     const auto r = mayflower::countConfigurations(inst);
-    const double dt = seconds(t0);
+    const double dt = mayflower::platform::elapsed(t0);
 
     std::printf("%-28s %s\n", label, inst.describe().c_str());
     // The sweeps compute CountResult::exact and this printed the count without
@@ -88,7 +85,7 @@ int main() {
         const auto t0 = std::chrono::steady_clock::now();
         const mayflower::CountResult nt = mayflower::countNoTouch(std10);
         const double seconds =
-            std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            platform::elapsed(t0);
         const bool ok = nt.count == k::kOmegaNoTouch;
 
         std::printf("Ships may not touch (the printed puzzle rule):\n");
@@ -119,7 +116,7 @@ int main() {
             const auto t0 = std::chrono::steady_clock::now();
             const auto res = countConfigurations(inst);
             std::printf("  %2dx%-2d  |Omega| = %18llu   (%6.3f s, peak %7llu states)\n", n, n,
-                        static_cast<unsigned long long>(res.count), seconds(t0),
+                        static_cast<unsigned long long>(res.count), platform::elapsed(t0),
                         static_cast<unsigned long long>(res.peakStates));
         } catch (const std::exception& e) {
             std::printf("  %2dx%-2d  skipped: %s\n", n, n, e.what());

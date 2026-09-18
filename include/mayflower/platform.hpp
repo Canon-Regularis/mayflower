@@ -1,4 +1,4 @@
-// Measurement platform.
+// Measurement platform: the clock, the topology and the pinning.
 //
 // The target is a hybrid part: 2 SMT P-cores plus 8 E-cores. An unpinned run can
 // land on either, and the same workload has been observed with a 1.7x spread
@@ -6,11 +6,24 @@
 // measure. Every benchmark pins first.
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 namespace mayflower::platform {
+
+// Seconds since t0. Four tools defined this function identically in their own
+// anonymous namespaces and another twenty-one sites wrote the body inline,
+// across src/, tools/, tests/ and bench/.
+//
+// It lands here because this is the measurement header and every one of those
+// callers is measuring. The header said "topology, pinning, the benchmark
+// clock" in the repository layout and carried no clock, so the description was
+// ahead of the file; it is not any more.
+[[nodiscard]] inline double elapsed(std::chrono::steady_clock::time_point t0) {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+}
 
 struct LogicalCore {
     int index = 0;             // logical processor number within the group

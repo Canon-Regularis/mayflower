@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <string>
 
+#include "mayflower/platform.hpp"
 #include "mayflower/random.hpp"
 
 namespace mf::test {
@@ -70,6 +71,11 @@ void checkEq(T got, T want, const std::string& what) {
 // The stream, from the one place that defines it. This struct used to be
 // copied into five test files and three tools.
 using mayflower::Rng;
+
+// The clock, likewise. Eleven test mains timed themselves by writing out
+// std::chrono::duration<double>(steady_clock::now() - t0).count() and handing
+// the result to report() below, which is the one caller that wants it.
+using mayflower::platform::elapsed;
 
 // Prints the tail and returns the process exit code. Pass the elapsed seconds
 // where the test measured them.

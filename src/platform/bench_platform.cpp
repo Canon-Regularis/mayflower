@@ -1,3 +1,11 @@
+// The measurement platform, on this machine and on every other.
+//
+// Named bench_platform_win.cpp until a survey read it. It carries the
+// Windows branch, the portable fallback that returns an empty topology and
+// refuses to pin, and four functions that are neither; it is listed in
+// CMakeLists.txt unconditionally and compiles on the Linux and Clang legs
+// like anything else. The suffix described the longest branch rather than
+// the file.
 #include "mayflower/platform.hpp"
 
 #ifdef _WIN32

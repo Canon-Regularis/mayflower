@@ -12,14 +12,12 @@
 
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/flows.hpp"
+#include "mayflower/sampler.hpp"
 #include "mayflower/random.hpp"
+#include "mayflower/platform.hpp"
 
 namespace {
-
-double seconds(std::chrono::steady_clock::time_point t0) {
-    return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-}
 
 using mayflower::Rng;
 
@@ -37,7 +35,7 @@ int main() {
 
     const auto t0 = std::chrono::steady_clock::now();
     const Sampler sampler(inst);
-    const double buildSeconds = seconds(t0);
+    const double buildSeconds = platform::elapsed(t0);
     const std::uint64_t total = sampler.total();
 
     std::printf("|Omega|          %llu   %s\n", static_cast<unsigned long long>(total),
@@ -48,8 +46,9 @@ int main() {
                 static_cast<double>(sampler.storedEntries()) * 24.0 / (1024.0 * 1024.0));
 
     // Exact marginals to compare against.
-    std::uint64_t exactTotal = 0;
-    const std::vector<std::uint64_t> exact = occupancyMap(inst, exactTotal);
+    const OccupancyMap exactMap = occupancyMap(inst);
+    const std::uint64_t exactTotal = exactMap.total;
+    const std::vector<std::uint64_t>& exact = exactMap.counts;
 
     const int samples = 200000;
     Rng rng(0x5EED1234u);
@@ -74,7 +73,7 @@ int main() {
         }
         if (cells != inst.shipCells()) ++badFleet;
     }
-    const double drawSeconds = seconds(t1);
+    const double drawSeconds = platform::elapsed(t1);
 
     std::printf("drew %d boards in %.3f s  (%.1f us per board, %.0f boards/s)\n",
                 samples, drawSeconds, drawSeconds * 1e6 / samples, samples / drawSeconds);

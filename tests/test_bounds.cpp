@@ -12,6 +12,7 @@
 
 #include "mayflower/certify.hpp"
 #include "mayflower/constants.hpp"
+#include "mayflower/platform.hpp"
 
 #include "harness.hpp"
 
@@ -277,6 +278,6 @@ int main() {
     testWaterFillingIsSound();
     testFreeSetBeyondAByte();
 
-    const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const auto dt = mf::test::elapsed(t0);
     return mf::test::report(dt);
 }

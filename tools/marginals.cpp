@@ -8,13 +8,10 @@
 
 #include "mayflower/constants.hpp"
 #include "mayflower/instance.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/flows.hpp"
+#include "mayflower/platform.hpp"
 
 namespace {
-
-double seconds(std::chrono::steady_clock::time_point t0) {
-    return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-}
 
 }  // namespace
 
@@ -29,9 +26,10 @@ int main() {
     std::printf("=================================================\n\n");
 
     const auto t0 = std::chrono::steady_clock::now();
-    std::uint64_t total = 0;
-    const std::vector<std::uint64_t> occ = occupancyMap(inst, total);
-    const double dtForwardBackward = seconds(t0);
+    const OccupancyMap map = occupancyMap(inst);
+    const std::uint64_t total = map.total;
+    const std::vector<std::uint64_t>& occ = map.counts;
+    const double dtForwardBackward = platform::elapsed(t0);
 
     std::printf("|Omega|  %llu   %s\n", static_cast<unsigned long long>(total),
                 total == k::kOmega0 ? "(matches constants.hpp)" : "*** MISMATCH ***");
@@ -96,7 +94,7 @@ int main() {
             }
         }
     }
-    const double dtOrbits = seconds(t1);
+    const double dtOrbits = platform::elapsed(t1);
     std::printf("  %s   15 constrained counts took %.3f s\n",
                 agree ? "all 15 agree" : "*** DISAGREEMENT ***", dtOrbits);
     std::printf("  forward-backward gives all 100 cells in %.3f s (%.1fx faster than 15 counts,\n"

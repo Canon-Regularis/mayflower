@@ -12,6 +12,7 @@
 #include "mayflower/game.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/policy.hpp"
+#include "mayflower/platform.hpp"
 
 #include "harness.hpp"
 
@@ -207,7 +208,6 @@ int main() {
     testBankIsOrderIndependent();
     testEmptyBankIsRefused();
 
-    const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-    std::printf("\n%d checks, %d failures, %.2f s\n", gChecks, gFailures, dt);
-    return gFailures == 0 ? 0 : 1;
+    const auto dt = mf::test::elapsed(t0);
+    return mf::test::report(dt);
 }

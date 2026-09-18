@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "mayflower/spectrum.hpp"
+#include "mayflower/platform.hpp"
 
 #include "harness.hpp"
 
@@ -178,6 +179,6 @@ int main() {
     testGrowthMatchesRatio();
     testDimerEntropyLimit();
     testMonotonicity();
-    const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const auto dt = mf::test::elapsed(t0);
     return mf::test::report(dt);
 }

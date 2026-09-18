@@ -1,4 +1,5 @@
 #include "mayflower/certify.hpp"
+#include "mayflower/platform.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -141,7 +142,7 @@ BlockingResult blockingNumber(int width, int height, int length) {
     FreeSetDp dp(width, height, length);
     out.largestFreeSet = dp.run();
     out.blocking = width * height - out.largestFreeSet;
-    out.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    out.seconds = platform::elapsed(t0);
     return out;
 }
 
