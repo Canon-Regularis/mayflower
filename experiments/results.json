@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "commit": "00c4092",
+ "commit": "f1f4e65",
  "note": "Every value is read from a tool's own output, never transcribed. Text tables are parsed against their exact headers, so a tool changing its output breaks this rather than corrupting it.",
  "counts": {
   "results": 118,
@@ -76,6 +76,34 @@
     "out/figures.json"
    ],
    "instances": 11,
+   "agree": true,
+   "disagreements": []
+  },
+  {
+   "quantity": "both routes to the hypothesis space",
+   "sources": [
+    "out/figures.json meta",
+    "out/figures.json scaling"
+   ],
+   "instances": 1,
+   "agree": true,
+   "disagreements": []
+  },
+  {
+   "quantity": "the max-coverage rung stays withdrawn",
+   "sources": [
+    "docs/MAXCOVER.txt"
+   ],
+   "instances": 6,
+   "agree": true,
+   "disagreements": []
+  },
+  {
+   "quantity": "regret is the difference from the flat prior",
+   "sources": [
+    "docs/OPPONENT.txt"
+   ],
+   "instances": 8,
    "agree": true,
    "disagreements": []
   },
