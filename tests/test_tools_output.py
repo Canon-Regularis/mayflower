@@ -24,30 +24,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
-
-
-W = H = 10
-LENS = [5, 4, 3, 3, 2]
-SHIP_CELLS = sum(LENS)
-
-
-
-
-
-
-
-
-
-
-def placement_cells(idx, L):
-    """The exporter's own indexing, so a disagreement shows up here."""
-    hcount = H * (W - L + 1)
-    if idx < hcount:
-        r, c = divmod(idx, W - L + 1)
-        return [r * W + c + k for k in range(L)]
-    j = idx - hcount
-    c, r = divmod(j, H - L + 1)
-    return [(r + k) * W + c for k in range(L)]
+from _pool import H, LENS, SHIP_CELLS, W, placement_cells, slot_count  # noqa: E402
 
 
 def test_export_pool():
@@ -74,7 +51,7 @@ def test_export_pool():
         base = b * len(LENS)
         for j, L in enumerate(LENS):
             idx = raw[base + j]
-            slots = H * (W - L + 1) + (W * (H - L + 1) if L > 1 else 0)
+            slots = slot_count(L)
             if idx >= slots:
                 illegal += 1
                 break
@@ -205,10 +182,42 @@ def test_optimal_pruning():
               "got {}".format(m.group(1) if m else "nothing"))
 
 
+def test_ladder_count_in_docs():
+    """The one count in docs/ that nothing derived.
+
+    tests/test_stated_counts.py derives every other documented count from the
+    configuration that decides it, and says in its own docstring that this one
+    cannot be: the ladder's check total is what test_ladder prints after a
+    seven second run, and there is no honest way to read it out of source.
+
+    So it is read out of the run instead. This file already starts binaries and
+    reads what they print, and a seven second run is nothing beside what it
+    already spends. The number had been corrected by hand twice before, and
+    drifted a third time the moment test_ladder gained a second assertion per
+    rung comparison, which doubled it.
+    """
+    print("[the ladder count docs/BENCHMARKS.md quotes]")
+    r = run([exe("test_ladder")], timeout=900)
+    check(r.returncode == 0, "test_ladder passes", r.stdout.strip()[-200:])
+    m = re.search(r"^(\d+) checks, (\d+) failures", r.stdout, re.M)
+    check(bool(m), "and reports how many checks it made")
+    if not m:
+        return
+    actual = int(m.group(1))
+    doc = io.open(os.path.join(ROOT, "docs", "BENCHMARKS.md"), encoding="utf-8").read()
+    d = re.search(r"bit-identical to V0 across ([\d,]+) checks", doc)
+    check(bool(d), "and docs/BENCHMARKS.md states a count")
+    stated = int(d.group(1).replace(",", "")) if d else -1
+    check(stated == actual,
+          "docs/BENCHMARKS.md quotes the count the run makes",
+          "the document says {:,}, the run makes {:,}".format(stated, actual))
+
+
 def main():
     print("the tools nothing ran")
     print("=====================")
-    missing = [t for t in ("export_pool", "selfplay", "optimal") if exe(t) is None]
+    missing = [t for t in ("export_pool", "selfplay", "optimal", "test_ladder")
+               if exe(t) is None]
     if missing:
         print("  not built: {}".format(", ".join(missing)))
         return SKIP
@@ -216,6 +225,7 @@ def main():
     test_export_pool()
     test_selfplay()
     test_optimal_pruning()
+    test_ladder_count_in_docs()
 
     return report()
 

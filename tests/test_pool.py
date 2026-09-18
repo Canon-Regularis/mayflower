@@ -22,34 +22,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+from _pool import (CELLS, H, LENS, SHIP_CELLS, W, placement_cells,  # noqa: E402
+                   placement_table, slot_count)
 
 POOL = os.path.join(ROOT, "web", "pool.bin")
 FIGURES = os.path.join(ROOT, "out", "figures.json")
-
-W = H = 10
-CELLS = W * H
-LENS = [5, 4, 3, 3, 2]
-SHIP_CELLS = sum(LENS)
-
-
-
-
-
-def placement_table(L):
-    """Every placement of a length-L ship, indexed the way the exporter writes it.
-
-    horizontal at (row, col) -> row * (W-L+1) + col
-    vertical   at (row, col) -> H*(W-L+1) + col * (H-L+1) + row
-    """
-    hcount = H * (W - L + 1)
-    out = [None] * (hcount + W * (H - L + 1))
-    for r in range(H):
-        for c in range(W - L + 1):
-            out[r * (W - L + 1) + c] = tuple(r * W + c + k for k in range(L))
-    for c in range(W):
-        for r in range(H - L + 1):
-            out[hcount + c * (H - L + 1) + r] = tuple((r + k) * W + c for k in range(L))
-    return out
 
 
 def main():
