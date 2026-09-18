@@ -6,7 +6,9 @@ Part of [Mayflower](../README.md).
 
 Every push and pull request builds on Linux with GCC 13 and Clang, in Release and
 Debug, and on Windows with MinGW-w64 on the UCRT runtime, which is the only
-configuration that compiles `src/platform/bench_platform_win.cpp`. Each runs the
+configuration that compiles the Windows branch of
+`src/platform/bench_platform.cpp`; every leg compiles the file, and the
+others preprocess it to the fallback that reports no topology. Each runs the
 fast suite. The Linux legs build with `-Werror`; the Windows compiler floats with
 the MSYS2 mirror, so warnings there are printed rather than fatal.
 

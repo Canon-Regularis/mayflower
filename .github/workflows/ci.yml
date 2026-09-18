@@ -131,8 +131,9 @@ jobs:
       - uses: actions/checkout@v7
 
       # The development toolchain is MinGW-w64 GCC on the UCRT runtime, and this
-      # is the only configuration that compiles src/platform/bench_platform_win.cpp;
-      # everywhere else it preprocesses to the fallback. MSYS2 has no version
+      # is the only configuration that compiles the Windows branch of
+      # src/platform/bench_platform.cpp; everywhere else that file
+      # preprocesses to the fallback. MSYS2 has no version
       # pinning, so the compiler here floats and -Werror would turn a new GCC's
       # new diagnostic into a red build on an unrelated pull request. Warnings are
       # still printed, and the Linux legs hold the -Werror line against a pinned
@@ -302,7 +303,7 @@ jobs:
         run: python python/oracle.py --order-dependence
 
       - name: The analysis layer's own calibration
-        run: python python/stats.py --quick
+        run: python python/stats_test.py --quick
 
       # The report generators are only exercised by the nightly pipeline, which
       # means a syntax error in one of them stays invisible for a day. This costs

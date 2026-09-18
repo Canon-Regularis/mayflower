@@ -131,18 +131,30 @@ it.
 
 | | |
 | --- | --- |
+| `include/mayflower/` | The public headers, one per responsibility |
 | `src/core/` | The sweep: profile DP and its rungs, marginals, sampler, no-touching, weighted counting |
 | `src/search/` | The belief MDP and its pruning |
 | `src/certify/` | Blocking numbers and announcement transcripts |
 | `src/lattice/` | The transfer matrix |
+| `src/platform/` | CPU topology and thread pinning, for the benchmarks |
 | `tools/` | One executable per result, plus the report and results renderers |
+| `bench/` | The optimisation ladder's measurement harness |
 | `web/` | The DP in JavaScript, the live widget, the belief scrubber |
 | `tests/oracle/` | An independent enumerator sharing nothing with the engine |
 | `python/` | Order-aware reference model, bond dimension, the analysis layer |
 | `experiments/` | Pre-registration, registry, append-only audit log |
 
-`tests/oracle/` includes nothing from `include/mayflower/`, and `python/` reaches
-the renderers only through the figure-data contract.
+Two boundaries are enforced by the build rather than by convention, each with a
+target that compiles one translation unit and links nothing. `tests/oracle/`
+includes nothing from `include/mayflower/`, which is enforced by compiling it
+with only `tests/` on the search path. `src/core/` is the sweeps and knows
+nothing of the policies, the game loop, the search, the bounds or the figures,
+which is enforced by compiling it against stubs of those headers that are an
+`#error`. Either violation fails the build with the rule as its message.
+
+The third edge runs the way round that surprises people: `tools/run_headline.py`
+imports `python/stats.py` in process. `python/` does not reach the renderers at
+all.
 
 ## Correctness
 
