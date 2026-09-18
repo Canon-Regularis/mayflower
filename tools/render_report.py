@@ -6,11 +6,17 @@ and the order of the argument. Run it as:
     python tools/render_report.py out/figures.json out/report.html
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+
 import io
+import base64
 import json
 import math
 import os
 import sys
+from typing import Any
 
 # tools/ on the path, and this one is load-bearing rather than belt and braces.
 #
@@ -77,11 +83,11 @@ DARK_TOKENS = """
 """
 
 
-def ramp_block(stops, indent="  "):
+def ramp_block(stops: Sequence[str], indent: str = "  ") -> str:
     return "\n".join(f"{indent}--ramp-{i}: {c};" for i, c in enumerate(stops))
 
 
-def stylesheet():
+def stylesheet() -> str:
     light_ramp = ramp_block(RAMP)
     dark_ramp = ramp_block(list(reversed(RAMP)), "    ")
     return """
@@ -339,7 +345,7 @@ document.addEventListener('pointerout', e => {
 """
 
 
-def load_engine():
+def load_engine() -> str:
     """web/engine.js is an ES module; inline it as a plain script that publishes
     the same names on one global, so the page needs no module loader."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -350,18 +356,17 @@ def load_engine():
             " MISS, HIT, SUNK, FREE, EMPTY, OCCUPIED };\n})();")
 
 
-def load_scrubber():
+def load_scrubber() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
     return io.open(os.path.join(here, "..", "web", "scrubber.js"), encoding="utf-8").read()
 
 
-def load_live():
+def load_live() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
     return io.open(os.path.join(here, "..", "web", "live.js"), encoding="utf-8").read()
 
 
-def load_pool():
-    import base64
+def load_pool() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "..", "web", "pool.bin"), "rb") as fh:
         return base64.b64encode(fh.read()).decode("ascii")
@@ -369,11 +374,16 @@ def load_pool():
 # The arithmetic the prose quotes lives in tools/report_stats.py. This file
 # renders; it does not compute.
 from report_stats import (BIN_H_09, CRUDE_PROFILES, FREE_PRODUCT, LOG2_6,
-                          _loglog_slope, _parity_split, _pearson, _ranks,
-                          _spearman, _survival)
+                          _loglog_slope, _parity_split, _spearman, _survival)
 
 
-def _context(data):
+Payload = dict[str, Any]
+
+
+def _context(data: Payload) -> tuple[
+        Payload, Payload, dict[str, Payload], list[Payload], Payload, int,
+        Payload, list[Payload], list[Payload], list[float], Payload, Payload,
+        Payload]:
     """The values every section reads off the payload.
 
     Derived once. Restating these in each of the eleven sections would replace
@@ -394,7 +404,7 @@ def _context(data):
     return (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par, best)
 
 
-def section_anchor(w, data, st):
+def section_anchor(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """0, the anchor."""
     # The board pool is read here because this is the only figure that embeds it.
     POOL_B64 = load_pool()
@@ -437,7 +447,7 @@ def section_anchor(w, data, st):
     st["scale_slope"], st["scale_r2"] = _loglog_slope(data["scaling"])
 
 
-def section_the_space(w, data, st):
+def section_the_space(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """1."""
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
      best) = _context(data)
@@ -484,7 +494,7 @@ def section_the_space(w, data, st):
       "room.</figcaption></figure></div></section>\n".format(st["scale_slope"], st["scale_r2"]))
 
 
-def section_the_machine(w, data, st):
+def section_the_machine(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """2."""
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
      best) = _context(data)
@@ -516,7 +526,7 @@ def section_the_machine(w, data, st):
       "ships.</figcaption></figure></section>\n".format(lat["peakStates"]))
 
 
-def section_the_bound(w, data, st):
+def section_the_bound(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """3."""
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
      best) = _context(data)
@@ -551,7 +561,7 @@ def section_the_bound(w, data, st):
           (b["waterfilling"] - b["coverage"]) / (best["mean"] - b["coverage"])))
 
 
-def section_the_objective(w, data, st):
+def section_the_objective(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """4."""
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
      best) = _context(data)
@@ -604,7 +614,7 @@ def section_the_objective(w, data, st):
       "difference of exactly 41.</figcaption></figure></section>\n")
 
 
-def section_the_play(w, data, st):
+def section_the_play(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """5."""
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
      best) = _context(data)
@@ -703,7 +713,7 @@ def section_the_play(w, data, st):
                     for p in policies)))
 
 
-def section_the_objects(w, data, st):
+def section_the_objects(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """objects."""
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
      best) = _context(data)
@@ -753,7 +763,7 @@ def section_the_objects(w, data, st):
       "them.</figcaption></figure></section>\n")
 
 
-def section_the_collapse(w, data, st):
+def section_the_collapse(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """6."""
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
      best) = _context(data)
@@ -806,7 +816,7 @@ def section_the_collapse(w, data, st):
     w("</section>\n")
 
 
-def section_the_conclusion(w, data, st):
+def section_the_conclusion(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """7, the conclusion."""
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
      best) = _context(data)
@@ -878,7 +888,7 @@ def section_the_conclusion(w, data, st):
           pol["parity hunt/target"]["mean"] - best["mean"]))
 
 
-def section_opening_book(w, data, st):
+def section_opening_book(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """the opening book."""
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
      best) = _context(data)
@@ -915,7 +925,7 @@ def section_opening_book(w, data, st):
       "in a forced hit first.</figcaption></figure>")
 
 
-def section_summary(w, data, st):
+def section_summary(w: Callable[[str], int], data: Payload, st: dict[str, Any]) -> None:
     """the summary."""
     book, bw = st["book"], st["bw"]
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
@@ -953,7 +963,7 @@ def section_summary(w, data, st):
     w("</section>\n")
 
 
-def build(data, out_path):
+def build(data: Payload, out_path: str) -> int:
     (m, prior, pol, policies, b, omega, lat, obj, col, prior_p, dens, par,
      best) = _context(data)
 
@@ -990,7 +1000,7 @@ def build(data, out_path):
     # Each section appends to the same buffer in the same order, so the page
     # is byte for byte what one long function produced. `st` carries the two
     # values one section computes and a later one reads.
-    st = {}
+    st: dict[str, Any] = {}
     section_anchor(w, data, st)
     section_the_space(w, data, st)
     section_the_machine(w, data, st)

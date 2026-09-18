@@ -8,9 +8,17 @@ Every figure is complete inline SVG. The page is correct with JavaScript off;
 JavaScript only adds hover readouts.
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from typing import Any
+
 import math
 
-from report_style import esc  # re-exported: render_report.py imports it from here
+# The `as` spelling states the re-export rather than leaving it to the
+# comment: render_report.py imports esc from here, and under --strict an
+# imported name is private to its module unless it is named twice.
+from report_style import esc as esc
 
 # Validated categorical slots (see the palette validator: all six checks pass in
 # both modes, worst adjacent CVD dE 9.2 light / 9.4 dark).
@@ -22,7 +30,7 @@ RAMP = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7",
 BUCKETS = 12
 
 
-def fmt(n, decimals=0):
+def fmt(n: float, decimals: int = 0) -> str:
     if decimals == 0:
         return f"{int(round(n)):,}"
     return f"{n:,.{decimals}f}"
@@ -32,7 +40,7 @@ def fmt(n, decimals=0):
 # SVG primitives
 # --------------------------------------------------------------------------- #
 
-def svg_open(w, h, label):
+def svg_open(w: float, h: float, label: str) -> str:
     """Open a figure at its design size.
 
     The style caps the rendered width at the width the figure was drawn for, so
@@ -42,11 +50,13 @@ def svg_open(w, h, label):
             f'preserveAspectRatio="xMidYMid meet" style="max-width:{w}px">')
 
 
-def axis_line(x1, y1, x2, y2, cls="axis"):
+def axis_line(x1: float, y1: float, x2: float, y2: float,
+              cls: str = "axis") -> str:
     return f'<line class="{cls}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}"/>'
 
 
-def legend(x, y, entries, gap=136):
+def legend(x: float, y: float, entries: Sequence[tuple[str, str]],
+           gap: float = 136) -> str:
     """Swatch plus label, laid out in a row. Present whenever two or more series
     share a plot, alongside the direct labels."""
     out = []
@@ -59,7 +69,8 @@ def legend(x, y, entries, gap=136):
     return "".join(out)
 
 
-def text(x, y, s, cls="lbl", anchor="middle", extra=""):
+def text(x: float, y: float, s: object, cls: str = "lbl",
+         anchor: str = "middle", extra: str = "") -> str:
     return (f'<text class="{cls}" x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" {extra}>'
             f'{esc(s)}</text>')
 
@@ -68,8 +79,10 @@ def text(x, y, s, cls="lbl", anchor="middle", extra=""):
 # Figures
 # --------------------------------------------------------------------------- #
 
-def board_heatmap(values, width, height, label, fmt_cell, caption_scale, cell=46,
-                  scale=None):
+def board_heatmap(values: Sequence[float], width: int, height: int, label: str,
+                  fmt_cell: Callable[[float], str], caption_scale: str,
+                  cell: float = 46,
+                  scale: tuple[float, float] | None = None) -> str:
     """A 10x10 board rendered as the same widget everywhere: row 0 at the top,
     columns A onward, one grid, one glyph vocabulary.
 
@@ -118,7 +131,7 @@ def board_heatmap(values, width, height, label, fmt_cell, caption_scale, cell=46
     return "".join(out)
 
 
-def bound_ladder(bounds, policies):
+def bound_ladder(bounds: dict[str, Any], policies: Sequence[dict[str, Any]]) -> str:
     w, h = 760, 268
     pad_l, pad_r, pad_t = 20, 20, 34
 
@@ -133,10 +146,13 @@ def bound_ladder(bounds, policies):
     # hold the bounds and the best policy with room to spare, and anything past
     # it is drawn at the edge with a caret and its true value in the label.
     # Off the scale is a thing a reader can see; absent is not.
-    best = min(p["mean"] for p in policies)
+    # Declared, not converted. The figure payload is dict[str, Any], so
+    # everything read out of it is Any, and an Any that reaches a pixel
+    # coordinate takes the whole scale function with it.
+    best: float = min(p["mean"] for p in policies)
     x0 = 12.0
-    x1 = max(30.0, math.ceil(max(bounds["waterfilling"], best) * 1.2 / 5.0) * 5.0)
-    def sx(v):
+    x1: float = max(30.0, math.ceil(max(bounds["waterfilling"], best) * 1.2 / 5.0) * 5.0)
+    def sx(v: float) -> float:
         return pad_l + (min(v, x1) - x0) / (x1 - x0) * (w - pad_l - pad_r)
 
     out = [svg_open(w, h, "Lower-bound ladder against measured policies")]
@@ -208,7 +224,7 @@ def bound_ladder(bounds, policies):
     return "".join(out)
 
 
-def objective_bars(rows):
+def objective_bars(rows: Sequence[dict[str, Any]]) -> str:
     w = 760
     row_h, pad_t, pad_l = 62, 30, 108
     h = pad_t + row_h * len(rows) + 66
@@ -236,16 +252,16 @@ def objective_bars(rows):
     return "".join(out)
 
 
-def survival(policies):
+def survival(policies: Sequence[dict[str, Any]]) -> str:
     # The bottom padding carries the shot ticks, the axis title and the key. The
     # key sits under the graph, so the right margin no longer has to reserve room
     # for labels drawn along the curves and the plot gets that width back.
     w, h = 760, 300
     pad_l, pad_r, pad_t, pad_b = 52, 196, 22, 52
     xmax = 100
-    def sx(v):
+    def sx(v: float) -> float:
         return pad_l + v / xmax * (w - pad_l - pad_r)
-    def sy(p):
+    def sy(p: float) -> float:
         return pad_t + (1 - p) * (h - pad_t - pad_b)
 
     out = [svg_open(w, h, "Fraction of games still unfinished after n shots")]
@@ -296,7 +312,7 @@ def survival(policies):
     return "".join(out)
 
 
-def collapse(games, omega0):
+def collapse(games: Sequence[dict[str, Any]], omega0: int) -> str:
     # The bottom padding carries three stacked rows below the plot: the shot
     # ticks, the axis title, and the key. The key sits under the graph rather
     # than inside it, where it used to overlap the opening of every curve.
@@ -304,9 +320,9 @@ def collapse(games, omega0):
     pad_l, pad_r, pad_t, pad_b = 56, 24, 22, 86
     xmax = max(len(g["omega"]) for g in games)
     top = math.log10(omega0)
-    def sx(v):
+    def sx(v: float) -> float:
         return pad_l + v / xmax * (w - pad_l - pad_r)
-    def sy(v):
+    def sy(v: float) -> float:
         return pad_t + (1 - (math.log10(max(v, 1)) / top)) * (h - pad_t - pad_b)
 
     out = [svg_open(w, h, "Hypothesis count collapsing over one game")]
@@ -347,13 +363,13 @@ def collapse(games, omega0):
     return "".join(out)
 
 
-def layer_profile(sizes, peak):
+def layer_profile(sizes: Sequence[int], peak: int) -> str:
     w, h = 760, 228
     pad_l, pad_r, pad_t, pad_b = 56, 20, 20, 56
     n = len(sizes)
-    def sx(i):
+    def sx(i: float) -> float:
         return pad_l + i / (n - 1) * (w - pad_l - pad_r)
-    def sy(v):
+    def sy(v: float) -> float:
         return pad_t + (1 - v / peak) * (h - pad_t - pad_b)
 
     out = [svg_open(w, h, "Live states entering each cell layer of the lattice")]
@@ -381,7 +397,8 @@ def layer_profile(sizes, peak):
     return "".join(out)
 
 
-def orbit_map(counts, total, width, height, cell=46):
+def orbit_map(counts: Sequence[int], total: int, width: int, height: int,
+              cell: float = 46) -> str:
     """The D4 orbits of the board, coloured by orbit and carrying their exact
     integer counts. Reflections and the diagonal generate 15 classes on a 10x10,
     so a per-cell quantity needs 15 evaluations and not 100."""
@@ -390,7 +407,7 @@ def orbit_map(counts, total, width, height, cell=46):
     h = pad_t + height * cell + 40
 
     # Orbit representative for a cell, under the dihedral group.
-    def rep(r, c):
+    def rep(r: int, c: int) -> tuple[int, int]:
         a, b = min(r, height - 1 - r), min(c, width - 1 - c)
         return (min(a, b), max(a, b))
 
@@ -424,7 +441,7 @@ def orbit_map(counts, total, width, height, cell=46):
     return "".join(out)
 
 
-def placements_through(r, c, length, width, height):
+def placements_through(r: int, c: int, length: int, width: int, height: int) -> int:
     """Length-L placements covering one cell, by geometry alone.
 
     A horizontal one starts anywhere from length-1 columns left of the cell to
@@ -440,7 +457,8 @@ def placements_through(r, c, length, width, height):
     return h + v
 
 
-def blocking_boards(witnesses, width, height, cell=26):
+def blocking_boards(witnesses: Sequence[dict[str, Any]], width: int, height: int,
+                    cell: float = 26) -> str:
     """Each witness set drawn on its own board: shoot these cells and no
     placement of that length can survive untouched."""
     per = pad_l = 34
@@ -539,7 +557,8 @@ def blocking_boards(witnesses, width, height, cell=26):
     return "".join(out)
 
 
-def opening_book(steps, width, height, cell=46):
+def opening_book(steps: Sequence[dict[str, Any]], width: int, height: int,
+                 cell: float = 46) -> str:
     """The greedy line down the all-miss branch, drawn as a ranking.
 
     Ranked cells carry their position in the order and are shaded by it, earliest
@@ -581,7 +600,7 @@ def opening_book(steps, width, height, cell=46):
     return "".join(out)
 
 
-def order_dependence(payload, cell=40):
+def order_dependence(payload: dict[str, Any], cell: float = 40) -> str:
     """The same shots in two orders, with the posterior each one implies."""
     width, height = payload["width"], payload["height"]
     orders = payload["orders"]
@@ -619,7 +638,7 @@ def order_dependence(payload, cell=40):
     return "".join(out)
 
 
-def scaling(rows):
+def scaling(rows: Sequence[dict[str, Any]]) -> str:
     # Both scales are inset by a marker's width, so the extreme points sit inside
     # the frame instead of straddling the axes they are measured against.
     w, h = 400, 258
@@ -627,14 +646,14 @@ def scaling(rows):
     inset = 14
     lo = math.floor(math.log10(min(r["omega"] for r in rows)))
     hi = math.ceil(math.log10(max(r["omega"] for r in rows)))
-    ns = [r["n"] for r in rows]
+    ns: list[int] = [r["n"] for r in rows]
     x_lo, x_hi = pad_l + inset, w - pad_r - inset
     y_lo, y_hi = h - pad_b - inset, pad_t + inset
 
-    def sx(n):
+    def sx(n: float) -> float:
         return x_lo + (n - min(ns)) / (max(ns) - min(ns)) * (x_hi - x_lo)
 
-    def sy(v):
+    def sy(v: float) -> float:
         return y_lo + (math.log10(v) - lo) / (hi - lo) * (y_hi - y_lo)
 
     out = [svg_open(w, h, "Configuration count against board size")]

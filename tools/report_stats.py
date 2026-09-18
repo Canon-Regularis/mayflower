@@ -19,8 +19,10 @@ payload describing a different instance would print them unchanged.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
+from typing import Any
 
-def _pearson(a, b):
+def _pearson(a: Sequence[float], b: Sequence[float]) -> float:
     n = len(a)
     ma, mb = sum(a) / n, sum(b) / n
     num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
@@ -29,7 +31,7 @@ def _pearson(a, b):
     return num / (da * db) if da and db else 0.0
 
 
-def _ranks(v):
+def _ranks(v: Sequence[float]) -> list[float]:
     """Midranks. The prior takes 15 distinct values over 100 cells, one per
     dihedral orbit, so ordinal ranks would break 85 ties by board index and make
     the coefficient depend on that order."""
@@ -46,18 +48,18 @@ def _ranks(v):
     return out
 
 
-def _spearman(a, b):
+def _spearman(a: Sequence[float], b: Sequence[float]) -> float:
     return _pearson(_ranks(a), _ranks(b))
 
 
-def _parity_split(values, width):
+def _parity_split(values: Sequence[float], width: int) -> tuple[float, float]:
     """Mean over the two diagonal colour classes of the board."""
     ev = [v for i, v in enumerate(values) if ((i // width) + (i % width)) % 2 == 0]
     od = [v for i, v in enumerate(values) if ((i // width) + (i % width)) % 2 == 1]
     return sum(ev) / len(ev), sum(od) / len(od)
 
 
-def _survival(hist):
+def _survival(hist: Sequence[int]) -> list[float]:
     """P(T > n) at index n: the fraction still running AFTER n shots.
 
     Subtracts before appending. The other order gives P(T >= n), which
@@ -85,7 +87,7 @@ FREE_PRODUCT = 120 * 140 * 160 * 160 // 2 * 180
 CRUDE_PROFILES = 5 ** 11 * 24
 
 
-def _loglog_slope(points):
+def _loglog_slope(points: Sequence[dict[str, Any]]) -> tuple[float, float]:
     """Empirical exponent of |Omega| against board side, with its R^2."""
     xs = [math.log(p["n"]) for p in points]
     ys = [math.log(p["omega"]) for p in points]
@@ -106,7 +108,8 @@ LOG2_6 = math.log2(6)
 BIN_H_09 = -(0.9 * math.log2(0.9) + 0.1 * math.log2(0.1))
 
 
-def two_sample_agrees(a_mean, a_sd, a_n, b_mean, b_sd, b_n, z):
+def two_sample_agrees(a_mean: float, a_sd: float, a_n: float,
+                      b_mean: float, b_sd: float, b_n: float, z: float) -> bool:
     """Whether two independent sample means are indistinguishable at level z.
 
     The unpooled standard error of a difference, then the interval. Written out

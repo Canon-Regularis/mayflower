@@ -47,7 +47,7 @@ Z_95 = 1.959963984540054
 # The two naming vocabularies stay. They mean different things: the report
 # distinguishes series by position in a legend, the dossier by role in a
 # sentence. What they share is the ink, and that is what lives here.
-LIGHT = {
+LIGHT: dict[str, str] = {
     "page":        "#f9f9f7",
     "surface":     "#fcfcfb",
     "ink":         "#0b0b0b",
@@ -61,7 +61,7 @@ LIGHT = {
     "series-3":    "#1baf7a",
 }
 
-DARK = {
+DARK: dict[str, str] = {
     "page":        "#0d0d0d",
     "surface":     "#1a1a19",
     "ink":         "#ffffff",
@@ -84,5 +84,5 @@ MONO = '"IBM Plex Mono",ui-monospace,Consolas,monospace'
 SERIF = '"IBM Plex Serif",Georgia,serif'
 
 
-def esc(s):
+def esc(s: object) -> str:
     return html.escape(str(s), quote=True)

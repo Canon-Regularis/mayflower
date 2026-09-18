@@ -11,11 +11,14 @@ Writes out/results.html.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
+
 import io
 import json
 import math
 import os
 import sys
+from typing import Any
 
 # tools/ on the path. A no-op as long as this module is only ever run as a
 # script, which it is: Python puts a script's own directory first already. Kept
@@ -23,19 +26,28 @@ import sys
 # imported from tests/, and a convention that holds in two files of three is
 # worse than one that holds in three.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import report_style as style  # noqa: E402
 from report_stats import two_sample_agrees  # noqa: E402
 from report_style import Z_95, esc  # noqa: E402
 
+# A collected result row. experiments/results.json carries 7 fields on every
+# row and 24 more on between 3 and 102 of them, so the row is a mapping and
+# not a TypedDict: one that allowed the sparse half would catch an unknown
+# key and not a missing one, which is the weaker half of what it looks like.
+Result = dict[str, Any]
+Payload = dict[str, Any]
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def load():
+def load() -> Payload:
     p = os.path.join(ROOT, "experiments", "results.json")
-    return json.load(io.open(p, encoding="utf-8"))
+    payload: Payload = json.load(io.open(p, encoding="utf-8"))
+    return payload
 
 
-def by_id(results):
+def by_id(results: Sequence[Result]) -> dict[str, Result]:
     """Index by id, refusing a collision.
 
     A dict comprehension keeps the last of any duplicate, so two results sharing
@@ -44,7 +56,7 @@ def by_id(results):
     so a collision means two different quantities are being called the same
     thing.
     """
-    out = {}
+    out: dict[str, Result] = {}
     for r in results:
         if r["id"] in out:
             raise ValueError("two results share the id {!r}: {} and {}".format(
@@ -53,11 +65,11 @@ def by_id(results):
     return out
 
 
-def fam(results, name):
+def fam(results: Sequence[Result], name: str) -> list[Result]:
     return [r for r in results if r["family"] == name]
 
 
-def group(n, places=0):
+def group(n: float, places: int = 0) -> str:
     """Digit grouping with thin spaces, so a ten-digit integer stays readable."""
     if isinstance(n, float) and places:
         return "{:,.{}f}".format(n, places).replace(",", "&thinsp;")
@@ -66,7 +78,7 @@ def group(n, places=0):
 
 # --- marks ----------------------------------------------------------------
 
-def svg_open(w, h, label, title):
+def svg_open(w: float, h: float, label: str, title: str) -> str:
     """Open a figure at its design size.
 
     The cap stops the page stretching a figure past the width it was drawn for.
@@ -78,7 +90,7 @@ def svg_open(w, h, label, title):
             "<title>{title}</title>").format(w=w, h=h, label=esc(label), title=esc(title))
 
 
-def ladder(bounds, best):
+def ladder(bounds: dict[str, float], best: float) -> str:
     """The bound ladder as one number line.
 
     A single axis in shots. The certified floor, the dominated rung drawn where it
@@ -90,7 +102,9 @@ def ladder(bounds, best):
     # drawn today and would have put a fifth outside the plate.
     span = max(50.0, math.ceil(max(bounds["coverage"], bounds["entropy"],
                                    bounds["waterfilling"], best) / 10.0) * 10.0)
-    x = lambda v: pad + (w - 2 * pad) * v / span
+    def x(v: float) -> float:
+        return pad + (w - 2 * pad) * v / span
+
     y = 96
 
     out = [svg_open(w, h, "The bound ladder on a single axis in shots",
@@ -145,15 +159,18 @@ def ladder(bounds, best):
     return "".join(out)
 
 
-def scaling(points):
+def scaling(points: Sequence[dict[str, Any]]) -> str:
     """Configurations against board side, log y, one series."""
     w, h, l, r, t, b = 520, 230, 52, 16, 18, 40
-    xs = [p["n"] for p in points]
+    xs: list[float] = [p["n"] for p in points]
     ys = [math.log10(p["omega"]) for p in points]
     lo = math.floor(min(ys))
     hi = math.ceil(max(ys))
-    x = lambda v: l + (w - l - r) * (v - min(xs)) / (max(xs) - min(xs))
-    y = lambda v: t + (h - t - b) * (1 - (v - lo) / (hi - lo))
+    def x(v: float) -> float:
+        return l + (w - l - r) * (v - min(xs)) / (max(xs) - min(xs))
+
+    def y(v: float) -> float:
+        return t + (h - t - b) * (1 - (v - lo) / (hi - lo))
 
     out = [svg_open(w, h, "Configuration count against board side, log scale",
                     "Configurations by board side, log scale")]
@@ -177,16 +194,17 @@ def scaling(points):
     return "".join(out)
 
 
-def policies(rows):
+def policies(rows: Sequence[Result]) -> str:
     """Three means with 95% intervals. A dot plot, because these are estimates."""
     w, h, l, r, t = 520, 150, 150, 24, 26
     # Derived, not typed. The literal 40 to 100 held every policy measured so
     # far and would have drawn one outside the plot rather than refusing.
-    vals = [p["value"] for p in rows]
-    cis = [p["ci"] for p in rows]
+    vals: list[float] = [p["value"] for p in rows]
+    cis: list[float] = [p["ci"] for p in rows]
     lo = min(40.0, math.floor((min(vals) - max(cis)) / 10.0) * 10.0)
     hi = max(100.0, math.ceil((max(vals) + max(cis)) / 10.0) * 10.0)
-    x = lambda v: l + (w - l - r) * (v - lo) / (hi - lo)
+    def x(v: float) -> float:
+        return l + (w - l - r) * (v - lo) / (hi - lo)
 
     out = [svg_open(w, h, "Mean shots per policy with 95 percent intervals",
                     "Mean shots to clear, with 95% intervals")]
@@ -222,19 +240,19 @@ def policies(rows):
 
 # --- tables ---------------------------------------------------------------
 
-def chip(exact):
+def chip(exact: bool) -> str:
     return ('<span class="chip chip-exact">exact</span>' if exact
             else '<span class="chip chip-meas">measured</span>')
 
 
-def rows_table(head, rows):
+def rows_table(head: Sequence[str], rows: Sequence[Sequence[Any]]) -> str:
     out = ['<div class="tw"><table><thead><tr>']
     out += ["<th>{}</th>".format(esc(h)) for h in head]
     out.append("</tr></thead><tbody>")
     # A cell holds either plain text or markup this file generated, a chip or a
     # number carrying &thinsp;. Nothing reaches here from outside the repository,
     # so testing for markup is enough to decide whether to escape.
-    def cell(c):
+    def cell(c: Any) -> str:
         raw = isinstance(c, str) and ("<" in c or "&" in c)
         return "<td>{}</td>".format(c if raw else esc(c))
 
@@ -244,7 +262,7 @@ def rows_table(head, rows):
     return "".join(out)
 
 
-def fmt(v, places=4):
+def fmt(v: float | None, places: int = 4) -> str:
     if v is None:
         return "&ndash;"
     if isinstance(v, float):
@@ -252,7 +270,7 @@ def fmt(v, places=4):
     return group(v)
 
 
-def _check_counts(d):
+def _check_counts(d: Payload) -> None:
     """The page quotes d["counts"]; the rows come from d["results"]. If those two
     ever disagree the header is a claim about data the page is not showing."""
     results = d["results"]
@@ -274,7 +292,9 @@ def _check_counts(d):
         raise ValueError("crossChecks is empty; the agreement section would be blank")
 
 
-def _context(d):
+def _context(d: Payload) -> tuple[
+        list[Result], dict[str, Result], dict[str, float], list[Result],
+        Result, float, list[dict[str, Any]]]:
     """The values every section reads off the payload.
 
     Derived once. Restating them in each of the eight sections would replace one
@@ -297,10 +317,7 @@ def _context(d):
     return (R, idx, b, pol, best_row, best, scale_pts)
 
 
-UNPACK = "    (R, idx, b, pol, best_row, best, scale_pts) = _context(d)\n"
-
-
-def section_head(w, d):
+def section_head(w: Callable[[str], int], d: Payload) -> None:
     """The document head, the stylesheet and the wrapper."""
     (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
 
@@ -315,7 +332,7 @@ def section_head(w, d):
     w('<div class="wrap">')
 
 
-def section_masthead(w, d):
+def section_masthead(w: Callable[[str], int], d: Payload) -> None:
     """The hero, which is the number the engine exists to produce."""
     (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # Masthead. The hero is the number the engine exists to produce.
@@ -343,7 +360,7 @@ def section_masthead(w, d):
     w("</div></header>")
 
 
-def section_bound_ladder(w, d):
+def section_bound_ladder(w: Callable[[str], int], d: Payload) -> None:
     """The certified interval and the rungs under it."""
     (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # Bound ladder.
@@ -410,7 +427,7 @@ def section_bound_ladder(w, d):
     w("</section>")
 
 
-def section_sealed_fold(w, d):
+def section_sealed_fold(w: Callable[[str], int], d: Payload) -> None:
     """TRAIN against TEST, and what the seal cost to open."""
     (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # The sealed fold.
@@ -448,7 +465,7 @@ def section_sealed_fold(w, d):
         w("</section>")
 
 
-def section_exact_optima(w, d):
+def section_exact_optima(w: Callable[[str], int], d: Payload) -> None:
     """Where the optimum is known outright."""
     (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # Exact optima.
@@ -480,7 +497,7 @@ def section_exact_optima(w, d):
     w("</section>")
 
 
-def section_noise(w, d):
+def section_noise(w: Callable[[str], int], d: Payload) -> None:
     """The noisy channel, twelve rows the page used to omit."""
     (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # The collector gathered these twelve from docs/M9_RESULTS.txt and the page
@@ -515,7 +532,7 @@ def section_noise(w, d):
     w("</section>")
 
 
-def section_cross_checks(w, d):
+def section_cross_checks(w: Callable[[str], int], d: Payload) -> None:
     """Quantities two tools compute, and what that catches."""
     (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     # Cross checks.
@@ -532,7 +549,7 @@ def section_cross_checks(w, d):
     w("</section>")
 
 
-def section_retractions(w, d):
+def section_retractions(w: Callable[[str], int], d: Payload) -> None:
     """What was withdrawn, the provenance, and the footer."""
     (R, idx, b, pol, best_row, best, scale_pts) = _context(d)
     w('<section class="retract"><h2>Results that contradicted the plan</h2>')
@@ -562,7 +579,7 @@ def section_retractions(w, d):
 
     w('<section><h2>Provenance</h2>')
     w('<p class="lede">{}</p>'.format(esc(d["note"])))
-    srcs = {}
+    srcs: dict[str, int] = {}
     for r in R:
         srcs[r["source"]] = srcs.get(r["source"], 0) + 1
     w(rows_table(["source", "results drawn"],
@@ -577,7 +594,7 @@ def section_retractions(w, d):
     w("</div>")
 
 
-def build(d):
+def build(d: Payload) -> str:
     _check_counts(d)
     o = io.StringIO()
     w = o.write
@@ -602,7 +619,7 @@ def build(d):
 # fills a solid 18-pixel bar, which needs more opacity to read at that height.
 # They were 0.07/0.12 and 0.10/0.16 under one name, so the values looked like
 # drift; under two names they are two decisions.
-def _tokens(c, gapbar):
+def _tokens(c: dict[str, str], gapbar: str) -> str:
     return (
         "  --page:{page}; --surface:{surface}; --ink:{ink}; --ink-2:{ink-2};\n"
         "  --muted:{muted}; --grid:{grid}; --axis:{axis}; --rule:{rule};\n"
@@ -709,7 +726,7 @@ footer { border-top:1px solid var(--grid); padding-top:18px; font-size:13px;
 """
 
 
-def main():
+def main() -> int:
     d = load()
     out = os.path.join(ROOT, "out", "results.html")
     os.makedirs(os.path.dirname(out), exist_ok=True)
