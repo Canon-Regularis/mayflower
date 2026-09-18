@@ -590,10 +590,11 @@ int main(int argc, char** argv) {
     const Instance inst = standardInstance();
     const Report report = buildReport(inst, games);
 
-    // The eleven sections, in the order the contract lists them. The comma
-    // between two keys is a join here; it used to be eleven trailing commas
-    // placed by hand inside one function, so adding a twelfth section meant
-    // remembering one three hundred lines from where it was written.
+    // The eleven sections, in the order the contract lists them. Adding a
+    // twelfth is an entry in this array rather than an edit inside a 359 line
+    // function, which is what the split bought. It does not make the commas a
+    // join: each section still appends its own, and sectionCollapse still ends
+    // without one, so a new section owns its comma the way the others do.
     using Section = bool (*)(std::string&, const Report&);
     const Section sections[] = {
         sectionMeta,

@@ -118,10 +118,12 @@ def two_sample_agrees(a_mean: float, a_sd: float, a_n: float,
     loop although the module already imports math. Its sibling moved its
     arithmetic here for exactly this reason.
 
-    Zero sample sizes are refused rather than divided by: the caller reaches
-    this with whatever the collector recorded, and a games field that never
-    arrived should stop the page rather than produce a verdict from a NaN, for
-    which every comparison is false and so reads as "differs".
+    Counts are refused rather than divided by. This said the unguarded form
+    would "produce a verdict from a NaN", and it would not: a_sd ** 2 / 0
+    raises ZeroDivisionError, and a negative count reaches math.sqrt of a
+    negative and raises ValueError. So the guard trades two unhelpful
+    exceptions from inside the arithmetic for one message naming both counts,
+    which is worth having and is all it does.
     """
     if a_n <= 0 or b_n <= 0:
         raise ValueError("a two-sample comparison needs a positive count on both "
