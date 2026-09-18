@@ -24,7 +24,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ROOT, SKIP, check, exe, report, run, widget_env  # noqa: E402
-from _jsdriver import GLYPHS, write_engine_script  # noqa: E402
+from _jsdriver import GLYPHS, run_js, write_engine_script  # noqa: E402
+from _pool import (CELLS, HIT, LENS, MISS, SUNK, placement_cells,  # noqa: E402
+                   read_pool, survivors)
 
 # The engine as the page inlines it, written once for this process. The
 # harnesses eval it whole, so what they run is what the page runs.
@@ -32,10 +34,6 @@ ENGINE_SCRIPT = write_engine_script()
 
 NODE = os.environ.get("MF_NODE", "node")
 POOL = os.path.join(ROOT, "web", "pool.bin")
-
-
-
-
 
 
 # A DOM only as wide as live.js touches, plus a clock the test drives by hand.
@@ -136,7 +134,6 @@ console.log(JSON.stringify(out));
 """
 
 
-
 # A broken pool is not caught by anything downstream. recompute() finds no
 # survivors, falls through to the exact sweep, and keeps answering correctly at
 # roughly seventy times the cost: measured at 26 s to start and 12.5 s a shot
@@ -211,6 +208,80 @@ def run_pool_probe():
         return None
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
+
+# The widget's handoff ------------------------------------------------------
+#
+# The live widget answers from a 200,000-board sample while the sample is large
+# and from the exact sweep once it is spent. The rule has to key on the sample
+# alone. An earlier version also forced the sampled branch through the first six
+# shots, to keep the expensive opening sweep out of the browser, and that
+# inverted the guarantee: an opening that sinks two ships leaves a handful of
+# survivors, and the widget drew a posterior quantised to that handful and fired
+# on it.
+#
+# The two regimes are complementary only under the survivor rule, because the
+# sample runs out exactly when the record is constraining and a constraining
+# record is a cheap sweep. This holds the rule to that.
+#
+# It lived in tests/test_engine_js.py, whose docstring says it checks the JS
+# engine against the Python oracle. This checks neither: it reads web/live.js,
+# decodes web/pool.bin and asserts on the widget's branch condition. The pool
+# decoder and the survivor rule it carried are now in tests/_pool.py, where the
+# other two pool tests take them from.
+
+def check_widget_handoff():
+    print("\nthe live widget's sample-to-exact handoff")
+    print("========================================")
+    failures = 0
+    src = io.open(os.path.join(ROOT, "web", "live.js"), encoding="utf-8").read()
+
+    m = re.search(r"SWITCH_TO_EXACT\s*=\s*(\d+)", src)
+    threshold = int(m.group(1)) if m else -1
+    m = re.search(r"if \(survivors\.length >= SWITCH_TO_EXACT([^)]*)\) \{", src)
+    extra = m.group(1).strip() if m else "MISSING"
+    ok = m is not None and extra == ""
+    check(ok, "the handoff keys on the survivor count and nothing else",
+          "the branch carries an extra clause: {!r}".format(extra))
+    if not ok:
+        failures += 1
+
+    # The rule is only worth guarding if a thin opening is reachable. Sink the
+    # 2-ship and a 3-ship of the pool's first board: five shots, no misses.
+    raw, n = read_pool(POOL)
+    history = []
+    for j in (4, 2):
+        cs = placement_cells(raw[j], LENS[j])
+        for k, c in enumerate(cs):
+            last = k == len(cs) - 1
+            history.append((c, SUNK if last else HIT, LENS[j] if last else 0))
+
+    # One pass for both answers. This was two passes over the same 200,000
+    # boards running the same rule, one counting survivors and one counting
+    # survivors and their occupancy.
+    alive, counts = survivors(raw, n, history)
+    thin = alive < threshold
+    check(thin, "a five-shot opening can leave {} of {:,} alive".format(alive, n),
+          "nothing to guard: the sample never goes thin in the opening")
+    if not thin:
+        failures += 1
+
+    # And the sampled answer really is wrong there, not merely coarse.
+    job = [{"kind": "marginals", "w": 10, "h": 10, "fleet": LENS,
+            "history": [list(x) for x in history]}]
+    got = run_js(job)
+    if got is None:
+        print("  could not run node; treating as a failure")
+        return 1
+    exact = got[0]
+
+    sampled = [c / alive for c in counts] if alive else [0.0] * CELLS
+    worst = max(abs(sampled[i] - exact[i]) for i in range(CELLS))
+    wrong = worst > 0.10
+    check(wrong, "the sampled posterior is off by {:.2f} there".format(worst),
+          "the sample still agrees with the sweep, so the handoff guards nothing")
+    if not wrong:
+        failures += 1
+    return failures
 
 
 def main():
@@ -302,7 +373,8 @@ def main():
               "accepted: {}".format(", ".join(accepted)))
 
 
-    return report()
+    failures = check_widget_handoff()
+    return report() or (1 if failures else 0)
 
 
 if __name__ == "__main__":

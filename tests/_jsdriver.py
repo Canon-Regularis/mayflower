@@ -22,11 +22,17 @@ running the same code the page runs rather than a copy of it.
 from __future__ import annotations
 
 import io
+import json
 import os
+import subprocess
 import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Distributions disagree about whether the binary is node or nodejs, so the
+# build hands over the one it found.
+NODE = os.environ.get("MF_NODE", "node")
 
 
 def engine_script() -> str:
@@ -69,3 +75,86 @@ def painted_glyphs(pairs):
         if state:
             out.setdefault(state, set()).add(glyph)
     return out
+
+
+# Answering a batch of questions with the real engine, as an ES module rather
+# than through the inlining rewrite above. This lived in
+# tests/test_engine_js.py, and the live widget's handoff check needs it too:
+# that check compares the widget's sampled posterior against the exact one,
+# so it needs both the pool and the engine.
+
+DRIVER = r"""
+import { makeInstance, count, constrain, marginals }
+  from './web/engine.js';
+
+const jobs = JSON.parse(process.argv[2]);
+const out = [];
+for (const j of jobs) {
+  const inst = makeInstance(j.w, j.h, j.fleet);
+  if (j.kind === 'cells') {
+    out.push(Number(count(inst, Int8Array.from(j.cells), null)));
+  } else {
+    const hist = j.history.map(s => ({ cell: s[0], outcome: s[1], length: s[2] }));
+    const { cells, gate } = constrain(inst, hist);
+    if (j.kind === 'marginals') {
+      const m = marginals(inst, cells, gate);
+      const t = Number(m.total);
+      out.push(Array.from(m.occ, v => (t > 0 ? Number(v) / t : 0)));
+    } else {
+      out.push(Number(count(inst, cells, gate)));
+    }
+  }
+}
+console.log(JSON.stringify(out));
+"""
+
+
+def run_js(jobs):
+    driver = os.path.join(ROOT, "_engine_probe.mjs")
+    io.open(driver, "w", encoding="utf-8", newline="\n").write(DRIVER)
+    try:
+        proc = subprocess.run([NODE, driver, json.dumps(jobs)],
+                              cwd=ROOT, capture_output=True, text=True)
+        if proc.returncode != 0:
+            print("node failed:", proc.stderr[:600])
+            return None
+        return json.loads(proc.stdout.strip().split("\n")[-1])
+    finally:
+        if os.path.exists(driver):
+            os.remove(driver)
+
+
+# Driving a widget harness under node and reading back its one JSON line.
+#
+# tests/test_live_exact.py wrote this out twice, byte for byte across
+# twenty-three lines including the thirteen-line comment below, differing only
+# in the temporary file's name and which harness string it wrote there.
+# tests/test_live_js.py has a third, shorter copy.
+#
+# Every failure comes back as {"error": ...} rather than raising. The first
+# version let TimeoutExpired escape, so a loaded machine failed the test with a
+# traceback and no statement of what went wrong: one red suite at 877 s where
+# the same checks pass in 130 s idle. These sweeps are CPU-bound and the clock
+# is the only thing about them that varies, since the widget is deterministic
+# and Math.random is pinned, so a slow machine is not a failing one.
+def run_widget_probe(name, source, pool, engine_script, timeout, env):
+    """Run `source` as a node harness over the pool, engine and live.js."""
+    out_dir = os.path.join(ROOT, "out")
+    os.makedirs(out_dir, exist_ok=True)
+    harness = os.path.join(out_dir, name)
+    io.open(harness, "w", encoding="utf-8", newline="\n").write(source)
+    try:
+        proc = subprocess.run(
+            [NODE, harness, pool, engine_script, os.path.join(ROOT, "web", "live.js")],
+            capture_output=True, text=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        return {"error": "node did not finish inside {} s".format(timeout)}
+    except OSError as exc:
+        return {"error": "node could not be run: {}".format(exc)}
+    finally:
+        if os.path.exists(harness):
+            os.remove(harness)
+    if proc.returncode != 0:
+        return {"error": "node exited {}: {}".format(
+            proc.returncode, proc.stderr.strip()[-120:])}
+    return json.loads(proc.stdout.strip().splitlines()[-1])

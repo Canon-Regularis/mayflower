@@ -29,7 +29,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ROOT, SKIP, check, exe, report, run, widget_env  # noqa: E402
-from _jsdriver import write_engine_script  # noqa: E402
+from _jsdriver import run_widget_probe, write_engine_script  # noqa: E402
 
 # The engine as the page inlines it, written once for this process. The
 # harnesses eval it whole, so what they run is what the page runs.
@@ -39,7 +39,6 @@ NODE = os.environ.get("MF_NODE", "node")
 POOL = os.path.join(ROOT, "web", "pool.bin")
 # Generous, because contention is the only thing that varies here.
 TIMEOUT = 1800
-
 
 
 EXACT_HARNESS = r"""
@@ -81,33 +80,8 @@ console.log(JSON.stringify({ spent: build(300), justOver: build(400) }));
 
 def run_exact_probe():
     """Build the widget on a pool too small to sample from."""
-    harness = os.path.join(ROOT, "out", "_live_exact.js")
-    os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
-    io.open(harness, "w", encoding="utf-8", newline="\n").write(EXACT_HARNESS)
-    try:
-        proc = subprocess.run(
-            [NODE, harness, POOL, ENGINE_SCRIPT,
-             os.path.join(ROOT, "web", "live.js")],
-            capture_output=True, text=True, timeout=TIMEOUT, env=widget_env())
-    except subprocess.TimeoutExpired:
-        # These sweeps are CPU-bound and the clock is the only thing about this
-        # test that varies: the widget is deterministic, Math.random pinned. A
-        # run that outlasts its timeout raises rather than returning, and the
-        # first version let that escape, so a loaded machine failed the test with
-        # a traceback and no statement of what went wrong. It cost one red suite
-        # at 877 s where the same checks pass in 130 s on an idle machine.
-        return {"error": "node did not finish inside {} s".format(TIMEOUT)}
-    except OSError as exc:
-        return {"error": "node could not be run: {}".format(exc)}
-    finally:
-        if os.path.exists(harness):
-            os.remove(harness)
-    if proc.returncode != 0:
-        return {"error": "node exited {}: {}".format(
-            proc.returncode, proc.stderr.strip()[-120:])}
-    return json.loads(proc.stdout.strip().splitlines()[-1])
-
-
+    return run_widget_probe("_live_exact.js", EXACT_HARNESS, POOL, ENGINE_SCRIPT, TIMEOUT,
+                            widget_env())
 
 
 # A game played through the widget, which nothing had done either. The probes
@@ -173,32 +147,8 @@ console.log(JSON.stringify({drivable:true, shots, done, firstExact, sunk, rises,
 
 def run_play_probe():
     """Press Step until the fleet is cleared."""
-    harness = os.path.join(ROOT, "out", "_live_play.js")
-    os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
-    io.open(harness, "w", encoding="utf-8", newline="\n").write(PLAY_HARNESS)
-    try:
-        proc = subprocess.run(
-            [NODE, harness, POOL, ENGINE_SCRIPT,
-             os.path.join(ROOT, "web", "live.js")],
-            capture_output=True, text=True, timeout=TIMEOUT, env=widget_env())
-    except subprocess.TimeoutExpired:
-        # These sweeps are CPU-bound and the clock is the only thing about this
-        # test that varies: the widget is deterministic, Math.random pinned. A
-        # run that outlasts its timeout raises rather than returning, and the
-        # first version let that escape, so a loaded machine failed the test with
-        # a traceback and no statement of what went wrong. It cost one red suite
-        # at 877 s where the same checks pass in 130 s on an idle machine.
-        return {"error": "node did not finish inside {} s".format(TIMEOUT)}
-    except OSError as exc:
-        return {"error": "node could not be run: {}".format(exc)}
-    finally:
-        if os.path.exists(harness):
-            os.remove(harness)
-    if proc.returncode != 0:
-        return {"error": "node exited {}: {}".format(
-            proc.returncode, proc.stderr.strip()[-120:])}
-    return json.loads(proc.stdout.strip().splitlines()[-1])
-
+    return run_widget_probe("_live_play.js", PLAY_HARNESS, POOL, ENGINE_SCRIPT, TIMEOUT,
+                            widget_env())
 
 
 def main():

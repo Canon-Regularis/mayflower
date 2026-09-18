@@ -28,6 +28,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ROOT, SKIP  # noqa: E402
+from _jsdriver import run_js  # noqa: E402
 
 # This file keeps its own counters. They are function local and returned to the
 # caller rather than a mutated module global, so this is a different pattern from
@@ -57,47 +58,6 @@ CASES = [
     (4, 4, [1, 1]),
     (4, 4, [3, 1]),
 ]
-
-DRIVER = r"""
-import { makeInstance, count, constrain, marginals }
-  from './web/engine.js';
-
-const jobs = JSON.parse(process.argv[2]);
-const out = [];
-for (const j of jobs) {
-  const inst = makeInstance(j.w, j.h, j.fleet);
-  if (j.kind === 'cells') {
-    out.push(Number(count(inst, Int8Array.from(j.cells), null)));
-  } else {
-    const hist = j.history.map(s => ({ cell: s[0], outcome: s[1], length: s[2] }));
-    const { cells, gate } = constrain(inst, hist);
-    if (j.kind === 'marginals') {
-      const m = marginals(inst, cells, gate);
-      const t = Number(m.total);
-      out.push(Array.from(m.occ, v => (t > 0 ? Number(v) / t : 0)));
-    } else {
-      out.push(Number(count(inst, cells, gate)));
-    }
-  }
-}
-console.log(JSON.stringify(out));
-"""
-
-
-def run_js(jobs):
-    driver = os.path.join(ROOT, "_engine_probe.mjs")
-    io.open(driver, "w", encoding="utf-8", newline="\n").write(DRIVER)
-    try:
-        proc = subprocess.run([NODE, driver, json.dumps(jobs)],
-                              cwd=ROOT, capture_output=True, text=True)
-        if proc.returncode != 0:
-            print("node failed:", proc.stderr[:600])
-            return None
-        return json.loads(proc.stdout.strip().split("\n")[-1])
-    finally:
-        if os.path.exists(driver):
-            os.remove(driver)
-
 
 def occupancy(board):
     return {c for ship in board for c in ship}
@@ -147,161 +107,6 @@ def count_history(boards, width, history):
         want = [(o, ln) for (_, o, ln) in history]
         n += 1 if got == want else 0
     return n
-
-
-# The widget's handoff ------------------------------------------------------
-#
-# The live widget answers from a 200,000-board sample while the sample is large
-# and from the exact sweep once it is spent. The rule has to key on the sample
-# alone. An earlier version also forced the sampled branch through the first six
-# shots, to keep the expensive opening sweep out of the browser, and that
-# inverted the guarantee: an opening that sinks two ships leaves a handful of
-# survivors, and the widget drew a posterior quantised to that handful and fired
-# on it.
-#
-# The two regimes are complementary only under the survivor rule, because the
-# sample runs out exactly when the record is constraining and a constraining
-# record is a cheap sweep. This holds the rule to that.
-
-LENS = [5, 4, 3, 3, 2]
-
-
-def placement_cells(idx, L, w=10, h=10):
-    hcount = h * (w - L + 1)
-    if idx < hcount:
-        r, c = divmod(idx, w - L + 1)
-        return [r * w + c + k for k in range(L)]
-    j = idx - hcount
-    c, r = divmod(j, h - L + 1)
-    return [(r + k) * w + c for k in range(L)]
-
-
-def pool_boards():
-    raw = io.open(os.path.join(ROOT, "web", "pool.bin"), "rb").read()
-    n = len(raw) // len(LENS)
-    return raw, n
-
-
-def survivors_for(raw, n, history):
-    """Boards of the pool consistent with the record, by the widget's own rule."""
-    alive = 0
-    for bi in range(n):
-        base = bi * len(LENS)
-        owner = {}
-        for j, L in enumerate(LENS):
-            for c in placement_cells(raw[base + j], L):
-                owner[c] = j
-        rem = list(LENS)
-        ok = True
-        for cell, outcome, length in history:
-            j = owner.get(cell)
-            if j is None:
-                if outcome != MISS_:
-                    ok = False
-                    break
-                continue
-            if outcome == MISS_:
-                ok = False
-                break
-            rem[j] -= 1
-            if rem[j] == 0:
-                if outcome != SUNK_ or length != LENS[j]:
-                    ok = False
-                    break
-            elif outcome != HIT_:
-                ok = False
-                break
-        alive += 1 if ok else 0
-    return alive
-
-
-def check_widget_handoff():
-    print("\nthe live widget's sample-to-exact handoff")
-    print("========================================")
-    failures = 0
-    src = io.open(os.path.join(ROOT, "web", "live.js"), encoding="utf-8").read()
-
-    m = re.search(r"SWITCH_TO_EXACT\s*=\s*(\d+)", src)
-    threshold = int(m.group(1)) if m else -1
-    m = re.search(r"if \(survivors\.length >= SWITCH_TO_EXACT([^)]*)\) \{", src)
-    extra = m.group(1).strip() if m else "MISSING"
-    ok = m is not None and extra == ""
-    print("  {:<58} {}".format(
-        "the handoff keys on the survivor count and nothing else",
-        "ok" if ok else "FAILED"))
-    if not ok:
-        print("      the branch carries an extra clause: {!r}".format(extra))
-        failures += 1
-
-    # The rule is only worth guarding if a thin opening is reachable. Sink the
-    # 2-ship and a 3-ship of the pool's first board: five shots, no misses.
-    raw, n = pool_boards()
-    history = []
-    for j in (4, 2):
-        cs = placement_cells(raw[j], LENS[j])
-        for k, c in enumerate(cs):
-            last = k == len(cs) - 1
-            history.append((c, SUNK_ if last else HIT_, LENS[j] if last else 0))
-
-    alive = survivors_for(raw, n, history)
-    print("  {:<58} {}".format(
-        "a five-shot opening can leave {} of {:,} alive".format(alive, n),
-        "ok" if alive < threshold else "FAILED"))
-    if alive >= threshold:
-        print("      nothing to guard: the sample never goes thin in the opening")
-        failures += 1
-
-    # And the sampled answer really is wrong there, not merely coarse.
-    job = [{"kind": "marginals", "w": 10, "h": 10, "fleet": LENS,
-            "history": [list(x) for x in history]}]
-    got = run_js(job)
-    if got is None:
-        print("  could not run node; treating as a failure")
-        return 1
-    exact = got[0]
-
-    counts = [0] * 100
-    kept = 0
-    for bi in range(n):
-        base = bi * len(LENS)
-        owner = {}
-        for j, L in enumerate(LENS):
-            for c in placement_cells(raw[base + j], L):
-                owner[c] = j
-        rem = list(LENS)
-        ok2 = True
-        for cell, outcome, length in history:
-            j = owner.get(cell)
-            if j is None:
-                if outcome != MISS_:
-                    ok2 = False
-                    break
-                continue
-            if outcome == MISS_:
-                ok2 = False
-                break
-            rem[j] -= 1
-            if rem[j] == 0:
-                if outcome != SUNK_ or length != LENS[j]:
-                    ok2 = False
-                    break
-            elif outcome != HIT_:
-                ok2 = False
-                break
-        if ok2:
-            kept += 1
-            for c in owner:
-                counts[c] += 1
-    sampled = [c / kept for c in counts] if kept else [0.0] * 100
-    worst = max(abs(sampled[i] - exact[i]) for i in range(100))
-    print("  {:<58} {}".format(
-        "the sampled posterior is off by {:.2f} there".format(worst),
-        "ok" if worst > 0.10 else "FAILED"))
-    if worst <= 0.10:
-        print("      the sample happens to agree, so this case proves nothing")
-        failures += 1
-    return failures
-
 
 
 # The C++ refuses these outright. A third implementation that answered 0 instead
@@ -451,7 +256,6 @@ def main():
     if withSunk == 0:
         failures += 1
 
-    failures += check_widget_handoff()
 
     # Instance validation, so the browser engine refuses what the C++ refuses.
     print("[instance validation]")
