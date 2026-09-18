@@ -22,7 +22,10 @@
 #pragma once
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
+
+#include "mayflower/random.hpp"
 
 namespace mayflower::detail {
 
@@ -72,6 +75,17 @@ struct Key {
 
     friend bool operator==(const Key& a, const Key& b) {
         return a.ext == b.ext && a.aux == b.aux;
+    }
+};
+
+// The probe for a two-field key. It combines the fields before the mixer sees
+// them, which is the one thing the counting and weighted layer maps needed that
+// the packed no-touching key does not; everything else about those maps is in
+// detail/flat_layer_map.hpp.
+struct KeyHash {
+    [[nodiscard]] std::size_t operator()(const Key& key) const {
+        return static_cast<std::size_t>(
+            splitmix64(key.ext ^ (std::uint64_t{key.aux} * 0x9E3779B1u)));
     }
 };
 

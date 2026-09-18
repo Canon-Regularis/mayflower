@@ -5,6 +5,7 @@
 #include "detail/placement_gate.hpp"
 #include "detail/hashing.hpp"
 #include "detail/cell_ctx.hpp"
+#include "detail/flat_layer_map.hpp"
 #include "detail/entry.hpp"
 
 #include <cstdint>
@@ -90,74 +91,19 @@ struct Layout {
     }
 };
 
-// Flat open-addressed map over the packed key. Same shape as ProfileMap, with
-// the key already a uint64 so the probe needs no combining step.
-class KeyMap {
-public:
-    explicit KeyMap(std::size_t capacityPow2 = 1024) { reserve(capacityPow2); }
-
-    void reserve(std::size_t capacityPow2) {
-        capacity_ = 1;
-        while (capacity_ < capacityPow2) capacity_ <<= 1;
-        mask_ = capacity_ - 1;
-        keys_.assign(capacity_, 0);
-        vals_.assign(capacity_, 0);
-        used_.assign(capacity_, false);
-        dense_.clear();
-        dense_.reserve(capacityPow2);
+// The same layer map again, over the packed no-touching key.
+//
+// It used to be a third copy, opening with "Same shape as ProfileMap, with the
+// key already a uint64 so the probe needs no combining step". The second half
+// of that sentence is the only part that was ever specific to it, and it is
+// now the only part left.
+struct PackedKeyHash {
+    [[nodiscard]] std::size_t operator()(std::uint64_t key) const {
+        return static_cast<std::size_t>(splitmix64(key));
     }
-
-    void clear() {
-        for (std::size_t slot : dense_) used_[slot] = false;
-        dense_.clear();
-    }
-
-    [[nodiscard]] std::size_t size() const { return dense_.size(); }
-
-    void add(std::uint64_t key, std::uint64_t count) {
-        std::size_t slot = splitmix64(key) & mask_;
-        while (true) {
-            if (!used_[slot]) {
-                if (dense_.size() * 10 >= capacity_ * 7) {
-                    grow();
-                    add(key, count);
-                    return;
-                }
-                used_[slot] = true;
-                keys_[slot] = key;
-                vals_[slot] = count;
-                dense_.push_back(slot);
-                return;
-            }
-            if (keys_[slot] == key) {
-                vals_[slot] += count;
-                return;
-            }
-            slot = (slot + 1) & mask_;
-        }
-    }
-
-    template <typename Fn>
-    void forEach(Fn&& fn) const {
-        for (std::size_t slot : dense_) fn(keys_[slot], vals_[slot]);
-    }
-
-private:
-    void grow() {
-        std::vector<std::pair<std::uint64_t, std::uint64_t>> old;
-        old.reserve(dense_.size());
-        for (std::size_t slot : dense_) old.emplace_back(keys_[slot], vals_[slot]);
-        reserve(capacity_ * 2);
-        for (const auto& e : old) add(e.first, e.second);
-    }
-
-    std::size_t capacity_ = 0;
-    std::size_t mask_ = 0;
-    std::vector<std::uint64_t> keys_;
-    std::vector<std::uint64_t> vals_;
-    std::vector<bool> used_;
-    std::vector<std::size_t> dense_;
 };
+
+using KeyMap = detail::FlatLayerMap<std::uint64_t, std::uint64_t, PackedKeyHash>;
 
 using detail::CellCtx;
 using detail::makeCtx;
