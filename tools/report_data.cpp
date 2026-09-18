@@ -25,7 +25,10 @@
 #include "mayflower/game.hpp"
 #include "mayflower/instance.hpp"
 #include "mayflower/policy.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/counting.hpp"
+#include "mayflower/flows.hpp"
+#include "mayflower/sampler.hpp"
 #include "mayflower/random.hpp"
 
 #ifdef _WIN32
@@ -90,23 +93,64 @@ std::string num(double v, int decimals = 6) {
 // rather than being labelled downstream by a reader that assumes it.
 constexpr Fold kReportFold = Fold::Train;
 
-}  // namespace
 
-int main(int argc, char** argv) {
-    // Same hazard as selfplay: the figure data averages over the game count.
-    const int games = argc > 1 ? std::atoi(argv[1]) : 20000;
-    if (games < 1) {
-        std::fprintf(stderr,
-                     "game count must be a positive integer; got \"%s\".\n"
-                     "usage: report_data [games]\n",
-                     argc > 1 ? argv[1] : "");
-        return 2;
+// ---------------------------------------------------------------------------
+// The document, one section at a time.
+//
+// main ran to 359 lines holding eleven banner-delimited sections, which made it
+// the largest function in the repository and the shape tools/render_report.py's
+// build() had before it was split the same way. Three things follow from the
+// split: the trailing comma before each section is a join rather than eleven
+// hand-placed commas, the board pool stops being built inside one section and
+// read by another two hundred lines later, and a section that refuses says so
+// through its return value instead of a bare `return 3` from the middle of a
+// long function.
+//
+// tools/m9/ is the shape this follows.
+// ---------------------------------------------------------------------------
+
+struct Report {
+    const Instance& inst;
+    int games;
+    // The fold-filtered board pool and the policy stream seeds. Built once,
+    // before any section runs, because the self-play section and the collapse
+    // section both walk them and only the first of those used to own them.
+    std::vector<std::vector<ShipPlacement>> boards;
+    std::vector<std::uint64_t> policySeeds;
+};
+
+// Every cell free, drawn from one pool keyed the way tools/selfplay.cpp keys
+// its own, so the density row here and the headline row are the same
+// measurement and collect_results can cross-check them.
+Report buildReport(const Instance& inst, int games) {
+    Report r{inst, games, {}, {}};
+    const BoardBank bank(inst, 0xA1B2C3D4u);
+    r.boards.reserve(static_cast<std::size_t>(games));
+    // Fold discipline, the same walk tools/selfplay.cpp makes. Taking ids
+    // 0..games-1 unfiltered takes whatever the fold hash hands back, which
+    // measures 60.0% train, 20.2% val and 19.8% test: a mixture, published
+    // under a TRAIN label, with 3,966 TEST boards read on every build and no
+    // unseal recorded against any of them.
+    std::uint64_t boardId = 0;
+    while (static_cast<int>(r.boards.size()) < games) {
+        if (inFold(boardId, kReportFold)) r.boards.push_back(bank.board(boardId));
+        ++boardId;
     }
-    const Instance inst = standardInstance();
+    r.policySeeds.resize(static_cast<std::size_t>(games));
+    for (int i = 0; i < games; ++i)
+        r.policySeeds[static_cast<std::size_t>(i)] =
+            keyedSeed(static_cast<std::uint64_t>(i), kPolicyStreamKey);
+    return r;
+}
+
+
+// The instance, the constants, and which tree produced this.
+bool sectionMeta(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
     namespace k = mayflower::constants;
-
-    std::string out = "{\n";
-
     // ---- meta -------------------------------------------------------------
     out += "  \"meta\": {";
     out += "\"instance\": " + quote(inst.describe());
@@ -123,15 +167,36 @@ int main(int argc, char** argv) {
     out += "},\n";
     std::fprintf(stderr, "meta done\n");
 
+    return true;
+}
+
+// Exact prior occupancy, from one forward-backward pass.
+bool sectionPrior(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
+    namespace k = mayflower::constants;
     // ---- exact prior occupancy -------------------------------------------
-    std::uint64_t total = 0;
-    const std::vector<std::uint64_t> occ = occupancyMap(inst, total);
+    const OccupancyMap prior = occupancyMap(inst);
+    const std::uint64_t total = prior.total;
+    const std::vector<std::uint64_t>& occ = prior.counts;
     out += "  \"prior\": {\"width\": " + std::to_string(inst.width) +
            ", \"height\": " + std::to_string(inst.height) +
            ", \"total\": " + std::to_string(total) +
            ", \"counts\": " + jsonArray(occ) + "},\n";
     std::fprintf(stderr, "prior occupancy done\n");
 
+    return true;
+}
+
+// The lattice the sweep walks, and the refusal if it overflowed.
+bool sectionLattice(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
+    namespace k = mayflower::constants;
     // ---- lattice shape ----------------------------------------------------
     const CountResult lattice = countConfigurations(inst);
     // The flag the sweeps compute is worth nothing if the publisher does
@@ -141,7 +206,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "refusing to publish: the lattice count for %s "
                              "exceeded 64 bits and is not exact\n",
                      inst.describe().c_str());
-        return 3;
+        return false;
     }
     out += "  \"lattice\": {\"edges\": " + std::to_string(lattice.edges) +
            ", \"stateVisits\": " + std::to_string(lattice.stateVisits) +
@@ -149,6 +214,16 @@ int main(int argc, char** argv) {
            ", \"layerSizes\": " + jsonArray(lattice.layerSizes) + "},\n";
     std::fprintf(stderr, "lattice done\n");
 
+    return true;
+}
+
+// The same fleet on boards from 6x6 up.
+bool sectionScaling(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
+    namespace k = mayflower::constants;
     // ---- board-size scaling ----------------------------------------------
     out += "  \"scaling\": [";
     bool firstScale = true;
@@ -162,6 +237,16 @@ int main(int argc, char** argv) {
     }
     out += "],\n";
 
+    return true;
+}
+
+// The certified ladder: coverage, entropy, blocking, water filling.
+bool sectionBounds(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
+    namespace k = mayflower::constants;
     // ---- bound ladder -----------------------------------------------------
     const auto wf = waterFillingBound(inst.fleet, k::kOmega0, inst.cellCount());
     out += "  \"bounds\": {\"coverage\": " + std::to_string(k::kCoverageBound) +
@@ -179,27 +264,17 @@ int main(int argc, char** argv) {
     out += "]},\n";
     std::fprintf(stderr, "bounds done\n");
 
-    // ---- self-play: shot-count histograms and shot-order maps -------------
-    const BoardBank bank(inst, 0xA1B2C3D4u);
-    std::vector<std::vector<ShipPlacement>> boards;
-    boards.reserve(static_cast<std::size_t>(games));
-    // Fold discipline, the same walk tools/selfplay.cpp makes. Taking ids
-    // 0..games-1 unfiltered takes whatever the fold hash hands back, which
-    // measures 60.0% train, 20.2% val and 19.8% test: a mixture, published under
-    // a TRAIN label, with 3,966 TEST boards read on every build and no unseal
-    // recorded against any of them. The pool key matches selfplay's, so with the
-    // filter in place the density row here and the headline row are the same
-    // measurement and can be cross-checked against each other.
-    std::uint64_t boardId = 0;
-    while (static_cast<int>(boards.size()) < games) {
-        if (inFold(boardId, kReportFold)) boards.push_back(bank.board(boardId));
-        ++boardId;
-    }
+    return true;
+}
 
-    std::vector<std::uint64_t> policySeeds(static_cast<std::size_t>(games));
-    for (int i = 0; i < games; ++i)
-        policySeeds[static_cast<std::size_t>(i)] =
-            keyedSeed(static_cast<std::uint64_t>(i), kPolicyStreamKey);
+// Self-play: shot-count histograms and shot-order maps.
+bool sectionPolicies(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
+    namespace k = mayflower::constants;
+    // ---- self-play: shot-count histograms and shot-order maps -------------
 
     struct Arm { std::string name; std::unique_ptr<Policy> policy; };
     std::vector<Arm> arms;
@@ -243,7 +318,7 @@ int main(int argc, char** argv) {
 
         if (!firstArm) out += ", ";
         out += "\n    {\"name\": " + quote(arm.name) + ", \"mean\": " + num(mean, 4) +
-               ", \"sd\": " + num(sd, 4) + ", \"ci\": " + num(1.959964 * sd / std::sqrt((double)games), 4) +
+               ", \"sd\": " + num(sd, 4) + ", \"ci\": " + num(mayflower::constants::kZ95 * sd / std::sqrt((double)games), 4) +
                ", \"histogram\": " + jsonArray(histogram) +
                ", \"meanTurn\": " + jsonArray(meanTurn, 3) +
                ", \"shotRate\": " + jsonArray([&] {
@@ -257,6 +332,16 @@ int main(int argc, char** argv) {
     }
     out += "\n  ],\n";
 
+    return true;
+}
+
+// Objective comparison where the optimum is computable.
+bool sectionObjectives(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
+    namespace k = mayflower::constants;
     // ---- objective comparison on exactly solvable instances ---------------
     out += "  \"objectives\": [";
     struct Small { int w, h; std::vector<int> fleet; };
@@ -288,6 +373,16 @@ int main(int argc, char** argv) {
     }
     out += "\n  ],\n";
 
+    return true;
+}
+
+// Blocking certificates, drawn as boards.
+bool sectionBlocking(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
+    namespace k = mayflower::constants;
     // ---- blocking certificates -------------------------------------------
     // A witness set that meets every placement of a lone length-L ship, so the
     // figure can show the covering instead of asserting the number.
@@ -308,20 +403,30 @@ int main(int argc, char** argv) {
     out += "\n  ],\n";
     std::fprintf(stderr, "blocking witnesses done\n");
 
+    return true;
+}
+
+// The opening book: the greedy line down the all-miss branch.
+bool sectionBook(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
+    namespace k = mayflower::constants;
     // ---- opening book: the greedy line down the all-miss branch -----------
     // Take the highest marginal, condition on a miss, repeat. The line stops
     // itself: at marginal 1 every surviving board occupies the cell, so the miss
     // branch is empty.
     out += "  \"openingBook\": [";
     {
-        std::vector<CellConstraint> cells(static_cast<std::size_t>(inst.cellCount()),
-                                          CellConstraint::Free);
+        std::vector<CellConstraint> cells = freeConstraints(inst).cells;
         bool firstStep = true;
         for (int step = 0; step < inst.cellCount(); ++step) {
-            std::uint64_t bookTotal = 0;
             Constraints c;
             c.cells = cells;
-            const std::vector<std::uint64_t> bookOcc = occupancyMap(inst, c, bookTotal);
+            const OccupancyMap book = occupancyMap(inst, c);
+            const std::uint64_t bookTotal = book.total;
+            const std::vector<std::uint64_t>& bookOcc = book.counts;
             if (bookTotal == 0) break;
 
             int best = -1;
@@ -348,6 +453,16 @@ int main(int argc, char** argv) {
     out += "\n  ],\n";
     std::fprintf(stderr, "opening book done\n");
 
+    return true;
+}
+
+// The order-dependence counterexample.
+bool sectionOrder(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
+    namespace k = mayflower::constants;
     // ---- the order-dependence counterexample ------------------------------
     // Two histories over the same shots in a different order, each with the
     // posterior the engine actually computes for it.
@@ -382,6 +497,16 @@ int main(int argc, char** argv) {
     }
 
 
+    return true;
+}
+
+// Showcase games: the exact posterior collapsing shot by shot.
+bool sectionCollapse(std::string& out, const Report& rep) {
+    [[maybe_unused]] const Instance& inst = rep.inst;
+    [[maybe_unused]] const int games = rep.games;
+    [[maybe_unused]] const auto& boards = rep.boards;
+    [[maybe_unused]] const auto& policySeeds = rep.policySeeds;
+    namespace k = mayflower::constants;
     // ---- showcase game: exact posterior collapse --------------------------
     // Full trace for one game only. This is the tier that cannot scale.
     out += "  \"collapse\": [";
@@ -403,9 +528,9 @@ int main(int argc, char** argv) {
         std::vector<int> frames;
         const bool withFrames = (g == 0);
         const auto pushFrame = [&](const Constraints& c) {
-            std::uint64_t frameTotal = 0;
-            const std::vector<std::uint64_t> cells = occupancyMap(inst, c, frameTotal);
-            for (std::uint64_t v : cells) {
+            const OccupancyMap frame = occupancyMap(inst, c);
+            const std::uint64_t frameTotal = frame.total;
+            for (std::uint64_t v : frame.counts) {
                 const double p = frameTotal ? static_cast<double>(v) /
                                                   static_cast<double>(frameTotal)
                                             : 0.0;
@@ -446,7 +571,51 @@ int main(int argc, char** argv) {
         firstGame = false;
         std::fprintf(stderr, "collapse game %d done (%d shots)\n", g, result.shots);
     }
-    out += "\n  ]\n}\n";
+    out += "\n  ]\n";
+    return true;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    // Same hazard as selfplay: the figure data averages over the game count.
+    const int games = argc > 1 ? std::atoi(argv[1]) : 20000;
+    if (games < 1) {
+        std::fprintf(stderr,
+                     "game count must be a positive integer; got \"%s\".\n"
+                     "usage: report_data [games]\n",
+                     argc > 1 ? argv[1] : "");
+        return 2;
+    }
+    const Instance inst = standardInstance();
+    const Report report = buildReport(inst, games);
+
+    // The eleven sections, in the order the contract lists them. The comma
+    // between two keys is a join here; it used to be eleven trailing commas
+    // placed by hand inside one function, so adding a twelfth section meant
+    // remembering one three hundred lines from where it was written.
+    using Section = bool (*)(std::string&, const Report&);
+    const Section sections[] = {
+        sectionMeta,
+        sectionPrior,
+        sectionLattice,
+        sectionScaling,
+        sectionBounds,
+        sectionPolicies,
+        sectionObjectives,
+        sectionBlocking,
+        sectionBook,
+        sectionOrder,
+        sectionCollapse,
+    };
+
+    std::string out = "{\n";
+    for (Section section : sections) {
+        // A section that refuses stops the document. report_data publishes a
+        // contract, and a page built from a partial one looks complete.
+        if (!section(out, report)) return 3;
+    }
+    out += "}\n";
 
     std::printf("%s", out.c_str());
     return 0;
