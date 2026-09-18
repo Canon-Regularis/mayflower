@@ -9,7 +9,10 @@
 
 #include "mayflower/instance.hpp"
 #include "mayflower/observations.hpp"
-#include "mayflower/profile_dp.hpp"
+#include "mayflower/constraints.hpp"
+#include "mayflower/flows.hpp"
+#include "mayflower/outcomes.hpp"
+#include "mayflower/platform.hpp"
 
 #include "harness.hpp"
 #include "oracle/brute_force.hpp"
@@ -35,9 +38,7 @@ void testPlacementFlowInvariants() {
     };
     for (const Case& c : cases) {
         const Instance inst(c.w, c.h, c.fleet);
-        mayflower::Constraints free;
-        free.cells.assign(static_cast<std::size_t>(inst.cellCount()),
-                          mayflower::CellConstraint::Free);
+        const mayflower::Constraints free = mayflower::freeConstraints(inst);
         const auto flows = mayflower::analyse(inst, free);
         const auto lengths = inst.distinctLengths();
         const auto mult = inst.multiplicities();
@@ -122,13 +123,12 @@ void testOutcomesAgainstOracle() {
         for (const auto& b : boards)
             if (oracle::simulate(b, shotCells) == observed) consistent.push_back(b);
 
-        std::uint64_t total = 0;
-        const auto dist = mayflower::outcomeDistribution(inst, h, total);
-        checkEq(total, static_cast<std::uint64_t>(consistent.size()),
+        const auto dist = mayflower::outcomeDistribution(inst, h);
+        checkEq(dist.total, static_cast<std::uint64_t>(consistent.size()),
                 std::string(sc.label) + ": |Omega|");
 
         for (int cell = 0; cell < W * H; ++cell) {
-            const OutcomeDistribution& d = dist[static_cast<std::size_t>(cell)];
+            const OutcomeDistribution& d = dist.cells[static_cast<std::size_t>(cell)];
             if (h.shot(cell)) {
                 expect(!d.shootable, std::string(sc.label) + ": shot cells are not shootable");
                 continue;
@@ -152,10 +152,10 @@ void testOutcomesAgainstOracle() {
             checkEq(d.hit, want.hit, tag + " hit");
             for (std::size_t L = 0; L < d.sunk.size(); ++L)
                 checkEq(d.sunk[L], want.sunk[L], tag + " sunk(" + std::to_string(L) + ")");
-            checkEq(d.total(), total, tag + " outcomes partition Omega");
+            checkEq(d.total(), dist.total, tag + " outcomes partition Omega");
         }
         std::printf("  %-18s |Omega| = %6llu, all %d candidate cells exact\n", sc.label,
-                    static_cast<unsigned long long>(total), W * H - static_cast<int>(shotCells.size()));
+                    static_cast<unsigned long long>(dist.total), W * H - static_cast<int>(shotCells.size()));
     }
 }
 
@@ -168,19 +168,18 @@ void testTurnZeroChannelIsBinary() {
     std::printf("[turn 0 channel]\n");
     const Instance inst = mayflower::standardInstance();
     const History empty(inst);
-    std::uint64_t total = 0;
-    const auto dist = mayflower::outcomeDistribution(inst, empty, total);
+    const auto dist = mayflower::outcomeDistribution(inst, empty);
     // Pinned as a literal rather than read from constants.hpp. Comparing a
     // sweep against the header that holds the sweep's own published value is
     // circular: editing the header to match a changed sweep made this check
     // pass again. The literal is the value that literal enumeration and two
     // independent reimplementations agree on.
-    checkEq(total, std::uint64_t{15046987768ull}, "turn-0 |Omega|");
+    checkEq(dist.total, std::uint64_t{15046987768ull}, "turn-0 |Omega|");
 
     double bestP = -1.0, bestIG = -1.0;
     int tiedOnP = 0, tiedOnIG = 0;
     for (int cell = 0; cell < inst.cellCount(); ++cell) {
-        const auto& d = dist[static_cast<std::size_t>(cell)];
+        const auto& d = dist.cells[static_cast<std::size_t>(cell)];
         expect(d.shootable, "every cell is shootable at turn 0");
         std::uint64_t sunkTotal = 0;
         for (std::uint64_t v : d.sunk) sunkTotal += v;
@@ -214,13 +213,12 @@ void testSunkOutcomesEnterTheEntropy() {
     mayflower::History h(inst);
     h.add(2, 2, mayflower::Outcome::Hit);
 
-    std::uint64_t total = 0;
-    const auto dist = mayflower::outcomeDistribution(inst, h, total);
+    const auto dist = mayflower::outcomeDistribution(inst, h);
 
     int withSink = 0;
     double worst = 0.0;
     for (int c = 0; c < inst.cellCount(); ++c) {
-        const auto& d = dist[static_cast<std::size_t>(c)];
+        const auto& d = dist.cells[static_cast<std::size_t>(c)];
         if (!d.shootable) continue;
         const std::uint64_t t = d.total();
         if (t == 0) continue;
@@ -256,6 +254,6 @@ int main() {
     testTurnZeroChannelIsBinary();
     testSunkOutcomesEnterTheEntropy();
 
-    const auto dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const auto dt = mf::test::elapsed(t0);
     return mf::test::report(dt);
 }

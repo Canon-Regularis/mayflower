@@ -21,14 +21,21 @@ namespace mayflower {
 std::uint64_t occupancyCount(const Instance& inst, int row, int col);
 
 // Every cell's occupancy count, from one forward and one backward sweep.
-// Returns a row-major vector of length cellCount(). `total` receives |Omega|.
 //
-// Invariant: the returned counts sum to shipCells() * total exactly.
-std::vector<std::uint64_t> occupancyMap(const Instance& inst,
-                                        const Constraints& constraints,
-                                        std::uint64_t& total);
+// Invariant: counts sum to shipCells() * total exactly.
+//
+// Both numbers come back together. This used to return the vector and write
+// |Omega| through a std::uint64_t& out-parameter, which made the caller declare
+// an uninitialised total on the line above and left the two free to drift
+// apart. LatticeFlows below is the same pair plus the placement flows and has
+// always been a struct, so the two shapes disagreed inside one header.
+struct OccupancyMap {
+    std::uint64_t total = 0;                // |Omega| under the constraints
+    std::vector<std::uint64_t> counts;      // per cell, row-major
+};
 
-std::vector<std::uint64_t> occupancyMap(const Instance& inst, std::uint64_t& total);
+OccupancyMap occupancyMap(const Instance& inst, const Constraints& constraints);
+OccupancyMap occupancyMap(const Instance& inst);
 
 // ---------------------------------------------------------------------------
 // Placement flows.
