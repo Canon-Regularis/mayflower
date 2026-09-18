@@ -14,19 +14,18 @@ shipped code rather than a copy.
 
 from __future__ import annotations
 
-import base64
 import io
 import json
 import os
 import re
 import subprocess
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run, widget_env  # noqa: E402
+from _harness import ROOT, SKIP, check, report, widget_env  # noqa: E402
 from _jsdriver import GLYPHS, run_js, write_engine_script  # noqa: E402
-from _pool import (CELLS, HIT, LENS, MISS, SUNK, placement_cells,  # noqa: E402
-                   read_pool, survivors)
+from _pool import CELLS, HIT, LENS, SUNK, placement_cells, read_pool, survivors  # noqa: E402
 
 # The engine as the page inlines it, written once for this process. The
 # harnesses eval it whole, so what they run is what the page runs.
@@ -185,7 +184,7 @@ console.log(JSON.stringify(out));
 """
 
 
-def run_pool_probe():
+def run_pool_probe() -> Any:
     """Build the widget against malformed pools; returns label -> verdict."""
     harness = os.path.join(ROOT, "out", "_live_pool.js")
     os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
@@ -229,7 +228,7 @@ def run_pool_probe():
 # decoder and the survivor rule it carried are now in tests/_pool.py, where the
 # other two pool tests take them from.
 
-def check_widget_handoff():
+def check_widget_handoff() -> int:
     print("\nthe live widget's sample-to-exact handoff")
     print("========================================")
     failures = 0
@@ -284,7 +283,7 @@ def check_widget_handoff():
     return failures
 
 
-def main():
+def main() -> int:
     print("the live widget's playback")
     print("==========================")
     if not os.path.exists(POOL):
@@ -314,7 +313,6 @@ def main():
         print("  the harness failed:\n" + (proc.stderr or "")[:2000])
         return 1
 
-    import json
     r = json.loads(proc.stdout.strip().splitlines()[-1])
 
     check(r["pendingAfterPlay"] == 1, "Play schedules exactly one tick",
@@ -345,7 +343,7 @@ def main():
     # of the vocabulary in tests/_jsdriver.py rather than against each other's
     # source text, which is what the check used to do and what would have
     # blocked ever sharing a glyphFor().
-    painted = {}
+    painted: dict[str, set[str]] = {}
     for cls, glyph in re.findall(r'class="(lc[^"]*)"[^>]*>([^<]*)<', r["boardHtml"]):
         state = next((k for k in GLYPHS if k in cls), None)
         if state:

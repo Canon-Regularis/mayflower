@@ -25,9 +25,10 @@ import json
 import os
 import re
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, failures, report, run  # noqa: E402
+from _harness import ROOT, SKIP, check, failures, report  # noqa: E402
 
 FIGURES = os.path.join(ROOT, "out", "figures.json")
 
@@ -40,7 +41,21 @@ MISS = 0
 
 
 
-def test_blocking_hover():
+def incidence(tip: str) -> int:
+    """The placement count a blocking-board tooltip states.
+
+    Written out three times as re.search(...).group(1), which reads a match
+    object that may be None. A tooltip that stopped carrying its count gave an
+    AttributeError on NoneType from inside a comprehension; it now says which
+    tooltip and what was expected of it.
+    """
+    m = re.search(r"(?:meets|:) (\d+) of the", tip)
+    if m is None:
+        raise ValueError("a blocking-board tooltip states no incidence: " + tip[:80])
+    return int(m.group(1))
+
+
+def test_blocking_hover() -> None:
     """The blocking boards answer a hover, and answer it with the truth.
 
     Issue #6: every other board on the page carried a tooltip and these four did
@@ -91,7 +106,7 @@ def test_blocking_hover():
     # length, so a tooltip reporting a flat 2 for every cell passed that and the
     # sums above, which are computed straight from the function. The rendered
     # incidences have to satisfy the same identity.
-    rendered = [int(re.search(r"(?:meets|:) (\d+) of the", t).group(1)) for t in tips]
+    rendered = [incidence(t) for t in tips]
     check(sum(rendered) == 3 * 160,
           "the incidences the figure prints sum to 3 x 160 as well",
           "got {}".format(sum(rendered)))
@@ -168,8 +183,7 @@ def test_blocking_hover():
           "whose ramp shows every step of the scale",
           "buckets in the key: {}".format(sorted(swatches)))
 
-    pairs = sorted((int(re.search(r"(?:meets|:) (\d+) of the", t).group(1)), int(b))
-                   for b, t in graded)
+    pairs = sorted((incidence(t), int(b)) for b, t in graded)
     check(all(pairs[i][1] <= pairs[i + 1][1] for i in range(len(pairs) - 1)),
           "a cell met by more placements is never shaded lighter",
           "buckets out of order: {}".format(pairs[:6]))
@@ -182,11 +196,11 @@ def test_blocking_hover():
     five = build_report.blocking_boards(
         [{"length": 5, "beta": 20, "optimal": True, "cells": list(range(20))}], W, H)
 
-    def tones(svg_text):
-        out = {}
+    def tones(svg_text: str) -> dict[int, set[int]]:
+        out: dict[int, set[int]] = {}
         for bucket, tip in re.findall(
                 r'fill="var\(--ramp-(\d+)\)" data-tip="([^"]+)"', svg_text):
-            n = int(re.search(r"(?:meets|:) (\d+) of the", tip).group(1))
+            n = incidence(tip)
             out.setdefault(n, set()).add(int(bucket))
         return out
 
@@ -202,7 +216,7 @@ def test_blocking_hover():
           "highest bucket {}".format(max(b for bs in t5.values() for b in bs)))
 
 
-def test_prose_figures(fig):
+def test_prose_figures(fig: dict[str, Any]) -> None:
     """Numbers written into the prose, held to the data they describe.
 
     The page's own claim is that nothing on it is typed in, and for the figures
@@ -260,7 +274,7 @@ def test_prose_figures(fig):
                       stated.group(1) if stated else "?", worse, best, worse - best))
 
 
-def test_structure(fig):
+def test_structure(fig: dict[str, Any]) -> None:
     """Structure the figures assert and nothing checked.
 
     The prior's symmetry, the orbit count, the opening tie and the lattice
@@ -273,8 +287,9 @@ def test_structure(fig):
     counts, total = fig["prior"]["counts"], fig["prior"]["total"]
     W = H = 10
 
-    def at(r, c):
-        return counts[r * W + c]
+    def at(r: int, c: int) -> int:
+        cell: int = counts[r * W + c]
+        return cell
 
     # Every element of the dihedral group, not just the two flips: the diagonal
     # is what folds 100 cells into 15 rather than into 30.
@@ -331,7 +346,7 @@ def test_structure(fig):
           "{} edges against {} states".format(lat["edges"], lat["stateVisits"]))
 
 
-def test_prose_against_experiments():
+def test_prose_against_experiments() -> None:
     """Prose literals whose source is not out/figures.json.
 
     test_prose_figures below covers the four quantities the renderer can reach
@@ -419,7 +434,7 @@ def test_prose_against_experiments():
               m.group(1) if m else "?", j.group(1) if j else "?"))
 
 
-def main():
+def main() -> int:
     print("the figure-data contract")
     print("========================")
     test_blocking_hover()

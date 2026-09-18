@@ -18,22 +18,21 @@ from __future__ import annotations
 import io
 import os
 import re
-import subprocess
 import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+from _harness import ROOT, SKIP, check, exe, report, require_exe, run  # noqa: E402
 from _pool import H, LENS, SHIP_CELLS, W, placement_cells, slot_count  # noqa: E402
 
 
-def test_export_pool():
+def test_export_pool() -> None:
     """Run the generator and read what it wrote."""
     print("[export_pool writes a legal pool]")
     tmp = tempfile.mkdtemp()
     out = os.path.join(tmp, "pool.bin")
     wanted = 64
-    r = run([exe("export_pool"), out, str(wanted), "0xC0FFEE"], timeout=600)
+    r = run([require_exe("export_pool"), out, str(wanted), "0xC0FFEE"], timeout=600)
     check(r.returncode == 0, "the generator succeeds", r.stderr.strip()[:70])
     if not os.path.exists(out):
         check(False, "it wrote a pool at all")
@@ -47,7 +46,7 @@ def test_export_pool():
     illegal, overlapping, wrong_size = 0, 0, 0
     occ = [0] * (W * H)
     for b in range(len(raw) // len(LENS)):
-        used = set()
+        used: set[int] = set()
         base = b * len(LENS)
         for j, L in enumerate(LENS):
             idx = raw[base + j]
@@ -79,21 +78,21 @@ def test_export_pool():
     # The same key must give the same pool, or the pool is not reproducible and
     # nothing downstream that quotes it can be replayed.
     again = os.path.join(tmp, "pool2.bin")
-    run([exe("export_pool"), again, str(wanted), "0xC0FFEE"], timeout=600)
+    run([require_exe("export_pool"), again, str(wanted), "0xC0FFEE"], timeout=600)
     check(os.path.exists(again) and io.open(again, "rb").read() == raw,
           "the same key reproduces the same pool byte for byte")
 
     other = os.path.join(tmp, "pool3.bin")
-    run([exe("export_pool"), other, str(wanted), "0xBEEF"], timeout=600)
+    run([require_exe("export_pool"), other, str(wanted), "0xBEEF"], timeout=600)
     check(os.path.exists(other) and io.open(other, "rb").read() != raw,
           "and a different key gives a different pool")
 
 
-def test_selfplay():
+def test_selfplay() -> None:
     """Run it and hold its summary to what the numbers must satisfy."""
     print("\n[selfplay reports a consistent summary]")
     games = 60
-    r = run([exe("selfplay"), str(games), "0", "train"], timeout=900)
+    r = run([require_exe("selfplay"), str(games), "0", "train"], timeout=900)
     check(r.returncode == 0, "the run succeeds", r.stderr.strip()[:70])
     text = r.stdout
 
@@ -133,13 +132,13 @@ def test_selfplay():
     # table verbatim into the headline record, so a malformed figure here is
     # what the pre-registered run would have preserved.
     saves = re.findall(r"CRN saves (\S+)", text)
-    check(saves, "the paired table reports a CRN saving", "none found")
+    check(bool(saves), "the paired table reports a CRN saving", "none found")
     bad = [v for v in saves if not re.fullmatch(r"\d+(?:\.\d+)?x|unbounded", v)]
     check(not bad, "every CRN saving is a number or a stated non-number",
           "got {}".format(sorted(set(bad))))
 
     rhos = re.findall(r"rho\s+(\S+)", text)
-    check(rhos, "the paired table reports a correlation", "none found")
+    check(bool(rhos), "the paired table reports a correlation", "none found")
     bad = [v for v in rhos if not re.fullmatch(r"-?\d+\.\d+", v)]
     check(not bad, "every correlation is a number", "got {}".format(sorted(set(bad))))
 
@@ -157,15 +156,15 @@ def test_selfplay():
           "{} against {}".format(len(parsed["paired"]), len(saves)))
 
 
-def test_optimal_pruning():
+def test_optimal_pruning() -> None:
     """The pruning ladder, whose last column is the claim that matters."""
     print("\n[optimal's pruning ladder agrees with itself]")
-    r = run([exe("optimal"), "pruning"], timeout=900)
+    r = run([require_exe("optimal"), "pruning"], timeout=900)
     check(r.returncode == 0, "the ladder runs", r.stderr.strip()[:70])
     text = r.stdout
 
     verdicts = re.findall(r"^\s*\S+ \{[^}]*\}\s+\d+\s+[\d.]+.*?\s(yes|no|-)\s*$", text, re.M)
-    check(verdicts, "the agreement column is printed",
+    check(bool(verdicts), "the agreement column is printed",
           "{} rows".format(len(verdicts)))
     check("no" not in verdicts,
           "no pruning level disagrees with another",
@@ -182,7 +181,7 @@ def test_optimal_pruning():
               "got {}".format(m.group(1) if m else "nothing"))
 
 
-def test_ladder_count_in_docs():
+def test_ladder_count_in_docs() -> None:
     """The one count in docs/ that nothing derived.
 
     tests/test_stated_counts.py derives every other documented count from the
@@ -197,7 +196,7 @@ def test_ladder_count_in_docs():
     rung comparison, which doubled it.
     """
     print("[the ladder count docs/BENCHMARKS.md quotes]")
-    r = run([exe("test_ladder")], timeout=900)
+    r = run([require_exe("test_ladder")], timeout=900)
     check(r.returncode == 0, "test_ladder passes", r.stdout.strip()[-200:])
     m = re.search(r"^(\d+) checks, (\d+) failures", r.stdout, re.M)
     check(bool(m), "and reports how many checks it made")
@@ -213,7 +212,7 @@ def test_ladder_count_in_docs():
           "the document says {:,}, the run makes {:,}".format(stated, actual))
 
 
-def main():
+def main() -> int:
     print("the tools nothing ran")
     print("=====================")
     missing = [t for t in ("export_pool", "selfplay", "optimal", "test_ladder")

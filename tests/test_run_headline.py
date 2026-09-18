@@ -20,9 +20,10 @@ import os
 import re
 import subprocess
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+from _harness import ROOT, check, report  # noqa: E402
 
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "python"))
@@ -35,34 +36,45 @@ import stats  # noqa: E402
 class NeverRuns:
     """Stands in for subprocess. Reaching it at all is the failure."""
 
-    launched = []
+    launched: list[tuple[object, ...]] = []
 
     @staticmethod
-    def run(*args, **kwargs):
+    def run(*args: Any, **kwargs: Any) -> None:
         NeverRuns.launched.append(args)
         raise AssertionError("selfplay was launched past a refusal")
 
 
-def guarded(fold="test", games="20000"):
+# Every rebinding below goes through setattr and getattr with a literal name,
+# rather than stats.require_unseal = ... and a type: ignore beside it.
+#
+# The assignments are genuinely unsound: one puts a class where a module is
+# declared, and three put a one-argument lambda where a two-argument function
+# is. Silencing that with ignores would leave seven of them for
+# --warn-unused-ignores to police, and the ignore says only that something was
+# wrong here once. setattr says what is happening, which is that a test is
+# deliberately swapping a module attribute out and putting it back.
+def guarded(fold: str = "test", games: str = "20000") -> int:
     """Call main() with both gates observable and selfplay unreachable."""
-    saved = (stats.require_unseal, stats.verify_audit, run_headline.subprocess,
-             sys.argv)
+    saved = (getattr(stats, "require_unseal"), getattr(stats, "verify_audit"),
+             getattr(run_headline, "subprocess"), sys.argv)
     NeverRuns.launched = []
-    run_headline.subprocess = NeverRuns
+    setattr(run_headline, "subprocess", NeverRuns)
     sys.argv = ["run_headline.py", "--games", games, "--fold", fold]
     try:
         return run_headline.main()
     finally:
-        (stats.require_unseal, stats.verify_audit, run_headline.subprocess,
-         sys.argv) = saved
+        setattr(stats, "require_unseal", saved[0])
+        setattr(stats, "verify_audit", saved[1])
+        setattr(run_headline, "subprocess", saved[2])
+        sys.argv = saved[3]
 
 
-def test_gates():
+def test_gates() -> None:
     print("[the two gates on TEST]")
 
     # Gate one: the unseal must already be recorded.
-    stats.require_unseal = lambda name: (_ for _ in ()).throw(
-        PermissionError("no unseal on record for " + name))
+    setattr(stats, "require_unseal", lambda name: (_ for _ in ()).throw(
+        PermissionError("no unseal on record for " + name)))
     rc = guarded()
     check(rc == 2, "TEST is refused when no unseal is on record",
           "returned {}".format(rc))
@@ -71,28 +83,28 @@ def test_gates():
     # Gate two: the chain the unseal sits in must verify. A recorded unseal in a
     # log that has been edited underneath it is worth nothing, and this gate is
     # the only thing that says so.
-    stats.require_unseal = lambda name: None
-    stats.verify_audit = lambda: (False, 7)
+    setattr(stats, "require_unseal", lambda name: None)
+    setattr(stats, "verify_audit", lambda: (False, 7))
     rc = guarded()
     check(rc == 2, "TEST is refused when the audit chain does not verify",
           "returned {}".format(rc))
     check(not NeverRuns.launched, "and selfplay is never launched then either")
 
 
-def test_train_needs_no_token():
+def test_train_needs_no_token() -> None:
     """TRAIN is not sealed, so neither gate applies to it."""
     print("\n[TRAIN is not gated]")
     consulted = []
-    stats.require_unseal = lambda name: consulted.append(name)
+    setattr(stats, "require_unseal", lambda name: consulted.append(name))
     try:
         guarded(fold="train", games="10")
     except AssertionError:
         pass        # reached selfplay, which is the point: it was not refused
     check(not consulted, "TRAIN does not consult the seal at all")
-    check(NeverRuns.launched, "and it proceeds to the run")
+    check(bool(NeverRuns.launched), "and it proceeds to the run")
 
 
-def test_parser():
+def test_parser() -> None:
     print("\n[the selfplay parser]")
     captured = (
         "policy                   mean      sd          95% CI        med    p95"
@@ -144,7 +156,7 @@ def test_parser():
           "got {} policies".format(len(empty["policies"])))
 
 
-def test_provenance():
+def test_provenance() -> None:
     """The field that pins a headline number to a build.
 
     The defect was that this recorded the empty string on every run, so what
@@ -205,7 +217,7 @@ def test_provenance():
     # in the module it was defined in. The MSYS2 UCRT64 CI leg is the real
     # case: no git, and the record has to say so rather than crash.
     import _provenance
-    saved = _provenance.subprocess
+    saved = getattr(_provenance, "subprocess")
 
     class NoGit:
         # full_commit catches subprocess.SubprocessError, and it looks the name
@@ -213,20 +225,20 @@ def test_provenance():
         SubprocessError = subprocess.SubprocessError
 
         @staticmethod
-        def run(*a, **k):
+        def run(*a: Any, **k: Any) -> None:
             raise OSError("git is not installed")
 
-    _provenance.subprocess = NoGit
+    setattr(_provenance, "subprocess", NoGit)
     try:
         fallback = run_headline.commit()
     finally:
-        _provenance.subprocess = saved
+        setattr(_provenance, "subprocess", saved)
     check(fallback == "unknown",
           "and with no git at all it records the stated fallback",
           "got {!r}".format(fallback))
 
 
-def main():
+def main() -> int:
     print("the seal verifier")
     print("=================")
     test_gates()

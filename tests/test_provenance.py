@@ -45,6 +45,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Sequence
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ROOT, SKIP, check, report  # noqa: E402
@@ -80,7 +81,7 @@ RESULT_SOURCES = (
 )
 
 
-def walk(spec):
+def walk(spec: Sequence[tuple[str, tuple[str, ...] | None]]) -> list[str]:
     """Every file a source specification names, as absolute paths."""
     out = []
     for rel, suffixes in spec:
@@ -96,7 +97,8 @@ def walk(spec):
     return out
 
 
-def newer_than(artefact, spec):
+def newer_than(artefact: str,
+               spec: Sequence[tuple[str, tuple[str, ...] | None]]) -> list[str]:
     """Sources modified after the artefact was written, newest first.
 
     A one second slack, because a build that writes the artefact in the same
@@ -109,7 +111,7 @@ def newer_than(artefact, spec):
     return [os.path.relpath(p, ROOT).replace(os.sep, "/") for _t, p in late]
 
 
-def head_commit():
+def head_commit() -> str | None:
     """HEAD at the short length the tools stamp, or None where git cannot say."""
     try:
         out = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"],
@@ -119,7 +121,7 @@ def head_commit():
         return None
 
 
-def is_shallow():
+def is_shallow() -> bool:
     """Whether this clone holds only part of the history.
 
     CI checks out with actions/checkout's default fetch-depth of 1, so almost
@@ -135,7 +137,7 @@ def is_shallow():
         return True
 
 
-def commit_exists(rev):
+def commit_exists(rev: str) -> bool | None:
     """Whether this repository has such a commit.
 
     Catches a stamp that never named anything, which a hand-edited artefact or a
@@ -152,7 +154,7 @@ def commit_exists(rev):
         return False
 
 
-def main():
+def main() -> int:
     print("a page names the engine that built it, and nothing is stale")
     print("==========================================================")
 
@@ -178,7 +180,7 @@ def main():
 
     stamped = meta.get("commit", UNKNOWN)
     if stamped != UNKNOWN and can_resolve:
-        check(commit_exists(stamped),
+        check(commit_exists(stamped) is True,
               "and that commit exists in this repository",
               "figure data names {}, which git cannot resolve".format(stamped))
 
@@ -212,7 +214,7 @@ def main():
     if os.path.exists(RESULTS):
         got = json.loads(io.open(RESULTS, encoding="utf-8").read()).get("commit", UNKNOWN)
         if got != UNKNOWN and can_resolve:
-            check(commit_exists(got),
+            check(commit_exists(got) is True,
                   "experiments/results.json names a commit that exists",
                   "results.json names {}, which git cannot resolve".format(got))
         # Only against its own sources. The ordering against

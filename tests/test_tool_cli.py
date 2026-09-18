@@ -19,13 +19,12 @@ while reporting success would be believed.
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+from _harness import SKIP, check, exe, report, require_exe, run  # noqa: E402
 
 
 
@@ -40,7 +39,7 @@ from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
 BAD = ("0", "-5", "abc", "")
 
 
-def main():
+def main() -> int:
     print("tool argument handling")
     print("======================")
 
@@ -56,7 +55,8 @@ def main():
     for tool in tools:
         for arg in BAD:
             # export_pool takes the path first, so its count is the second slot.
-            args = [exe(tool), pool, arg] if tool == "export_pool" else [exe(tool), arg]
+            binary = require_exe(tool)
+            args = [binary, pool, arg] if tool == "export_pool" else [binary, arg]
             started = time.time()
             r = run(args, timeout=180)
             elapsed = time.time() - started

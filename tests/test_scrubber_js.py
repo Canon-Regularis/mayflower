@@ -19,10 +19,11 @@ import json
 import os
 import subprocess
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _jsdriver import GLYPHS, painted_glyphs  # noqa: E402
-from _harness import ROOT, SKIP, check, exe, report, run, widget_env  # noqa: E402
+from _harness import ROOT, SKIP, check, report, widget_env  # noqa: E402
 
 NODE = os.environ.get("MF_NODE", "node")
 FIGURES = os.path.join(ROOT, "out", "figures.json")
@@ -212,7 +213,7 @@ console.log(JSON.stringify(out));
 """
 
 
-def run_malformed_probe(payload):
+def run_malformed_probe(payload: dict[str, Any]) -> Any:
     """Build the widget against malformed payloads; returns label -> result."""
     harness = os.path.join(ROOT, "out", "_scrub_malformed.js")
     data = os.path.join(ROOT, "out", "_scrub_payload.json")
@@ -232,7 +233,7 @@ def run_malformed_probe(payload):
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
-def main():
+def main() -> int:
     print("the belief scrubber's playback")
     print("==============================")
     if not os.path.exists(FIGURES):
@@ -338,7 +339,7 @@ def main():
     return report()
 
 
-def check_glyphs_agree(scrub_pairs):
+def check_glyphs_agree(scrub_pairs: str) -> None:
     """What the scrubber paints, against the vocabulary both widgets share.
 
     This used to compare substrings of web/live.js and web/scrubber.js, which

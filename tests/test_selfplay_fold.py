@@ -18,9 +18,10 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+from _harness import SKIP, check, exe, report, require_exe  # noqa: E402
 
 
 
@@ -29,11 +30,13 @@ from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
 
 
 
-def run(args, timeout=60):
-    return subprocess.run([exe("selfplay")] + args, capture_output=True, text=True, timeout=timeout)
+def run(args: list[str],
+        timeout: float = 60) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([require_exe("selfplay")] + args,
+                          capture_output=True, text=True, timeout=timeout)
 
 
-def main():
+def main() -> int:
     print("the seal on the TEST fold")
     print("=========================")
     if exe("selfplay") is None:
@@ -81,7 +84,6 @@ def main():
 
     # Refusing must not depend on the expensive setup, or no suite can afford
     # to check it.
-    import time
     t0 = time.time()
     run(["20000", "0", "test"])
     dt = time.time() - t0

@@ -22,12 +22,14 @@ from __future__ import annotations
 import io
 import json
 import os
-import re
 import subprocess
 import sys
+from collections.abc import Sequence
+from typing import Any
+import random
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP  # noqa: E402
+from _harness import ROOT  # noqa: E402
 from _jsdriver import run_js  # noqa: E402
 
 # This file keeps its own counters. They are function local and returned to the
@@ -59,11 +61,12 @@ CASES = [
     (4, 4, [3, 1]),
 ]
 
-def occupancy(board):
+def occupancy(board: oracle.Board) -> set[oracle.Cell]:
     return {c for ship in board for c in ship}
 
 
-def count_cells(boards, width, cells):
+def count_cells(boards: Sequence[oracle.Board], width: int,
+                cells: Sequence[int]) -> int:
     """Boards agreeing with a per-cell filter, by literal enumeration."""
     n = 0
     for b in boards:
@@ -80,7 +83,8 @@ def count_cells(boards, width, cells):
     return n
 
 
-def replay(board, width, history):
+def replay(board: oracle.Board, width: int,
+           history: Sequence[tuple[int, int, int]]) -> list[tuple[int, int]]:
     """Outcomes this board would give for the history's shot sequence."""
     ships = [set(r * width + c for (r, c) in ship) for ship in board]
     shot = set()
@@ -100,7 +104,8 @@ def replay(board, width, history):
 MISS_, HIT_, SUNK_ = 0, 1, 2
 
 
-def count_history(boards, width, history):
+def count_history(boards: Sequence[oracle.Board], width: int,
+                  history: Sequence[tuple[int, int, int]]) -> int:
     n = 0
     for b in boards:
         got = replay(b, width, history)
@@ -169,7 +174,10 @@ console.log(JSON.stringify({refused, legal, recordsRefused, constrains}));
 """
 
 
-def run_validation_probe():
+# (payload, error). Exactly one is set: the probe either parsed a result
+# or node failed and said why. It used to return a bare dict on success
+# and a pair on failure, so a caller had to know which by looking.
+def run_validation_probe() -> tuple[dict[str, Any] | None, str | None]:
     """Returns (list of verdicts, legal-instance-still-builds)."""
     path = os.path.join(ROOT, "out", "_engine_validation.mjs")
     os.makedirs(os.path.join(ROOT, "out"), exist_ok=True)
@@ -182,17 +190,18 @@ def run_validation_probe():
             os.remove(path)
     if proc.returncode != 0:
         return None, proc.stderr[:300]
-    out = json.loads(proc.stdout.strip().splitlines()[-1])
-    return out
+    out: dict[str, Any] = json.loads(proc.stdout.strip().splitlines()[-1])
+    return out, None
 
 
-def main():
+def main() -> int:
     print("javascript engine against the python oracle")
     print("===========================================")
     failures = 0
-    jobs, expected, labels = [], [], []
+    jobs: list[dict[str, Any]] = []
+    expected: list[Any] = []
+    labels: list[str] = []
 
-    import random
     rng = random.Random(20260826)
 
     for (w, h, fleet) in CASES:
@@ -259,12 +268,12 @@ def main():
 
     # Instance validation, so the browser engine refuses what the C++ refuses.
     print("[instance validation]")
-    probe_out = run_validation_probe()
+    probe_out, probe_err = run_validation_probe()
     refused = probe_out.get("refused") if probe_out else None
     legal = probe_out.get("legal") if probe_out else None
     if refused is None:
         print("  {:<58} {}".format("the validation probe runs", "FAILED"))
-        print("      " + str(legal)[:160])
+        print("      " + str(probe_err or legal)[:160])
         failures += 1
     else:
         accepted = [r[len("ACCEPTED:"):] for r in refused if r.startswith("ACCEPTED:")]
@@ -280,7 +289,7 @@ def main():
             failures += 1
 
     # The record is validated too, not only the instance.
-    if refused is not None:
+    if refused is not None and probe_out is not None:
         rec = probe_out.get("recordsRefused", [])
         taken = [r[len("ACCEPTED:"):] for r in rec if r.startswith("ACCEPTED:")]
         print("  {:<58} {}".format(

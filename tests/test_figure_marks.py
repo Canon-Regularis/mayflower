@@ -34,6 +34,7 @@ import json
 import os
 import re
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ROOT, SKIP, check, report  # noqa: E402
@@ -42,7 +43,7 @@ FIGURES = os.path.join(ROOT, "out", "figures.json")
 REPORT = os.path.join(ROOT, "out", "report.html")
 
 
-def figure(html, aria_fragment):
+def figure(html: str, aria_fragment: str) -> str | None:
     """The one svg whose aria-label contains this fragment."""
     i = html.find(aria_fragment)
     if i < 0:
@@ -52,7 +53,7 @@ def figure(html, aria_fragment):
     return html[start:end] if start >= 0 and end > 0 else None
 
 
-def test_ladder_draws_every_policy(html, data):
+def test_ladder_draws_every_policy(html: str, data: dict[str, Any]) -> None:
     """One mark per measured policy, in range or explicitly off the scale."""
     print("\n[the bound ladder]")
     svg = figure(html, "Lower-bound ladder against measured policies")
@@ -86,7 +87,7 @@ def test_ladder_draws_every_policy(html, data):
                   "mean {}, axis tops at {}, marked off: {}".format(mean, top, off))
 
 
-def test_survival_reaches_zero(html, data):
+def test_survival_reaches_zero(html: str, data: dict[str, Any]) -> None:
     """The curves plot P(T > n), so every one of them ends on the axis."""
     print("\n[the survival curves]")
     svg = figure(html, "Fraction of games still unfinished")
@@ -123,7 +124,7 @@ def test_survival_reaches_zero(html, data):
               "curves end at y={:.1f}, axis at y={}".format(ends[0], axis.group(1)))
 
 
-def test_paired_boards_share_a_scale(html):
+def test_paired_boards_share_a_scale(html: str) -> None:
     """Two boards a caption asks a reader to compare, on one ramp.
 
     Each board direct-labels its own ramp ends, so a stretched pair is
@@ -154,7 +155,7 @@ def test_paired_boards_share_a_scale(html):
               "ramp ends {}".format(labels))
 
 
-def main():
+def main() -> int:
     print("what the figures draw, against what the data says")
     print("=================================================")
     if not os.path.exists(FIGURES) or not os.path.exists(REPORT):

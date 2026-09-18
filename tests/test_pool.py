@@ -21,15 +21,14 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
-from _pool import (CELLS, H, LENS, SHIP_CELLS, W, placement_cells,  # noqa: E402
-                   placement_table, slot_count)
+from _harness import ROOT, SKIP, check, report  # noqa: E402
+from _pool import CELLS, LENS, SHIP_CELLS, placement_table  # noqa: E402
 
 POOL = os.path.join(ROOT, "web", "pool.bin")
 FIGURES = os.path.join(ROOT, "out", "figures.json")
 
 
-def main():
+def main() -> int:
     print("the browser board pool")
     print("======================")
     if not os.path.exists(POOL):
@@ -55,7 +54,7 @@ def main():
 
     for b in range(n):
         base = b * len(LENS)
-        used = set()
+        used: set[int] = set()
         key = raw[base:base + len(LENS)]
         for j, L in enumerate(LENS):
             idx = raw[base + j]

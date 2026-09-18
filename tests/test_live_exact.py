@@ -21,14 +21,12 @@ which point the history has cut the lattice down with them.
 
 from __future__ import annotations
 
-import io
-import json
 import os
-import subprocess
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run, widget_env  # noqa: E402
+from _harness import ROOT, SKIP, check, report, widget_env  # noqa: E402
 from _jsdriver import run_widget_probe, write_engine_script  # noqa: E402
 
 # The engine as the page inlines it, written once for this process. The
@@ -78,7 +76,7 @@ console.log(JSON.stringify({ spent: build(300), justOver: build(400) }));
 """
 
 
-def run_exact_probe():
+def run_exact_probe() -> Any:
     """Build the widget on a pool too small to sample from."""
     return run_widget_probe("_live_exact.js", EXACT_HARNESS, POOL, ENGINE_SCRIPT, TIMEOUT,
                             widget_env())
@@ -145,13 +143,13 @@ console.log(JSON.stringify({drivable:true, shots, done, firstExact, sunk, rises,
 """
 
 
-def run_play_probe():
+def run_play_probe() -> Any:
     """Press Step until the fleet is cleared."""
     return run_widget_probe("_live_play.js", PLAY_HARNESS, POOL, ENGINE_SCRIPT, TIMEOUT,
                             widget_env())
 
 
-def main():
+def main() -> int:
     print("the live widget's exact regime")
     print("==============================")
     if not os.path.exists(POOL):

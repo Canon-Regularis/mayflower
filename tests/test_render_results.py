@@ -18,11 +18,10 @@ import io
 import json
 import os
 import re
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
+from _harness import ROOT, SKIP, check, report, run  # noqa: E402
 
 
 
@@ -32,14 +31,14 @@ from _harness import ROOT, SKIP, check, exe, report, run  # noqa: E402
 
 
 
-def digits(s):
+def digits(s: str) -> str:
     """Strip what the page puts between digit groups: it separates thousands
     with a thin space written as the entity &thinsp;, so the entities are decoded
     before the separators are removed."""
     return re.sub(r"[\u2009\u202f,\s]", "", html.unescape(s))
 
 
-def main():
+def main() -> int:
     print("the results dossier")
     print("===================")
     src = os.path.join(ROOT, "experiments", "results.json")
@@ -75,7 +74,7 @@ def main():
 
     # Every figure has to stand alone, so each needs its own viewBox.
     svgs = re.findall(r"<svg[^>]*>", page)
-    check(svgs, "the page carries figures", "none found")
+    check(bool(svgs), "the page carries figures", "none found")
     check(all("viewBox" in s for s in svgs),
           "and every figure declares a viewBox",
           "{} of {} without one".format(
@@ -100,7 +99,7 @@ def main():
     # about leaving them out. Pinned here, because a section that stops being
     # called leaves no other trace than the numbers going missing.
     noisy = [r for r in data["results"] if r.get("family") == "noisy"]
-    check(noisy, "results.json still carries the noise channel")
+    check(bool(noisy), "results.json still carries the noise channel")
     start = page.find("What noise costs")
     check(start >= 0, "and the page has a section for it")
     section = page[start:page.find("</section>", start)] if start >= 0 else ""
