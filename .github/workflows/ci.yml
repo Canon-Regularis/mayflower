@@ -90,7 +90,7 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      # Nineteen tests are registered only when CMake finds Python, and four of
+      # Twenty tests are registered only when CMake finds Python, and four of
       # those need Node as well, so a runner missing either would shrink the
       # suite and still report green. Name them rather than count them, so
       # adding a test does not have to touch this.
@@ -103,7 +103,7 @@ jobs:
         shell: bash
         run: |
           missing=""
-          for t in python_names stats stated_counts figure_marks provenance report_data results pool \
+          for t in python_names stats static_types stated_counts figure_marks provenance report_data results pool \
                    selfplay_fold run_headline render_results live_exact tool_cli tools_output oracle \
                    engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
@@ -159,7 +159,7 @@ jobs:
       - name: Every interpreter-gated test was registered
         run: |
           missing=""
-          for t in python_names stats stated_counts figure_marks provenance report_data results pool \
+          for t in python_names stats static_types stated_counts figure_marks provenance report_data results pool \
                    selfplay_fold run_headline render_results live_exact tool_cli tools_output oracle \
                    engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
@@ -296,9 +296,10 @@ jobs:
         with:
           node-version: '20'
 
-      # Everything here is standard library only, so there is nothing to install.
-      # These are the independent implementations the engine is checked against,
-      # and they are worth running even when the C++ does not build.
+      # Everything below is standard library only, with one exception, which
+      # is the step immediately after it. These are the independent
+      # implementations the engine is checked against, and they are worth
+      # running even when the C++ does not build.
       - name: The order-aware oracle reproduces its counterexamples
         run: python python/oracle.py --order-dependence
 
@@ -317,3 +318,32 @@ jobs:
       # syntax error there a number nobody can reproduce.
       - name: The timing script parses
         run: node --check tools/sweep_timing.mjs
+
+      # The one thing in this repository that is not standard library, and the
+      # only job that installs it. The other legs register static_types and
+      # report Skipped, which is why a skip has to be fatal here: a SKIPPABLE
+      # test that skips everywhere ran nowhere, which is what nightly.yml
+      # records about scrubber_js.
+      #
+      # Pinned exactly rather than floored. --strict is not a fixed set of
+      # checks; mypy has folded --extra-checks and --strict-equality into it
+      # since, and a release that adds one more would turn an unrelated pull
+      # request red. That is the argument this file already makes for not
+      # handing -Werror to the floating MSYS2 compiler.
+      - name: Install the type checker
+        run: python -m pip install mypy==2.1.0
+
+      # Run the registered test rather than mypy directly, so this job and
+      # ctest cannot drift apart about what the gate checks.
+      - name: Every Python module type-checks under --strict
+        shell: bash
+        run: |
+          set +e
+          python tests/test_static_types.py
+          rc=$?
+          set -e
+          if [ "$rc" = 77 ]; then
+            echo 'mypy is absent in the job that exists to install it'
+            exit 1
+          fi
+          exit $rc

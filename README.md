@@ -93,7 +93,7 @@ git clone https://github.com/Canon-Regularis/mayflower && cd mayflower
 
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   #  11 s
 cmake --build build                                       #  51 s
-ctest --test-dir build -L fast                            #  78 s, 29 tests
+ctest --test-dir build -L fast                            #  81 s, 30 tests
 
 ./build/omega0            # 15,046,987,768 and 1,925,751,392, plus the lattice
 ./build/bounds            # the certified floors, 17 then 24.088
@@ -108,8 +108,13 @@ python tools/collect_results.py && python tools/render_results.py
 Then open `out/report.html`. It is one self-contained file and needs no server.
 
 C++20, CMake >= 3.24, Ninja, Python 3 and Node. Python is standard library only,
-so there is nothing to install. Developed against MinGW-w64 GCC 13.2 on Windows;
-CI also builds Linux GCC and Clang.
+so there is nothing to install to build, test or render. Developed against
+MinGW-w64 GCC 13.2 on Windows; CI also builds Linux GCC and Clang.
+
+The one exception is the type gate. `mypy.ini` holds a `--strict` configuration
+over `python/`, `tools/` and `tests/`, and `pip install mypy==2.1.0` runs it
+here rather than reporting `Skipped`. CI installs it in one job and treats a
+skip there as a failure.
 
 Five tests report `Skipped` until `report_data` has run, because they read the
 generated `out/figures.json`. That is expected on a fresh clone. `report_data` is
