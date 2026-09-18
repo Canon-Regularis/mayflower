@@ -137,14 +137,17 @@ def is_shallow() -> bool:
         return True
 
 
-def commit_exists(rev: str) -> bool | None:
+def commit_exists(rev: str) -> bool:
     """Whether this repository has such a commit.
 
     Catches a stamp that never named anything, which a hand-edited artefact or a
     broken shell can produce. It deliberately does not ask whether the commit is
     an ancestor of HEAD: generating on a branch and reading on another is normal.
 
-    Only meaningful on a full clone. Callers check is_shallow() first.
+    Only meaningful on a full clone. Callers check is_shallow() first, which
+    is where the third answer lives: this returns two literal booleans and no
+    None, so an annotation of bool | None was a fiction and the `is True` it
+    forced at both call sites narrowed against a value it cannot produce.
     """
     try:
         subprocess.check_output(["git", "cat-file", "-e", rev + "^{commit}"],
@@ -180,7 +183,7 @@ def main() -> int:
 
     stamped = meta.get("commit", UNKNOWN)
     if stamped != UNKNOWN and can_resolve:
-        check(commit_exists(stamped) is True,
+        check(commit_exists(stamped),
               "and that commit exists in this repository",
               "figure data names {}, which git cannot resolve".format(stamped))
 
@@ -214,7 +217,7 @@ def main() -> int:
     if os.path.exists(RESULTS):
         got = json.loads(io.open(RESULTS, encoding="utf-8").read()).get("commit", UNKNOWN)
         if got != UNKNOWN and can_resolve:
-            check(commit_exists(got) is True,
+            check(commit_exists(got),
                   "experiments/results.json names a commit that exists",
                   "results.json names {}, which git cannot resolve".format(got))
         # Only against its own sources. The ordering against
