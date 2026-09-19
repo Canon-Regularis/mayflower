@@ -22,8 +22,8 @@ behind. Over the current tree it reports nothing either way.
 
 The second direction is not the first one inverted. A missing binding is safe
 to report from a set difference, because a false negative is silent. A dead
-import is not: the `from __future__ import annotations` in 33 of 34 files is
-never read, a deliberate re-export is never read either, and a name shadowed
+import is not: the `from __future__ import annotations` every file in these
+three directories carries is never read, a deliberate re-export is never read either, and a name shadowed
 before its first read IS read and still dead. So it walks imports per scope,
 keeps the line number, and honours the `import n as n` spelling that mypy
 --strict reads as a re-export under --no-implicit-reexport. The two agree
@@ -160,7 +160,7 @@ def unread_imports(path: str) -> list[str]:
     The other direction from unbound() above, and not the same subtraction
     inverted. A missing binding is safe to report from a set because a false
     negative is silent; a dead import is not, for four reasons this handles
-    one at a time: the __future__ directive in 33 of 34 files is never read,
+    one at a time: the __future__ directive every file carries is never read,
     a deliberate re-export is never read either, a name shadowed before its
     first read IS read and still dead, and the line number has to survive so
     the report says where.
