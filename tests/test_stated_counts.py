@@ -58,6 +58,14 @@ WORDS = {
     # count from nineteen to twenty, and a table one short of the next test is
     # a trap: stated() would return None and the failure would read "prose says
     # None", accusing a correct sentence of drifting.
+    #
+    # Every entry from twenty-one down was unreachable until the registry test
+    # took the count past twenty and made one of them the answer. The five word
+    # slots below captured (\w+), which cannot cross a hyphen, so "Twenty-one
+    # tests" matched "one" in docs/CI.md and matched nothing at all in ci.yml,
+    # where the pattern is anchored to the comment marker. The table was right
+    # and could not be reached, which is the same shape as a guard whose branch
+    # no test enters. The slots now capture ([\w-]+).
     "twenty-one": 21, "twenty-two": 22, "twenty-three": 23, "twenty-four": 24,
     "twenty-five": 25, "twenty-six": 26, "twenty-seven": 27, "twenty-eight": 28,
     "twenty-nine": 29, "thirty": 30,
@@ -179,15 +187,15 @@ def main() -> int:
     claims = [
         (README, r"#\s+\d+\s*s,\s*(\d+)\s+tests", len(fast),
          "README's fast-label count"),
-        (README, r"(\w+) tests report `Skipped` until", len(figure_gated),
+        (README, r"([\w-]+) tests report `Skipped` until", len(figure_gated),
          "README's figure-data Skipped count"),
-        (CI_DOC, r"(\w+) tests\s+are registered only when CMake finds Python", len(names),
+        (CI_DOC, r"([\w-]+) tests\s+are registered only when CMake finds Python", len(names),
          "docs/CI.md's interpreter-gated count"),
-        (CI_DOC, r"(\w+) of them needing Node", len(node_gated),
+        (CI_DOC, r"([\w-]+) of them needing Node", len(node_gated),
          "docs/CI.md's Node-gated count"),
-        (CI, r"#\s*(\w+) tests are registered only when CMake finds Python", len(names),
+        (CI, r"#\s*([\w-]+) tests are registered only when CMake finds Python", len(names),
          "ci.yml's interpreter-gated count"),
-        (CI, r"and (\w+) of\s*\n\s*#\s*those need Node", len(node_gated),
+        (CI, r"and ([\w-]+) of\s*\n\s*#\s*those need Node", len(node_gated),
          "ci.yml's Node-gated count"),
     ]
     for path, pattern, actual, what in claims:
