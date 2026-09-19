@@ -6,7 +6,14 @@
 # anything reading TEST needs a matching unseal in audit.log.
 #
 # status: registered | running | complete | superseded
-# fold:   train | val | test
+# fold:   train | val | test | none
+#
+# none is for an experiment no fold partition applies to: the bound ladder is
+# exact combinatorics, and the opponent audit evaluates over every board, so
+# neither draws from the seeded pool the folds divide. The opponent entry does
+# sample, but only in the learning it measures, never in the evaluation. Two
+# entries used none against a domain that listed three values, which is the
+# kind of thing a reader catches and a comment does not.
 
 version: 1
 
@@ -27,11 +34,12 @@ experiments:
       Also the source of sigma = 8.87 and the bimodal correlation, 0.923 within
       the density family and 0.00 against the hunt policy.
 
-      These are transcribed from experiments/headline_train.json by hand, and
-      nothing parses this file: there is no YAML reader anywhere in the tree.
-      The random and parity figures were left behind once already, by the fold
-      fix that moved every measured quantity, and read 95.354 and 51.535 for
-      two rounds. Treat every number here as prose and the JSON as the record.
+      These are transcribed from experiments/headline_train.json by hand. They
+      were left behind once already, by the fold fix that moved every measured
+      quantity, and read 95.354 and 51.535 for two rounds with nothing able to
+      notice, because no reader for this file existed. tests/test_registry.py
+      is that reader, and holds this entry's figures to the record they came
+      from.
 
   - id: objective-comparison
     status: complete
@@ -104,7 +112,10 @@ experiments:
 
       Beam width stops mattering past 50. density(b=50) and density(b=200) pick
       the same cell on all 20000 boards, so the paired difference is identically
-      zero and there is no interval to quote rather than a zero-width one. The
-      larger beam is pure cost.
+      zero. This capture predates the change that replaced the zero-width
+      interval with a null and a count, and still records [0.000, 0.000]:
+      regenerating it would mean reading TEST again to tidy a field no reader
+      consumes. The TRAIN capture carries the newer form. The larger beam is
+      pure cost.
 
       See experiments/headline_test.json for the full capture.
