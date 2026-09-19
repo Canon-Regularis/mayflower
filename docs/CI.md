@@ -24,7 +24,7 @@ and the report end to end, which is where the five figure-data tests run
 against real data instead of reporting Skipped: `report_data`, `results`,
 `scrubber_js`, `provenance` and `figure_marks`.
 
-Two things are asserted that a green tick would otherwise hide. Twenty tests
+Two things are asserted that a green tick would otherwise hide. Twenty-one tests
 are registered only when CMake finds Python, four of them needing Node as well,
 so CI names them and fails if any is missing rather than passing a suite that
 quietly shrank. That check reads the listing rather than the exit code, because

@@ -370,6 +370,14 @@ mf_test(stated_counts
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_stated_counts.py
   LABEL fast)
 
+# The experiment registry, against the captures it transcribes. Nothing in the
+# tree parsed YAML, so every figure in that file was written by hand and read
+# by nobody; two of them had been superseded by the fold fix for two rounds.
+# No SKIPPABLE: everything it reads is tracked, unlike out/figures.json.
+mf_test(registry
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_registry.py
+  LABEL fast)
+
 # Every check the suite had compared the page's PROSE to the data. Nothing
 # read the marks, so the bound ladder drew one of three measured policies
 # and the survival curves plotted P(T >= n) under a title saying P(T > n),

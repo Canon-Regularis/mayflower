@@ -90,7 +90,7 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      # Twenty tests are registered only when CMake finds Python, and four of
+      # Twenty-one tests are registered only when CMake finds Python, and four of
       # those need Node as well, so a runner missing either would shrink the
       # suite and still report green. Name them rather than count them, so
       # adding a test does not have to touch this.
@@ -103,7 +103,7 @@ jobs:
         shell: bash
         run: |
           missing=""
-          for t in python_names stats static_types stated_counts figure_marks provenance report_data results pool \
+          for t in python_names stats static_types stated_counts registry figure_marks provenance report_data results pool \
                    selfplay_fold run_headline render_results live_exact tool_cli tools_output oracle \
                    engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
@@ -114,9 +114,11 @@ jobs:
             exit 1
           fi
 
-      # out/ is generated and not in the repository, so report_data, results,
-      # scrubber_js and provenance report Skipped here. The nightly workflow
-      # generates it and runs all four for real.
+      # out/ is generated and not in the repository, so the five figure-data
+      # tests report Skipped here: report_data, results, scrubber_js,
+      # provenance and figure_marks. The nightly workflow generates out/ and
+      # runs all five for real. The list lives in nightly.yml; this comment
+      # has now been the stale copy of it twice.
       - name: Test
         run: ctest --test-dir build -L fast --output-on-failure --no-tests=error
 
@@ -159,7 +161,7 @@ jobs:
       - name: Every interpreter-gated test was registered
         run: |
           missing=""
-          for t in python_names stats static_types stated_counts figure_marks provenance report_data results pool \
+          for t in python_names stats static_types stated_counts registry figure_marks provenance report_data results pool \
                    selfplay_fold run_headline render_results live_exact tool_cli tools_output oracle \
                    engine_js scrubber_js live_js bond_dimension; do
             ctest --test-dir build -N -R "^$t\$" 2>/dev/null \
