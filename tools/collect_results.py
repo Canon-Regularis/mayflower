@@ -782,6 +782,13 @@ def cross_checks(results: Sequence[Result]) -> list[dict[str, Any]]:
 # ctest reads this as "Skipped" via SKIP_RETURN_CODE. out/ is generated and
 # gitignored, so a clean clone has nothing to collect and should say so rather
 # than fail or quietly pass.
+#
+# The twelfth copy of a number tests/_harness.py holds once for the other
+# eleven, and it cannot import that: tests/ sits above tools/ in the layering
+# and reaching up would invert it. Worth stating plainly, because it means this
+# module is registered as a ctest test and speaks the suite's exit-code
+# protocol while living in the report layer, which is the only place in the
+# tree where that is true.
 SKIP = 77
 
 
