@@ -1,8 +1,12 @@
-// The eight mathematical extensions, dispatched.
+// The six mathematical extensions, dispatched.
 //
-// This file was 838 lines holding all eight experiments, their shared
-// enumerator and a ninety line self test. Each extension now owns a file under
-// tools/m9 and this is only the argument handling.
+// This file was 838 lines holding all six experiments, their shared enumerator
+// and a ninety line self test. Each extension now owns a file under tools/m9
+// and this is only the argument handling.
+//
+// M9 as a milestone had eight items. The transfer-matrix spectrum became
+// tools/spectrum and the bond dimension went to python/bond_dimension.py, so
+// six of the eight are here.
 // m9: the mathematical extensions that reuse the engine directly.
 //
 //   1. The adaptive adversary. Expected shots assume the board was fixed before
@@ -31,7 +35,7 @@ int main(int argc, char** argv) {
         std::printf("==================================\n\n");
     }
     if (all || only == "adversary")  adversary();
-    if (all || only == "density")    phaseTransition();
+    if ((all || only == "density") && !phaseTransition()) return 2;
     if (all) std::printf("\n");
     if (all || only == "adaptivity") adaptivityGap();
     if (all || only == "bimaru")     bimaruCost();

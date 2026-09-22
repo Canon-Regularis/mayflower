@@ -10,7 +10,7 @@ namespace mayflower::m9 {
 
 NonAdaptive nonAdaptiveOptimum(const Instance& inst) {
     const int n = inst.cellCount();
-    if (n > 22) throw std::runtime_error("subset lattice too large");
+    if (n > 22) throw std::invalid_argument("subset lattice too large");
     const std::size_t size = std::size_t{1} << n;
 
     const std::vector<std::uint64_t> configs = enumerateAll(inst);
@@ -24,7 +24,8 @@ NonAdaptive nonAdaptiveOptimum(const Instance& inst) {
             if (S & (std::size_t{1} << b)) c[S] += c[S ^ (std::size_t{1} << b)];
 
     const std::uint64_t N = configs.size();
-    if (c[size - 1] != N) throw std::runtime_error("subset transform disagrees with the count");
+    if (c[size - 1] != N)
+        throw std::logic_error("subset transform disagrees with the count");
 
     // best[S] is the largest achievable sum of c over the prefixes strictly
     // inside S, so the answer reads off the full set.

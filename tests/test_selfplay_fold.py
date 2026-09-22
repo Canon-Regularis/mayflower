@@ -47,7 +47,11 @@ def main() -> int:
     r = run(["300", "0", "test"])
     check(r.returncode == 2, "asking for TEST without a token is refused",
           "exit {}".format(r.returncode))
-    check("sealed" in r.stdout.lower(), "and says so")
+    # stderr: a refusal is a diagnostic, and selfplay prints both of its
+    # refusals there now. This one went to stdout, where a caller redirecting
+    # the run to a file would have captured it as though it were a result.
+    check("sealed" in r.stderr.lower(), "and says so",
+          "stdout carried {!r}".format(r.stdout.strip()[:60]))
     check("drew" not in r.stdout and "mean" not in r.stdout,
           "and no board is drawn and no policy is scored",
           r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "(no output)")

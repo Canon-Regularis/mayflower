@@ -11,7 +11,7 @@
 
 namespace mayflower::m9 {
 
-void sweepDensity(const Instance& inst, int shots, int maxHits, int step, int samples) {
+bool sweepDensity(const Instance& inst, int shots, int maxHits, int step, int samples) {
     std::printf("  %s, %d cells shot, %d records per point\n", inst.describe().c_str(),
                 shots, samples);
     std::printf("  %6s %10s %14s %11s %12s %12s %10s\n", "hits", "feasible",
@@ -52,9 +52,15 @@ void sweepDensity(const Instance& inst, int shots, int maxHits, int step, int sa
             totalNodes += static_cast<double>(bt.nodes);
             // The two engines must agree on the yes/no answer. A search that hit
             // the cap returned no answer at all, so it is exempt.
+            //
+            // Reported and returned rather than exited. This was the only
+            // std::exit in the repository, and tools/weighted.cpp carries the
+            // same class of fault, two engines that must agree disagreeing, out
+            // through main as a return code instead. A refusal goes to stderr.
             if (!ranOut && found != (r.count > 0)) {
-                std::printf("  *** search and DP disagree at hits=%d, sample %d ***\n", hits, t);
-                std::exit(1);
+                std::fprintf(stderr, "search and DP disagree at hits=%d, sample %d\n",
+                             hits, t);
+                return false;
             }
         }
         std::sort(omegas.begin(), omegas.end());
@@ -70,9 +76,10 @@ void sweepDensity(const Instance& inst, int shots, int maxHits, int step, int sa
     }
     std::printf("  DP cost peaks at %d hits, search cost peaks at %d hits\n\n",
                 dpPeakAt, btPeakAt);
+    return true;
 }
 
-void phaseTransition() {
+bool phaseTransition() {
     std::printf("2. Constraint density\n");
     std::printf("---------------------\n\n");
     std::printf("Records here are synthetic: cells are chosen at random and a fraction of\n");
@@ -80,9 +87,9 @@ void phaseTransition() {
     std::printf("carries the record from easily satisfiable to plainly impossible, and the\n");
     std::printf("cost of deciding which peaks in between.\n\n");
 
-    sweepDensity(Instance(6, 6, {4, 3, 2}), 18, 12, 1, 400);
-    sweepDensity(Instance(7, 7, {5, 4, 3, 2}), 24, 16, 2, 120);
-    sweepDensity(Instance(8, 8, {5, 4, 3, 3, 2}), 34, 20, 2, 40);
+    if (!sweepDensity(Instance(6, 6, {4, 3, 2}), 18, 12, 1, 400)) return false;
+    if (!sweepDensity(Instance(7, 7, {5, 4, 3, 2}), 24, 16, 2, 120)) return false;
+    if (!sweepDensity(Instance(8, 8, {5, 4, 3, 3, 2}), 34, 20, 2, 40)) return false;
 
     std::printf("  The two engines answer the same records and disagree about which are\n");
     std::printf("  expensive. Search cost peaks in the middle, where a record is neither\n");
@@ -91,6 +98,7 @@ void phaseTransition() {
     std::printf("  loosest and broadly falls as it tightens: a counting sweep never\n");
     std::printf("  backtracks, so a constraint removes work rather than adding it, and the\n");
     std::printf("  hardest record decides faster than the empty one.\n");
+    return true;
 }
 
 }  // namespace mayflower::m9

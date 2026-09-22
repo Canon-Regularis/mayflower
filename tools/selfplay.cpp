@@ -176,9 +176,14 @@ int main(int argc, char** argv) {
     // early leaves one way to read TEST rather than two, and costs nothing.
     const std::string foldArg = argc > 3 ? argv[3] : "train";
     const Fold fold = foldFromName(foldArg);
+    // stderr, like the bad-count refusal above it. Both refuse and both return
+    // 2, and this one printed to stdout, so one function reported the same kind
+    // of thing two ways, and a caller redirecting the run to a file captured a
+    // refusal as though it were a result.
     if (fold == Fold::Test && !(argc > 4 && std::string(argv[4]) == "--unsealed")) {
-        std::printf("TEST is sealed. Record the unseal in experiments/audit.log and run\n"
-                    "this through tools/run_headline.py, which verifies it. Refusing.\n");
+        std::fprintf(stderr,
+                     "TEST is sealed. Record the unseal in experiments/audit.log and run\n"
+                     "this through tools/run_headline.py, which verifies it. Refusing.\n");
         return 2;
     }
     const std::uint64_t poolKey = 0xA1B2C3D4u;
@@ -193,7 +198,7 @@ int main(int argc, char** argv) {
                 static_cast<unsigned long long>(bank.total()),
                 static_cast<unsigned long long>(poolKey), games);
     std::printf("bank build   %.2f s\n\n",
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - tBank).count());
+                platform::elapsed(tBank));
 
     // Boards are drawn once and reused, so every policy sees the same pool.
     std::vector<std::vector<ShipPlacement>> boards;
