@@ -78,6 +78,12 @@ def test_ladder_draws_every_policy(html: str, data: dict[str, Any]) -> None:
     # A policy past the axis must say so rather than vanish, and one inside it
     # must not claim to be outside.
     ticks = [float(t) for t in re.findall(r'class="tick"[^>]*>([0-9]+)</text>', svg)]
+    # An empty list used to skip the loop below and leave the test green. That
+    # loop is one of the two checks this file was written for, the ladder
+    # quietly drawing one of three measured policies, so losing it has to fail
+    # rather than pass.
+    check(bool(ticks), "the ladder carries tick labels to read its scale from",
+          "no class=\"tick\" text nodes parsed out of the figure")
     if ticks:
         top = max(ticks)
         for name, (mean, rest) in sorted(drawn.items()):
@@ -117,7 +123,14 @@ def test_survival_reaches_zero(html: str, data: dict[str, Any]) -> None:
         hist = p["histogram"]
         check(sum(hist[len(hist) - 1:]) >= 0 and sum(hist) > 0,
               "the {} histogram is non-empty".format(p["name"]))
+    # Likewise. The sibling check above, that every curve ends at the same
+    # height, passes on the buggy rendering, because all the curves were wrong
+    # together. This one is the check that caught it, so it cannot be allowed
+    # to disappear with the regex that feeds it.
     axis = re.search(r'<line class="axis"[^>]*y1="([0-9.]+)"', svg)
+    check(axis is not None and bool(ends),
+          "the survival figure carries an axis line to measure against",
+          "axis found: {}, curve ends found: {}".format(axis is not None, len(ends)))
     if axis and ends:
         check(abs(ends[0] - float(axis.group(1))) < 1.0,
               "and that height is the axis, so nothing is left running",
