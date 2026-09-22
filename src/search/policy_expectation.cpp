@@ -13,8 +13,10 @@
 #include "mayflower/exact_solver.hpp"
 #include "mayflower/game.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <stdexcept>
 #include <vector>
 
 #include "mayflower/instance.hpp"

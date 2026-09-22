@@ -49,6 +49,7 @@
 // contradicted the contract stated on WeightedMarginals below in this file.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
