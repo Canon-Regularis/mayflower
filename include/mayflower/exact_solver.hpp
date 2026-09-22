@@ -8,6 +8,20 @@
 // The state space grows quickly, so this is for boards small enough to enumerate
 // (roughly up to 32 cells and a few hundred configurations). Its purpose is to
 // calibrate heuristics where the answer is knowable, not to play 10x10.
+//
+// Two things live here and the second is not the solver. exactPolicyExpectation
+// at the tail enumerates every board and plays a given policy against each, so
+// it measures what a rule costs rather than what the optimum is.
+// src/search/policy_expectation.cpp opens by saying it shares nothing with the
+// solver beside it, and that is accurate: no World, no Solver, no memo, no
+// scoring rule.
+//
+// They share a header because they are the two halves of one measurement, and
+// the callers show it: all three users of exactPolicyExpectation, tools/optimal,
+// tools/report_data and tests/test_exact, call solveOptimal as well, because the
+// optimality gap is the difference between them. Giving the second its own
+// header is the tidier arrangement and is the follow-up, not a fix for a
+// comment that simply did not mention it.
 #pragma once
 
 #include <cstdint>

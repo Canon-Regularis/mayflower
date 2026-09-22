@@ -3,6 +3,13 @@
 // V0 is countConfigurations, kept frozen as the reference every later rung is
 // measured against. Each rung must return bit-identical counts, since a faster
 // wrong answer is not a speedup.
+//
+// Nothing is implemented in a counting.cpp, because there is none. The rungs
+// are named after themselves: countConfigurations is in src/core/profile_dp.cpp,
+// the fast path in profile_dp_fast.cpp and the blocked rungs in
+// profile_dp_blocked.cpp. Every other public header here pairs with a source
+// file of its own name; this one is declared by the ladder and implemented by
+// its rungs.
 #pragma once
 
 #include <cstddef>

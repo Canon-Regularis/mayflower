@@ -1,7 +1,14 @@
-// Game harness: play a policy against a known board and count the shots.
+// Game harness: play a policy against a known board and count the shots, and
+// the board bank the games are drawn from.
 //
 // The policy receives the Instance and the History only. It never sees the
 // board, so the information set is enforced by the type system.
+//
+// Two things live here. Policy and the game loop are the harness; BoardBank at
+// the tail is the generator that feeds it, drawing boards by unranking so a
+// pool is reproducible from its key. They share a header because no caller
+// wants one without the other: a game needs a board and a board is only ever
+// drawn to play one.
 #pragma once
 
 #include <algorithm>

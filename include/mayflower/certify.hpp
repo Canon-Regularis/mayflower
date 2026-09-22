@@ -1,8 +1,17 @@
 // Certified bounds.
 //
-// Everything here is either exact by construction or explicitly labelled as an
-// upper bound on a quantity we cannot yet pin down. A rung whose direction is
-// unproven says so.
+// Everything here is exact by construction. The blocking numbers come from a
+// row-sweep DP, the hit-transcript count K from a subset construction, and
+// waterFillingBound evaluates a lower bound on expected shots exactly.
+//
+// Nothing in this header is an upper bound and nothing is an estimate. This
+// said otherwise, and promised that "a rung whose direction is unproven says
+// so", which described neither the file's contents nor a rung it holds.
+//
+// The ladder those rungs belong to is assembled elsewhere. E1 coverage and E2
+// entropy are in constants.hpp; E3 blocking and E4 water filling are computed
+// here; tools/bounds.cpp prints them together, along with the max-coverage
+// rung that was withdrawn and the reason it was.
 #pragma once
 
 #include <cstdint>
