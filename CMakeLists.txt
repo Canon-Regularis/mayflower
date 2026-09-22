@@ -93,9 +93,9 @@ foreach(hdr IN LISTS MF_DETAIL_HEADERS)
 endforeach()
 
 # tools/m9 carries two headers of its own, core.hpp and sections.hpp, shared by
-# the dispatcher and the eight sections. They were the one set the self test did
-# not reach: every one of the nine translation units that include them includes
-# core.hpp first, so a sections.hpp that only compiles second would never have
+# the dispatcher, the six sections and the self test. They were the one set the
+# self test did not reach: every one of the eight translation units that include
+# them includes core.hpp first, so a sections.hpp that only compiles second would never have
 # been caught here. Same mechanism, two more units.
 #
 # Included as m9/<name>.hpp with tools on the path, which is how the m9
@@ -134,14 +134,15 @@ target_include_directories(mayflower_oracle_isolated PRIVATE tests)
 # src/core sits at the bottom of the layering: it is the sweeps, and it knows
 # nothing about policies, the game loop, the search, the bounds or the figures.
 # That was stated in the plan and in README and enforced by nothing, because
-# target_include_directories(mayflower_core PUBLIC include) puts all twenty one
+# target_include_directories(mayflower_core PUBLIC include) puts all twenty
 # public headers on its own search path. A sweep could include policy.hpp
 # tomorrow and no check would notice.
 #
 # The oracle's trick does not transfer: the oracle includes nothing from
 # include/, so narrowing its path to tests/ states the whole rule, while
 # src/core legitimately takes ten of those headers and they sit in the same
-# directory as the seven it must not.
+# directory as the eight it must not. The remaining two, constants.hpp and
+# observations.hpp, are neither taken directly nor forbidden.
 #
 # So the path is widened rather than narrowed, with a stub of each forbidden
 # header placed ahead of the real one. A quoted include resolves to the stub,
@@ -251,8 +252,10 @@ mf_test(maxcover COMMAND maxcover selftest LABEL pr TIMEOUT 900)
 add_executable(weighted tools/weighted.cpp)
 target_link_libraries(weighted PRIVATE mayflower_core)
 
-# One file per mathematical extension. tools/m9.cpp is the dispatcher; the
-# eight experiments and the enumerator they share live under tools/m9.
+# One file per mathematical extension. tools/m9.cpp is the dispatcher; the six
+# experiments, the self test and the enumerator they share live under tools/m9.
+# M9 itself had eight items: the transfer-matrix spectrum became its own tool
+# and the bond dimension went to python/, so six of the eight are here.
 add_executable(m9
   tools/m9.cpp
   tools/m9/adaptivity.cpp
@@ -281,8 +284,6 @@ target_link_libraries(dp_bench PRIVATE mayflower_core)
 
 enable_testing()
 
-# tests/oracle is header-only and must never link against mayflower_core's
-# algorithms.
 mf_test_exe(counting)
 
 mf_test_exe(observations)
@@ -484,11 +485,6 @@ endif()
 # which shares no code with either it or the C++.
 if(Python3_Interpreter_FOUND AND MF_NODE)
 
-# Registered here rather than with the Python-only tests. It drives node
-# like its three siblings below, and in the Python block a machine with
-# Python and no node resolved MF_NODE to MF_NODE-NOTFOUND, the test took
-# that as its interpreter, and subprocess raised FileNotFoundError where
-# every sibling gives a skip.
 # The live widget's exact regime, and a game played through it. It has two
 # regimes and every other probe hands it the whole pool, so the branch that runs
 # the exact sweep was executed by nothing.
@@ -504,6 +500,13 @@ mf_test(live_exact
   TIMEOUT 3600
   SKIPPABLE
   WORKDIR ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Registered in this block rather than with the Python-only tests, and this
+# comment sat above live_exact for as long as both existed. It drives node like
+# its three siblings here, and in the Python block a machine with Python and no
+# node resolved MF_NODE to MF_NODE-NOTFOUND, the test took that as its
+# interpreter, and subprocess raised FileNotFoundError where every sibling
+# gives a skip.
 mf_test(engine_js
   COMMAND ${CMAKE_COMMAND} -E env MF_NODE=${MF_NODE} ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_engine_js.py
   LABEL fast)

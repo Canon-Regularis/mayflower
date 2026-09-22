@@ -151,12 +151,13 @@ it.
 | `experiments/` | Pre-registration, registry, append-only audit log |
 
 Two boundaries are enforced by the build rather than by convention, each with a
-target that compiles one translation unit and links nothing. `tests/oracle/`
-includes nothing from `include/mayflower/`, which is enforced by compiling it
-with only `tests/` on the search path. `src/core/` is the sweeps and knows
-nothing of the policies, the game loop, the search, the bounds or the figures,
-which is enforced by compiling it against stubs of those headers that are an
-`#error`. Either violation fails the build with the rule as its message.
+target that compiles and links nothing, so a violation is a build failure and
+not a link error. `tests/oracle/` includes nothing from `include/mayflower/`,
+which is enforced by compiling one generated translation unit with only
+`tests/` on the search path. `src/core/` is the sweeps and knows nothing of
+the policies, the game loop, the search, the bounds or the figures, which is
+enforced by compiling all nine of its translation units a second time against
+stubs of those headers that are an `#error`. Either violation fails the build with the rule as its message.
 
 The third edge runs the way round that surprises people: `tools/run_headline.py`
 imports `python/stats.py` in process. `python/` does not reach the renderers at
@@ -193,6 +194,7 @@ Full detail in [docs/CORRECTNESS.md](docs/CORRECTNESS.md).
 | [docs/HYPOTHESIS_SPACE.md](docs/HYPOTHESIS_SPACE.md) | The exact prior marginals, the orbit integers, board-size scaling, and the sampler |
 | [docs/BOUNDS.md](docs/BOUNDS.md) | The ladder, water filling, blocking numbers, and the rung that was withdrawn |
 | [docs/OPTIMAL_PLAY.md](docs/OPTIMAL_PLAY.md) | The belief MDP, the objective comparison, and measured self-play |
+| [docs/ORDER_DEPENDENCE.md](docs/ORDER_DEPENDENCE.md) | Why a sunk ship is an ordered event, and what an order-free predicate overcounts |
 | [docs/WEIGHTED.md](docs/WEIGHTED.md) | Opponent priors, noisy channels, and where the floating point stops being exact |
 | [docs/RULESETS.md](docs/RULESETS.md) | The no-touching rule, and the variants that reuse the engine |
 | [docs/TRANSFER_MATRIX.md](docs/TRANSFER_MATRIX.md) | The hard-rod lattice gas, and how close the boundary state is to minimal |
@@ -203,8 +205,9 @@ Full detail in [docs/CORRECTNESS.md](docs/CORRECTNESS.md).
 | [docs/CI.md](docs/CI.md) | What runs on a push, on a pull request, and nightly |
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | What does not work, or does not scale |
 
-Captured tool output sits beside them, each the whole standard output of one
-command with no argument:
+Captured tool output sits beside them. The first three are the whole standard
+output of one command with no argument; the fourth is one section of a longer
+run, as its row says:
 
 | transcript | produced by | feeds |
 | --- | --- | --- |
