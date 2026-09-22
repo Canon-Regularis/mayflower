@@ -32,8 +32,6 @@ from _jsdriver import run_widget_probe, write_engine_script  # noqa: E402
 # The engine as the page inlines it, written once for this process. The
 # harnesses eval it whole, so what they run is what the page runs.
 ENGINE_SCRIPT = write_engine_script()
-
-NODE = os.environ.get("MF_NODE", "node")
 POOL = os.path.join(ROOT, "web", "pool.bin")
 # Generous, because contention is the only thing that varies here.
 TIMEOUT = 1800

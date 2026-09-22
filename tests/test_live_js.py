@@ -24,14 +24,12 @@ from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ROOT, SKIP, check, report, widget_env  # noqa: E402
-from _jsdriver import GLYPHS, run_js, write_engine_script  # noqa: E402
+from _jsdriver import GLYPHS, NODE, run_js, write_engine_script  # noqa: E402
 from _pool import CELLS, HIT, LENS, SUNK, placement_cells, read_pool, survivors  # noqa: E402
 
 # The engine as the page inlines it, written once for this process. The
 # harnesses eval it whole, so what they run is what the page runs.
 ENGINE_SCRIPT = write_engine_script()
-
-NODE = os.environ.get("MF_NODE", "node")
 POOL = os.path.join(ROOT, "web", "pool.bin")
 
 
@@ -228,10 +226,14 @@ def run_pool_probe() -> Any:
 # decoder and the survivor rule it carried are now in tests/_pool.py, where the
 # other two pool tests take them from.
 
-def check_widget_handoff() -> int:
+def check_widget_handoff() -> None:
+    # None, like the eleven other group functions in tests/. This returned a
+    # local failure count that main() then combined with report()'s, and every
+    # condition it counted had already gone through check(), so the shared
+    # counter held them all and the second tally could only double-count. The
+    # clause reading it was unreachable for the same reason.
     print("\nthe live widget's sample-to-exact handoff")
     print("========================================")
-    failures = 0
     src = io.open(os.path.join(ROOT, "web", "live.js"), encoding="utf-8").read()
 
     m = re.search(r"SWITCH_TO_EXACT\s*=\s*(\d+)", src)
@@ -241,8 +243,6 @@ def check_widget_handoff() -> int:
     ok = m is not None and extra == ""
     check(ok, "the handoff keys on the survivor count and nothing else",
           "the branch carries an extra clause: {!r}".format(extra))
-    if not ok:
-        failures += 1
 
     # The rule is only worth guarding if a thin opening is reachable. Sink the
     # 2-ship and a 3-ship of the pool's first board: five shots, no misses.
@@ -261,16 +261,17 @@ def check_widget_handoff() -> int:
     thin = alive < threshold
     check(thin, "a five-shot opening can leave {} of {:,} alive".format(alive, n),
           "nothing to guard: the sample never goes thin in the opening")
-    if not thin:
-        failures += 1
 
     # And the sampled answer really is wrong there, not merely coarse.
     job = [{"kind": "marginals", "w": 10, "h": 10, "fleet": LENS,
             "history": [list(x) for x in history]}]
     got = run_js(job)
     if got is None:
-        print("  could not run node; treating as a failure")
-        return 1
+        # Through check() rather than a returned count, which is what the rest
+        # of this function now does and what the shared counter is for.
+        check(False, "the exact sweep runs for the comparison",
+              "could not run node")
+        return
     exact = got[0]
 
     sampled = [c / alive for c in counts] if alive else [0.0] * CELLS
@@ -278,9 +279,6 @@ def check_widget_handoff() -> int:
     wrong = worst > 0.10
     check(wrong, "the sampled posterior is off by {:.2f} there".format(worst),
           "the sample still agrees with the sweep, so the handoff guards nothing")
-    if not wrong:
-        failures += 1
-    return failures
 
 
 def main() -> int:
@@ -371,8 +369,8 @@ def main() -> int:
               "accepted: {}".format(", ".join(accepted)))
 
 
-    failures = check_widget_handoff()
-    return report() or (1 if failures else 0)
+    check_widget_handoff()
+    return report()
 
 
 if __name__ == "__main__":

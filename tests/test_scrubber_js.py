@@ -22,10 +22,8 @@ import sys
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _jsdriver import GLYPHS, painted_glyphs  # noqa: E402
+from _jsdriver import GLYPHS, NODE, painted_glyphs  # noqa: E402
 from _harness import ROOT, SKIP, check, report, widget_env  # noqa: E402
-
-NODE = os.environ.get("MF_NODE", "node")
 FIGURES = os.path.join(ROOT, "out", "figures.json")
 
 

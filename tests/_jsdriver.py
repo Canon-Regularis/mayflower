@@ -29,10 +29,13 @@ import sys
 import tempfile
 from typing import Any
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _harness import ROOT  # noqa: E402
 
 # Distributions disagree about whether the binary is node or nodejs, so the
-# build hands over the one it found.
+# build hands over the one it found. One home: the four Node-driven tests all
+# import from here and all four carried this line, with this comment, while
+# none of them imported it.
 NODE = os.environ.get("MF_NODE", "node")
 
 

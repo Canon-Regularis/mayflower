@@ -30,22 +30,28 @@ import random
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _harness import ROOT  # noqa: E402
-from _jsdriver import run_js  # noqa: E402
+from _jsdriver import NODE, run_js  # noqa: E402
+from _pool import HIT, MISS, SUNK  # noqa: E402
 
-# This file keeps its own counters. They are function local and returned to the
-# caller rather than a mutated module global, so this is a different pattern from
-# the other ten tests, not a copy of theirs. Converting a 491 line differential
-# test to the shared counter carries more risk than the change is worth. Only the
-# column width is aligned, so the suite prints a consistent format.
 sys.path.insert(0, os.path.join(ROOT, "python"))
 
 import oracle  # noqa: E402
 
+# This file keeps its own counters, and the note belongs here rather than three
+# lines up, where it sat above a sys.path line and read as a remark about that.
+# The counters are function local and returned to the caller rather than a
+# mutated module global, so this is a different pattern from the other sixteen
+# tests and not a copy of theirs. Converting a 491 line differential test to the
+# shared counter carries more risk than the change is worth. Only the column
+# width is aligned, so the suite prints a consistent format.
+#
+# For the same reason it returns 1 rather than SKIP when node cannot be run,
+# where its three Node-driven siblings skip. CMake registers this test only
+# when it has found node, so the path is not reachable from a registered run.
+
+# The engine's own cell states, which are not the outcome codes below.
 FREE, EMPTY, OCCUPIED = 0, 1, 2
 
-# Distributions disagree about whether the binary is node or nodejs, so the
-# build hands over the one it found.
-NODE = os.environ.get("MF_NODE", "node")
 
 # Small enough for literal enumeration, varied enough to exercise both
 # orientations, repeated lengths and a non-square board.
@@ -93,15 +99,14 @@ def replay(board: oracle.Board, width: int,
         shot.add(cell)
         hit = next((s for s in ships if cell in s), None)
         if hit is None:
-            out.append((MISS_, 0))
+            out.append((MISS, 0))
         elif hit - shot:
-            out.append((HIT_, 0))
+            out.append((HIT, 0))
         else:
-            out.append((SUNK_, len(hit)))
+            out.append((SUNK, len(hit)))
     return out
 
 
-MISS_, HIT_, SUNK_ = 0, 1, 2
 
 
 def count_history(boards: Sequence[oracle.Board], width: int,
@@ -246,7 +251,7 @@ def main() -> int:
     for i, label in enumerate(labels):
         if "history" in label:
             j = jobs[i]
-            if any(s[1] == SUNK_ for s in j["history"]):
+            if any(s[1] == SUNK for s in j["history"]):
                 withSunk += 1
         if got[i] != expected[i]:
             mismatches += 1
