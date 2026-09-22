@@ -174,7 +174,13 @@ jobs:
       #
       # provenance arrived later and landed in exactly the same hole, which
       # is the argument for this list being the one place a figure-data
-      # test is named. Five now, with figure_marks.
+      # test is named. Six now, with pool.
+      #
+      # pool was the last one outside this list, and it was the worst placed.
+      # It reads web/pool.bin, which is tracked, so it passed on every push
+      # while the one check in it that says the pool is correctly distributed
+      # sat behind a test for out/figures.json and silently did not run. Being
+      # outside this list, it ran nowhere else either.
       #
       # Do not write the count into prose elsewhere: docs/CI.md named three
       # here for two rounds after this list reached five. The list is the
@@ -185,7 +191,7 @@ jobs:
       # what they are gated on.
       - name: The figure-data contract
         run: |
-          ctest --test-dir build -R '^(report_data|results|scrubber_js|provenance|figure_marks)$' \
+          ctest --test-dir build -R '^(report_data|results|scrubber_js|provenance|figure_marks|pool)$' \
             -V --no-tests=error > figure-data.log 2>&1 \
             || { cat figure-data.log; exit 1; }
           cat figure-data.log
@@ -201,7 +207,9 @@ jobs:
           # This is why the run above is -V and not --output-on-failure: the
           # phrase is printed by a test that PASSES, and ctest keeps a passing
           # test's output to itself unless asked for all of it. The verbose log
-          # is about two hundred lines for these five.
+          # runs to a couple of hundred lines for this list, which is a
+          # count deliberately not written down: the line above it corrected
+          # one such number and this one stayed stale in the same step.
           if grep -q 'CHECKS OMITTED' figure-data.log; then
             echo 'a figure-data test passed with checks left out; see the line above'
             exit 1

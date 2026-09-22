@@ -20,9 +20,9 @@ default ASLR entropy.
 
 The extended suite (`-L pr`) gates a pull request rather than every push. Nightly
 adds board-generator uniformity at 300,000 draws, and rebuilds the figure data
-and the report end to end, which is where the five figure-data tests run
+and the report end to end, which is where the six figure-data tests run
 against real data instead of reporting Skipped: `report_data`, `results`,
-`scrubber_js`, `provenance` and `figure_marks`.
+`scrubber_js`, `provenance`, `figure_marks` and `pool`.
 
 Two things are asserted that a green tick would otherwise hide. Twenty-one tests
 are registered only when CMake finds Python, four of them needing Node as well,

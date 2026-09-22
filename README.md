@@ -116,8 +116,9 @@ over `python/`, `tools/` and `tests/`, and `pip install mypy==2.1.0` runs it
 here rather than reporting `Skipped`. CI installs it in one job and treats a
 skip there as a failure.
 
-Five tests report `Skipped` until `report_data` has run, because they read the
-generated `out/figures.json`. That is expected on a fresh clone. `report_data` is
+Six tests report `Skipped` until `report_data` has run, because they read the
+generated `out/figures.json`; `figure_marks` waits on the rendered page as
+well. That is expected on a fresh clone. `report_data` is
 dominated by fixed exact sweeps rather than by the game count, so a smaller number
 buys little: 200 games costs 387 s against 717 s for the 20,000 above.
 

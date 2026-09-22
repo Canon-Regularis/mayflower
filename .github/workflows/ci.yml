@@ -114,10 +114,10 @@ jobs:
             exit 1
           fi
 
-      # out/ is generated and not in the repository, so the five figure-data
+      # out/ is generated and not in the repository, so the six figure-data
       # tests report Skipped here: report_data, results, scrubber_js,
-      # provenance and figure_marks. The nightly workflow generates out/ and
-      # runs all five for real. The list lives in nightly.yml; this comment
+      # provenance, figure_marks and pool. The nightly workflow generates out/
+      # and runs all six for real. The list lives in nightly.yml; this comment
       # has now been the stale copy of it twice.
       - name: Test
         run: ctest --test-dir build -L fast --output-on-failure --no-tests=error
