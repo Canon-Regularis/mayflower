@@ -50,7 +50,15 @@ experiments:
     result: >
       max-hit-probability within 0.16 shots of optimal and exactly optimal on 3
       of 6 instances; max-information-gain loses up to 6.86 shots.
-    notes: exploratory on TRAIN; the TEST version is pre-registered and unrun.
+    notes: >
+      Exploratory on TRAIN. There is no TEST version to run, and this said
+      there was one, pre-registered and waiting.
+      experiments/preregistration.md was amended for exactly that reason,
+      recorded as audit.log entry 0005: the comparison is exact over enumerated
+      small instances and carries no fold, so there is no TEST reading of it to
+      take. Testing it at 10x10 would need the exact-posterior policies played
+      over TEST boards, which is a different experiment and is not covered by
+      the unseal the headline comparison used.
 
   - id: bound-ladder
     status: complete
