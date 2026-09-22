@@ -24,6 +24,9 @@
 
 namespace {
 
+// The clock body itself lives in platform.hpp, which records retiring 21
+// inline copies of it. Seven were back here, in a file that already
+// includes that header and calls platform::pinToFastestCore.
 using Clock = std::chrono::steady_clock;
 
 double median(std::vector<double> v) {
@@ -86,37 +89,37 @@ int main(int argc, char** argv) {
         {
             const auto t = Clock::now();
             const auto r = countConfigurations(inst);
-            v0.times.push_back(std::chrono::duration<double>(Clock::now() - t).count());
+            v0.times.push_back(platform::elapsed(t));
             v0.count = r.count; v0.edges = r.edges;
         }
         {
             const auto t = Clock::now();
             const auto r = countConfigurationsFast(inst);
-            v1.times.push_back(std::chrono::duration<double>(Clock::now() - t).count());
+            v1.times.push_back(platform::elapsed(t));
             v1.count = r.count; v1.edges = r.edges;
         }
         {
             const auto t = Clock::now();
             const auto r = countConfigurationsFast(inst);
-            v1.times.push_back(std::chrono::duration<double>(Clock::now() - t).count());
+            v1.times.push_back(platform::elapsed(t));
             (void)r;
         }
         {
             const auto t = Clock::now();
             const auto r = countConfigurations(inst);
-            v0.times.push_back(std::chrono::duration<double>(Clock::now() - t).count());
+            v0.times.push_back(platform::elapsed(t));
             (void)r;
         }
         {
             const auto t = Clock::now();
             const auto r = countConfigurationsFast(inst);
-            control.times.push_back(std::chrono::duration<double>(Clock::now() - t).count());
+            control.times.push_back(platform::elapsed(t));
             control.count = r.count; control.edges = r.edges;
         }
         {
             const auto t = Clock::now();
             const auto r = countConfigurationsBlocked(inst, 1);
-            v2.times.push_back(std::chrono::duration<double>(Clock::now() - t).count());
+            v2.times.push_back(platform::elapsed(t));
             v2.count = r.count; v2.edges = r.edges;
         }
     }
@@ -191,7 +194,7 @@ int main(int argc, char** argv) {
         for (int i = 0; i < std::max(3, reps / 2); ++i) {
             const auto t = Clock::now();
             const auto r = countConfigurationsBlocked(inst, threads);
-            times.push_back(std::chrono::duration<double>(Clock::now() - t).count());
+            times.push_back(platform::elapsed(t));
             count = r.count;
         }
         if (count != v0.count) identical = false;
