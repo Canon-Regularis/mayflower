@@ -240,6 +240,59 @@ def main() -> int:
                   "and " + what + " matches experiments/results.json",
                   "README says {}, the record says {}".format(got, counts[key]))
 
+    # 2c. The extended label's budget, against the budget it is given.
+    #
+    # Two workflow comments stated this arithmetic and both were stale: they
+    # said thirteen tests at 900 and two at 1800 for 240 minutes, where the
+    # registrations say twelve and three for 270, and both jobs then set a
+    # timeout of 260. The budget was under the worst case, which is the fault
+    # nightly.yml records finding on the uniformity job. Raising one TIMEOUT
+    # in CMakeLists is all it takes, and nothing read either comment.
+    #
+    # ctest applies a default when a registration carries no TIMEOUT, so a pr
+    # test without one is refused rather than counted as zero.
+    pr = [(n, re.search(r"TIMEOUT\s+(\d+)", body)) for n, body in tests
+          if re.search(r"LABEL\s+pr\b", body)]
+    untimed = sorted(n for n, m in pr if m is None)
+    check(not untimed, "every test in the pr label carries a TIMEOUT",
+          "no TIMEOUT on " + ", ".join(untimed))
+    worst = sum(int(m.group(1)) for _, m in pr if m) // 60
+    buckets: dict[str, int] = {}
+    for _, m in pr:
+        if m:
+            buckets[m.group(1)] = buckets.get(m.group(1), 0) + 1
+
+    for path, what in ((CI, "ci.yml"), (NIGHTLY, "nightly.yml")):
+        text = read(path)
+        m = re.search(r"-L pr is ([\w-]+) tests, ([\w-]+) at TIMEOUT (\d+) and "
+                      r"([\w-]+) at (\d+), so ctest[\s\S]{0,80}?may spend (\d+) minutes",
+                      text)
+        check(bool(m), what + " states the pr label's worst case")
+        if not m:
+            continue
+        stated_total = WORDS.get(m.group(1).lower())
+        lo, hi = m.group(3), m.group(5)
+        check(stated_total == len(pr),
+              what + "'s pr test count matches the registrations",
+              "comment says {!r}, CMakeLists says {}".format(m.group(1), len(pr)))
+        check(WORDS.get(m.group(2).lower()) == buckets.get(lo),
+              what + " counts the {}-second tests correctly".format(lo),
+              "comment says {!r}, there are {}".format(m.group(2), buckets.get(lo)))
+        check(WORDS.get(m.group(4).lower()) == buckets.get(hi),
+              what + " counts the {}-second tests correctly".format(hi),
+              "comment says {!r}, there are {}".format(m.group(4), buckets.get(hi)))
+        check(int(m.group(6)) == worst,
+              what + "'s stated worst case matches the registrations",
+              "comment says {} minutes, the registrations give {}".format(
+                  m.group(6), worst))
+        budget = re.search(r"timeout-minutes:\s*(\d+)", text[m.end():])
+        check(bool(budget), what + " sets a budget under that comment")
+        if budget:
+            check(int(budget.group(1)) > worst,
+                  what + "'s budget is above the worst case",
+                  "budget {} minutes against a worst case of {}".format(
+                      budget.group(1), worst))
+
     # 3. One constant, three languages' worth of homes.
     #
     # The 95 percent normal quantile is written in C++, in the report layer and

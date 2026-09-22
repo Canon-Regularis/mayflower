@@ -23,9 +23,11 @@ jobs:
   extended:
     name: extended suite
     runs-on: ubuntu-24.04
-    # -L pr is fifteen tests, thirteen at TIMEOUT 900 and two at 1800, so ctest
-    # itself may spend 240 minutes before giving up.
-    timeout-minutes: 260
+    # -L pr is fifteen tests, twelve at TIMEOUT 900 and three at 1800, so ctest
+    # itself may spend 270 minutes before giving up. The budget is above that
+    # rather than under it; see ci.yml's copy of this comment for why, and
+    # tests/test_stated_counts.py for what now derives it.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
 

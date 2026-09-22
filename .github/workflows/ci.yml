@@ -251,9 +251,14 @@ jobs:
     # every push to a branch.
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    # -L pr is fifteen tests, thirteen at TIMEOUT 900 and two at 1800, so ctest
-    # itself may spend 240 minutes before it gives up on its own.
-    timeout-minutes: 260
+    # -L pr is fifteen tests, twelve at TIMEOUT 900 and three at 1800, so ctest
+    # itself may spend 270 minutes before it gives up on its own. The budget is
+    # above that rather than under it: at 260 it was below the worst case, which
+    # is the fault nightly.yml records finding on the uniformity job, where the
+    # budget was exactly the worst case. tests/test_stated_counts.py derives
+    # both numbers from the registrations now, so the next TIMEOUT change fails
+    # here instead of sitting in two comments.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
 
