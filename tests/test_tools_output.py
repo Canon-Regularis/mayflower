@@ -105,9 +105,14 @@ def test_export_pool() -> None:
     # record anywhere of how the committed file was made. Passing a path
     # matters too, since a bare run would overwrite web/pool.bin.
     committed = os.path.join(ROOT, "web", "pool.bin")
-    if not os.path.exists(committed):
-        print("  web/pool.bin is absent, skipping the committed comparison")
-    else:
+    # A failure rather than a shrug. web/pool.bin is tracked, so its absence is
+    # a broken checkout and not a state to tolerate, and this was written as
+    # `if not exists: print(...)` with the comparison in the else, which is
+    # exactly the shape that kept test_pool's distributional check from ever
+    # running. A dropped check that prints a line still reports green.
+    check(os.path.exists(committed), "the committed web/pool.bin is there to compare",
+          "it is tracked, so this is a broken checkout rather than a fresh one")
+    if os.path.exists(committed):
         fresh = os.path.join(tmp, "pool_defaults.bin")
         r = run([require_exe("export_pool"), fresh], timeout=900)
         check(r.returncode == 0, "export_pool runs on its own defaults",
