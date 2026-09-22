@@ -188,7 +188,16 @@ def main() -> int:
               "figure data names {}, which git cannot resolve".format(stamped))
 
     # 2. The page belongs to the data it was built from.
-    if os.path.exists(REPORT):
+    #
+    # Whether the page is here decides three of this test's checks, so it is
+    # asked once and reported once. Without the report below, the nightly
+    # report pipeline ran this test with the page not yet rendered and it
+    # printed "all checks passed" over two key-presence tests on a dict, in
+    # the only job that can run it at all. A skip is visible to the gate
+    # because ctest prints it; an omission inside a passing test is not, so
+    # this says so in a phrase the gate greps for.
+    have_page = os.path.exists(REPORT)
+    if have_page:
         page = io.open(REPORT, encoding="utf-8").read()
         m = re.search(r'data-commit="([^"]*)"', page)
         check(m is not None,
@@ -200,7 +209,8 @@ def main() -> int:
                   "page says {}, figure data says {}; the page was built from "
                   "older data, so re-render it".format(m.group(1), stamped))
     else:
-        print("  out/report.html is absent, so only the figure data is checked")
+        print("  CHECKS OMITTED: out/report.html is absent, so the three checks "
+              "over the page did not run")
 
     # 3. Nothing predates what feeds it.
     late = newer_than(FIGURES, FIGURE_SOURCES)
@@ -209,7 +219,7 @@ def main() -> int:
           "{} source(s) changed since it was generated, starting with {}; "
           "rerun build/report_data".format(len(late), ", ".join(late[:4])))
 
-    if os.path.exists(REPORT):
+    if have_page:
         check(os.path.getmtime(REPORT) + 1.0 >= os.path.getmtime(FIGURES),
               "out/report.html is no older than the figure data",
               "the page was rendered before the figure data it reads")

@@ -154,6 +154,19 @@ jobs:
           print("figures.json carries", len(d), "sections")
           EOF
 
+      # Above the gate, not below it, and this is load bearing.
+      #
+      # figure_marks reads this page and can only skip without it. Three of
+      # provenance's checks read it too and simply vanish without it, leaving
+      # that test to report "all checks passed" over two key-presence tests on
+      # a dict. With the render below the gate the first made the job red and
+      # the second went unnoticed, and since the gate then exits 1 the render
+      # never ran at all: no CI path produced this page.
+      #
+      # Moving this back below the gate restores both faults at once.
+      - name: Render the report
+        run: python tools/render_report.py out/figures.json out/report.html
+
       # scrubber_js is gated on out/figures.json like the other two, and was
       # left out of this list. Being labelled fast, it therefore ran nowhere:
       # every push leg skipped it for want of out/, and the one job that
@@ -173,11 +186,24 @@ jobs:
       - name: The figure-data contract
         run: |
           ctest --test-dir build -R '^(report_data|results|scrubber_js|provenance|figure_marks)$' \
-            --output-on-failure --no-tests=error > figure-data.log 2>&1 \
+            -V --no-tests=error > figure-data.log 2>&1 \
             || { cat figure-data.log; exit 1; }
           cat figure-data.log
           if grep -q Skipped figure-data.log; then
             echo 'a figure-data test skipped in the job that exists to run it'
+            exit 1
+          fi
+          # And the quieter failure. ctest prints Skipped, so the rule above
+          # can see a test that did not run; nothing prints anything when a
+          # test runs, drops half its checks and reports success. The tests
+          # that can do that say so in this phrase.
+          #
+          # This is why the run above is -V and not --output-on-failure: the
+          # phrase is printed by a test that PASSES, and ctest keeps a passing
+          # test's output to itself unless asked for all of it. The verbose log
+          # is about two hundred lines for these five.
+          if grep -q 'CHECKS OMITTED' figure-data.log; then
+            echo 'a figure-data test passed with checks left out; see the line above'
             exit 1
           fi
 
@@ -238,9 +264,6 @@ jobs:
             exit 1
           }
           git checkout -- docs/
-
-      - name: Render the report
-        run: python tools/render_report.py out/figures.json out/report.html
 
       # The renderer concatenates strings and cannot fail on a page that came out
       # empty, so the page is checked for the things it is supposed to contain.
