@@ -410,9 +410,12 @@ mf_test(results
   LABEL fast
   SKIPPABLE)
 
-# The live widget scans web/pool.bin for its opening posterior and three readers
-# took its contents on trust. Decoded here with the formula export_pool
-# documents, so the two disagreeing is a failure rather than a wrong heatmap.
+# The live widget scans web/pool.bin for its opening posterior. web/live.js
+# refuses a pool it cannot decode, but by its length and its first board only;
+# this reads all 200,000 with the formula export_pool documents, so the two
+# disagreeing is a failure rather than a wrong heatmap. Its last check holds
+# the pool against the exact prior and so needs out/figures.json, which is why
+# it is in the nightly figure-data list and reports Skipped without it.
 mf_test(pool
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_pool.py
   LABEL fast

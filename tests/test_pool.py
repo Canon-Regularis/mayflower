@@ -1,14 +1,34 @@
 """The board pool the live widget draws its opening posterior from.
 
-web/pool.bin is 200,000 configurations packed one byte per ship. Three things
-read it and none checked it. The widget scans the pool while more than 400
-boards survive, which is most of the opening, so a malformed or skewed pool
-would put a wrong posterior on the page under the label "exact". `export_pool`
-is also not run by ctest, so a regression in the exporter ships unnoticed.
+web/pool.bin is 200,000 configurations packed one byte per ship. The widget
+scans the pool while more than 400 boards survive, which is most of the
+opening, so a malformed or skewed pool would put a wrong posterior on the page
+under the label "exact".
 
 Nothing here imports the engine. The pool is decoded with the formula the
 exporter documents and checked against the rules directly, so this fails if the
-exporter and the decoder ever disagree.
+exporter and the decoder ever disagree. web/live.js does refuse a pool it
+cannot decode, but by its length and its first board only; this reads all
+200,000.
+
+Eight checks, and they are not equal. Six are structural and hold for any legal
+pool: the byte count divides, the pool is not empty, every placement index is
+inside its own table, no ship overlaps another, every board covers seventeen
+cells, occupancy sums. The seventh is a degeneracy floor, which is weakly
+distributional rather than structural: a pool of 200,000 copies of one legal
+board passes all six above it and fails that one. Only the eighth holds the
+pool against the exact prior, and that is the property the widget's posterior
+actually rests on.
+
+The eighth needs out/figures.json, so without it this reports Skipped rather
+than passing: a green run over the other seven claims more than it checked, and
+that is what it did on every push, in a test no CI job ran with the figure data
+present.
+
+The exporter itself is covered elsewhere, on the pr label and nightly rather
+than on every push: tests/test_tools_output.py runs export_pool and compares
+its output against this committed file, which is the reproducibility check this
+one cannot make from the bytes alone.
 
     python tests/test_pool.py
 """
@@ -21,7 +41,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import ROOT, SKIP, check, report  # noqa: E402
+from _harness import ROOT, SKIP, check, failures, report  # noqa: E402
 from _pool import CELLS, LENS, SHIP_CELLS, placement_table  # noqa: E402
 
 POOL = os.path.join(ROOT, "web", "pool.bin")
@@ -100,22 +120,49 @@ def main() -> int:
 
     # Against the exact prior, when it has been generated. The sampler is a
     # verified bijection, so a skew here means the exporter, not the sampler.
-    if os.path.exists(FIGURES):
-        fig = json.load(io.open(FIGURES, encoding="utf-8"))
-        prior = fig["prior"]
-        exact = [c / prior["total"] for c in prior["counts"]]
-        worst, at = 0.0, -1
-        for c in range(CELLS):
-            d = abs(occ[c] / n - exact[c])
-            if d > worst:
-                worst, at = d, c
-        # 5 sigma at the largest marginal and this sample size.
-        allowed = 5.0 * (0.2136 * (1 - 0.2136) / n) ** 0.5
-        check(worst <= allowed,
-              "every cell sits within five sigma of the exact prior",
-              "largest departure {:.5f} at cell {}, allowed {:.5f}".format(worst, at, allowed))
-    else:
-        print("  out/figures.json absent, skipping the prior comparison")
+    #
+    # This sat behind `if os.path.exists(FIGURES)` with an else that printed a
+    # line and let the test pass. Of the seven checks above it, six are
+    # structural and one is the degeneracy floor; none of them holds the pool
+    # against the exact prior, which is the property the widget's opening
+    # posterior rests on. out/ is gitignored, so this dropped on every push,
+    # and pool was in no job that generates out/, so it ran nowhere in CI.
+    #
+    # It is a skip now rather than a silent pass, which is what
+    # tests/test_report_data.py does with the same artefact: everything that
+    # can run has run, and ctest shows the gap instead of reporting green over
+    # it. Two separate mistakes are avoided here and they have different
+    # consequences. Returning SKIP unconditionally would hide a failure in the
+    # seven checks above, in every leg where out/ is absent, which is every
+    # push leg. And `if failures` would test a function object, which is always
+    # true, turning every legitimate skip into a failure.
+    if not os.path.exists(FIGURES):
+        print("  out/figures.json is missing; run tools/report_data first")
+        return 1 if failures() else SKIP
+
+    fig = json.load(io.open(FIGURES, encoding="utf-8"))
+    prior = fig["prior"]
+    exact = [c / prior["total"] for c in prior["counts"]]
+    # Each cell against its own sigma, rather than one allowance for all
+    # hundred taken at the largest marginal. That allowance was 0.00458, which
+    # is five sigma where the marginal is 0.2136 and seven and a half where it
+    # is 0.0800, so the corners, where the spread is narrowest, were held to
+    # the loosest bound and the sentence below was untrue of them. Per cell it
+    # is exactly what it says, and it tightens rather than loosens: the worst
+    # departure on the committed pool is 3.20 sigma.
+    floor = min(exact)
+    check(floor > 0.0,
+          "every cell has a positive exact marginal to divide by",
+          "the smallest is {:.5f}".format(floor))
+    worst, at = 0.0, -1
+    for c in range(CELLS):
+        sigma = (exact[c] * (1 - exact[c]) / n) ** 0.5
+        z = abs(occ[c] / n - exact[c]) / sigma if sigma > 0 else 0.0
+        if z > worst:
+            worst, at = z, c
+    check(worst <= 5.0,
+          "every cell sits within five sigma of the exact prior",
+          "largest departure {:.2f} sigma at cell {}".format(worst, at))
 
     return report()
 
