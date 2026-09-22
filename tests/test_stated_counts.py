@@ -189,6 +189,16 @@ def main() -> int:
          "README's fast-label count"),
         (README, r"([\w-]+) tests report `Skipped` until", len(figure_gated),
          "README's figure-data Skipped count"),
+        # nightly.yml says of its gate list that "the list is the fact and
+        # everything else is derived from it", and until these two entries
+        # only README's copy was. Both of these were edited by hand from five
+        # to six and neither would have failed if they had not been: the same
+        # shape as docs/CI.md naming three for two rounds after the list
+        # reached five, which is the drift that comment records.
+        (CI_DOC, r"the ([\w-]+) figure-data tests", len(figure_gated),
+         "docs/CI.md's figure-data count"),
+        (CI, r"so the ([\w-]+) figure-data", len(figure_gated),
+         "ci.yml's figure-data count"),
         (CI_DOC, r"([\w-]+) tests\s+are registered only when CMake finds Python", len(names),
          "docs/CI.md's interpreter-gated count"),
         (CI_DOC, r"([\w-]+) of them needing Node", len(node_gated),
