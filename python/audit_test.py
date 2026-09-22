@@ -1,6 +1,6 @@
 """The seal's invariants.
 
-Moved with the code it tests. Driven from python/stats.py's self test so the
+Moved with the code it tests. Driven from python/stats_test.py so the
 one --quick entry point still runs everything, and so the deliberate chain
 break stays beside the chain it breaks.
 """

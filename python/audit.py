@@ -180,5 +180,3 @@ def require_unseal(experiment: str, path: str | None = None) -> None:
             "experiment '{}' has not been unsealed; record the unseal in "
             "experiments/audit.log before reading TEST".format(experiment))
 
-
-# --- the checks -----------------------------------------------------------
