@@ -4,6 +4,8 @@ Read this before touching anything that consumes an observation record. Getting
 it wrong does not crash; it inflates hypothesis counts, which propagates into
 every probability, every information-gain score and every reported number.
 
+Part of [Mayflower](../README.md).
+
 ## The rule
 
 `SUNK(x, L)` means the shot at cell `x` sank the ship, so every other cell of

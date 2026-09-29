@@ -1,9 +1,18 @@
 # Mayflower
 
 [![CI](https://github.com/Canon-Regularis/mayflower/actions/workflows/ci.yml/badge.svg)](https://github.com/Canon-Regularis/mayflower/actions/workflows/ci.yml)
+[![Nightly](https://github.com/Canon-Regularis/mayflower/actions/workflows/nightly.yml/badge.svg)](https://github.com/Canon-Regularis/mayflower/actions/workflows/nightly.yml)
 
 Exact Bayesian inference and optimisation, with Battleships as the problem
 instance.
+
+**[Read the report](https://canon-regularis.github.io/mayflower/)**, or
+[the data dossier](https://canon-regularis.github.io/mayflower/results.html)
+beside it. The nightly run regenerates the figure data, renders the report from
+it and the dossier from `experiments/results.json`, and publishes both only if
+every job that night passed, so the pages are as current as the last green
+nightly. The report carries a live engine that hunts a hidden board against the
+exact posterior.
 
 Mayflower maintains the exact posterior over every fleet configuration consistent
 with an observation record. A broken-profile transfer-matrix DP replaces
@@ -86,14 +95,17 @@ difference of exactly 41.
 ## Quick start
 
 From a clean checkout to the report open in a browser. Timings are from the
-machine I developed this project on, so your results may differ.
+machine I developed this project on, so your results may differ. The block is
+POSIX shell; on Windows it runs under Git Bash or MSYS2 as written, and the
+`mkdir -p` and the redirect are the only two lines PowerShell spells
+differently.
 
 ```sh
 git clone https://github.com/Canon-Regularis/mayflower && cd mayflower
 
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   #  11 s
-cmake --build build                                       #  51 s
-ctest --test-dir build -L fast                            #  81 s, 31 tests
+cmake --preset release                                    #  11 s
+cmake --build --preset release                            #  51 s
+ctest --preset fast                                       #  81 s, 31 tests
 
 ./build/omega0            # 15,046,987,768 and 1,925,751,392, plus the lattice
 ./build/bounds            # the certified floors, 17 then 24.088
@@ -107,9 +119,33 @@ python tools/collect_results.py && python tools/render_results.py
 
 Then open `out/report.html`. It is one self-contained file and needs no server.
 
-C++20, CMake >= 3.24, Ninja, Python 3 and Node. Python is standard library only,
-so there is nothing to install to build, test or render. Developed against
-MinGW-w64 GCC 13.2 on Windows; CI also builds Linux GCC and Clang.
+`CMakePresets.json` names every configuration this project is built in, so a
+build is asked for by name rather than reconstructed from memory.
+`cmake --list-presets` and `ctest --list-presets` print the rest: `werror`
+carries the flags the per-push Linux gcc leg configures, `asan-ubsan` and `tsan`
+carry the sanitizer legs', `ubsan-trap` is the trapping stand-in for a toolchain
+that ships no sanitizer runtimes, and `coverage` is the gcov tree. Each writes
+its own build directory, so they do not evict one another.
+
+The workflows do not invoke these presets. They configure explicitly, because
+the per-push matrix varies the compiler and build type per leg and a preset is a
+fixed set. So `release` above is the local build, and `werror` is the one that
+reproduces a CI leg; `tests/test_stated_counts.py` holds its flags to the ones
+the workflows pass, so the two cannot drift apart in silence.
+
+Prerequisites, with the versions rather than the names:
+
+| | |
+| --- | --- |
+| C++20 | Developed against MinGW-w64 GCC 13.2 on Windows. CI builds Linux g++-13 and the clang++ the ubuntu-24.04 image ships, which is the version that leg pins by pinning the runner |
+| CMake | >= 3.24, which is also the floor `CMakePresets.json` declares |
+| Ninja | any; it is the only generator the presets name |
+| Python | >= 3.12. Every pinned CI leg uses 3.12, and twenty-one tests are registered only when CMake finds an interpreter |
+| Node | >= 20. CI runs 20 and 22 deliberately, because they infer an ES module's type differently and `web/engine.js` has to work either way |
+
+CMake warns rather than refuses when either interpreter is below its floor, so
+the tests are still registered and a failure is still visible. Python is
+standard library only, so there is nothing to install to build, test or render.
 
 The one exception is the type gate. `mypy.ini` holds a `--strict` configuration
 over `python/`, `tools/` and `tests/`, and `pip install mypy==2.1.0` runs it
@@ -185,6 +221,14 @@ browser engine, emitted it from both the horizontal and the vertical branch, so 
 back 2^k times too large. Both brute-force oracles always carried the guard, and
 the ladder caught nothing until its case list gained a fleet of single cells.
 
+A passing suite is not evidence on its own, so the complementary question is
+asked directly. `tools/mutants.json` holds eight faults as the exact edits that
+plant them and the tests that must fail because of each; `tools/mutate.py`
+applies them one at a time and compares the result against that record, so the
+file is a check rather than a log. Seven of the eight are caught. The one that
+is not is named in `docs/CORRECTNESS.md` rather than left for someone to
+rediscover.
+
 Full detail in [docs/CORRECTNESS.md](docs/CORRECTNESS.md).
 
 ## Further reading
@@ -223,6 +267,17 @@ bytes, because `M9_RESULTS.txt` carries a microsecond column in a table the
 collector does not read, and that column moves with the machine. The byte diff
 is printed anyway. `WEIGHTED_MARGINALS.txt` is left out: it reports its own
 wall-clock seconds and no published number depends on it.
+
+## Status
+
+Complete and not under active development. The engine, the bounds, the report
+and the verification described above are all in and measured; what remains
+undone is listed in [docs/LIMITATIONS.md](docs/LIMITATIONS.md) rather than left
+to be discovered. Issues and pull requests are welcome and may be answered
+slowly.
+
+Written by Matthew Miezaniec. Questions are best raised as a GitHub issue on
+this repository, so the answer sits beside the thing it is about.
 
 ## Licence
 

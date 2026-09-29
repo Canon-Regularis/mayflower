@@ -4,6 +4,8 @@ Counting fleet configurations is easy here and hard one step away. This records
 which step. Sevenster, Crombez and the min-sum set cover line were checked
 against the sources; the rest are standard results quoted with their venues.
 
+Part of [Mayflower](../README.md).
+
 ## 1. What the sweep costs
 
 The DP scans cells column-major carrying `(ext[0..H-1], vrem, fleet_usage)`. For
