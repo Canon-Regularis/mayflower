@@ -24,6 +24,42 @@ env:
   # can fault on another.
   CMAKE_ARGS: -DMF_NATIVE=OFF
 
+  # The build that every job sharing one ccache key configures, named once
+  # rather than typed per job. The key was written out four times across the two
+  # workflows as the literal ubuntu-24.04-g++-13-Release, which is what the build
+  # matrix's own key template computes for its first leg two hundred lines away.
+  # Move the matrix to another runner or compiler and those four jobs, three of
+  # them with budgets between 180 and 300 minutes, stop hitting the cache the
+  # matrix leg fills, with nothing anywhere to say so.
+  #
+  # runs-on cannot read the env context, so CACHE_OS is still spelled out there.
+  # tests/test_stated_counts.py checks that repetition, checks the two workflows
+  # agree, and checks that no job has gone back to a literal key.
+  CACHE_OS: ubuntu-24.04
+  CACHE_CXX: g++-13
+  CACHE_BUILD_TYPE: Release
+
+  # The matrix legs carry their own copy of this, because clang rejects the two
+  # -Wno-error names outright and fails the configure step rather than the build.
+  # This one serves the jobs outside the matrix.
+  WERROR: -Werror -Wno-error=stringop-overread -Wno-error=array-bounds
+
+# These two are the only ACTIONS here published by anyone other than GitHub.
+# They are pinned to a commit rather than a tag, with the release the commit
+# carried in the trailing comment, because a tag is a mutable pointer: v1 can be
+# moved onto a different commit by whoever owns it, and a pinned digest cannot.
+#
+# They are not the whole third-party surface, and saying so would be wrong. The
+# reference-models job installs mypy from PyPI and runs it over the checkout, so
+# a compromised release of that package executes here too. It is version-pinned,
+# which is the same argument one step weaker, since a version on PyPI is
+# immutable but the pin names no digest.
+#
+# actions/* stays on its major tag deliberately. The same argument applies less
+# forcefully there, since GitHub publishes them and a pin costs the automatic
+# security patching that moving tag is for, which is the trade this project has
+# already taken by letting Dependabot bump those majors.
+
 jobs:
   build:
     name: ${{ matrix.name }}
@@ -64,6 +100,12 @@ jobs:
             werror: -Werror
     steps:
       - uses: actions/checkout@v7
+        with:
+          # No job here pushes, fetches or calls the API, so the token has no
+          # use after the clone. Left in .git/config it is readable by every
+          # step that follows, which in most of these jobs includes a
+          # third-party action and in one of them a package fetched from PyPI.
+          persist-credentials: false
 
       - uses: actions/setup-python@v7
         with:
@@ -74,7 +116,7 @@ jobs:
           node-version: ${{ matrix.node }}
 
       - name: Cache compilation
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2.20
         with:
           key: ${{ matrix.os }}-${{ matrix.cxx }}-${{ matrix.build_type }}
 
@@ -131,6 +173,12 @@ jobs:
         shell: msys2 {0}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # No job here pushes, fetches or calls the API, so the token has no
+          # use after the clone. Left in .git/config it is readable by every
+          # step that follows, which in most of these jobs includes a
+          # third-party action and in one of them a package fetched from PyPI.
+          persist-credentials: false
 
       # The development toolchain is MinGW-w64 GCC on the UCRT runtime, and this
       # is the only configuration that compiles the Windows branch of
@@ -140,7 +188,7 @@ jobs:
       # new diagnostic into a red build on an unrelated pull request. Warnings are
       # still printed, and the Linux legs hold the -Werror line against a pinned
       # compiler.
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884  # v2.32.0
         with:
           msystem: UCRT64
           update: true
@@ -200,6 +248,12 @@ jobs:
             tests: -R '^(parallel|ladder)$'
     steps:
       - uses: actions/checkout@v7
+        with:
+          # No job here pushes, fetches or calls the API, so the token has no
+          # use after the clone. Left in .git/config it is readable by every
+          # step that follows, which in most of these jobs includes a
+          # third-party action and in one of them a package fetched from PyPI.
+          persist-credentials: false
 
       - uses: actions/setup-python@v7
         with:
@@ -210,7 +264,7 @@ jobs:
           node-version: '20'
 
       - name: Cache compilation
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2.20
         with:
           key: sanitizers-${{ matrix.name }}
 
@@ -261,6 +315,12 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
+        with:
+          # No job here pushes, fetches or calls the API, so the token has no
+          # use after the clone. Left in .git/config it is readable by every
+          # step that follows, which in most of these jobs includes a
+          # third-party action and in one of them a package fetched from PyPI.
+          persist-credentials: false
 
       - uses: actions/setup-python@v7
         with:
@@ -271,17 +331,17 @@ jobs:
           node-version: '20'
 
       - name: Cache compilation
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2.20
         with:
-          key: ubuntu-24.04-g++-13-Release
+          key: ${{ env.CACHE_OS }}-${{ env.CACHE_CXX }}-${{ env.CACHE_BUILD_TYPE }}
 
       - name: Configure and build
         run: |
           cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_BUILD_TYPE=${{ env.CACHE_BUILD_TYPE }} \
+            -DCMAKE_CXX_COMPILER=${{ env.CACHE_CXX }} \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_FLAGS="-Werror -Wno-error=stringop-overread -Wno-error=array-bounds" \
+            -DCMAKE_CXX_FLAGS="$WERROR" \
             $CMAKE_ARGS
           cmake --build build
 
@@ -294,6 +354,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          # No job here pushes, fetches or calls the API, so the token has no
+          # use after the clone. Left in .git/config it is readable by every
+          # step that follows, which in most of these jobs includes a
+          # third-party action and in one of them a package fetched from PyPI.
+          persist-credentials: false
 
       - uses: actions/setup-python@v7
         with:

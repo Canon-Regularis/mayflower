@@ -1,9 +1,18 @@
 version: 2
 
 updates:
-  # The workflows pin actions to major tags, which float within a major version
-  # and stop at the next one. This raises a pull request when a major lands, so
-  # an action going stale is visible rather than silent.
+  # The workflows carry both pinning styles, and this covers each.
+  #
+  # actions/* stay on a major tag, which floats within a major version and stops
+  # at the next one, so this raises a pull request when a major lands and an
+  # action going stale is visible rather than silent.
+  #
+  # The two actions published by anyone other than GitHub, ccache-action and
+  # setup-msys2, are pinned to a commit instead, because a tag is a mutable
+  # pointer and those two are the only path by which an outside party runs code
+  # in this build. Dependabot updates a pinned digest as readily as a tag and
+  # rewrites the version in the trailing comment with it, which is the reason
+  # that comment is there rather than decoration.
   - package-ecosystem: github-actions
     directory: /
     schedule:
