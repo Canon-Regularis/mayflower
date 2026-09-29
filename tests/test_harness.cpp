@@ -126,6 +126,35 @@ void testPoliciesRefuseAFullBoard() {
     } else {
         std::printf("  density still chooses %d when the board is untouched\n", c);
     }
+
+    // And which cell, not merely that there is one.
+    //
+    // The line above computed this and printed it, which is the shape this
+    // repository keeps finding: a value produced correctly and read by nothing
+    // that could disagree with it. A mutation campaign confirmed the cost.
+    // Reversing the density policy's tie-break, so that a tie goes to the
+    // highest cell index rather than the lowest, moves this opening from 5 to
+    // 10 and was caught by no test in either label.
+    //
+    // It matters because this policy produces the project's headline measured
+    // number. Every mean, interval and figure that says "density" is a sum over
+    // games whose every tied choice this comparison decides, so flipping it
+    // moves all of them at once while leaving each one individually plausible.
+    // That is section 17's lesson in a new place: the property at risk is
+    // reproducibility, not legality, and legality was all that was checked.
+    //
+    // The 5 is not interesting in itself. What is pinned is that the tie-break
+    // is a decision with a direction, and that changing it has to be deliberate.
+    ++gChecks;
+    const int kUntouchedOpening = 5;
+    if (c != kUntouchedOpening) {
+        ++gFailures;
+        std::printf("  FAIL  density opens on %d, where this pins %d; if that "
+                    "was deliberate, every measured density row moved with it\n",
+                    c, kUntouchedOpening);
+    } else {
+        std::printf("  and the tie among its best cells still goes to the lowest\n");
+    }
 }
 
 // Determinism: the same seed and board must reproduce the same shot count.
