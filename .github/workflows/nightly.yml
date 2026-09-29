@@ -445,7 +445,7 @@ jobs:
           ls -l out/site
 
       - name: Upload the site
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: out/site
 
