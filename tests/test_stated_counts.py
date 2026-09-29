@@ -48,6 +48,8 @@ CI = os.path.join(ROOT, ".github", "workflows", "ci.yml")
 NIGHTLY = os.path.join(ROOT, ".github", "workflows", "nightly.yml")
 README = os.path.join(ROOT, "README.md")
 CI_DOC = os.path.join(ROOT, "docs", "CI.md")
+CORRECTNESS = os.path.join(ROOT, "docs", "CORRECTNESS.md")
+MUTANTS = os.path.join(ROOT, "tools", "mutants.json")
 
 WORDS = {
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
@@ -207,6 +209,13 @@ def main() -> int:
          "ci.yml's interpreter-gated count"),
         (CI, r"and ([\w-]+) of\s*\n\s*#\s*those need Node", len(node_gated),
          "ci.yml's Node-gated count"),
+        # README's prerequisites table states it too, which made three hand-kept
+        # copies of one count in the file whose job is to leave none. Adding a
+        # Python-gated test failed the two entries above and left this one
+        # green, so the number that prompted this file to be written could still
+        # drift in the one place the file did not look.
+        (README, r"([\w-]+) tests are registered only when CMake finds an interpreter",
+         len(names), "README's interpreter-gated count"),
     ]
     for path, pattern, actual, what in claims:
         got = stated(read(path), pattern)
@@ -347,10 +356,356 @@ def main() -> int:
         check(carried == fleet, rel + " carries the fleet constants.hpp declares",
               "{} against {}".format(carried, fleet))
 
+    # 5. The ccache key four jobs share, against the build they configure.
+    #
+    # The build matrix composes its key from ${{ matrix.os }}-${{ matrix.cxx
+    # }}-${{ matrix.build_type }}. One job in ci.yml and three in nightly.yml
+    # reuse the cache that first leg fills, and all four wrote the result of
+    # that composition out as a literal two hundred lines away from the template
+    # that produces it. Nothing connected them, so moving the matrix to another
+    # runner or compiler would have left three jobs with 180 to 300 minute
+    # budgets silently rebuilding from cold.
+    #
+    # The components are named in each workflow's env now, and this is what
+    # holds them together: the two files agree, a matrix leg exists that fills
+    # the key they compose, no job has gone back to a literal, and every job
+    # reusing that cache runs on the image the key claims. runs-on cannot read
+    # the env context, which is why that last one has to be checked rather than
+    # derived away.
+    parts = ("CACHE_OS", "CACHE_CXX", "CACHE_BUILD_TYPE")
+    named: dict[str, dict[str, str]] = {}
+    for rel, path in (("ci.yml", CI), ("nightly.yml", NIGHTLY)):
+        text = read(path)
+        declared: dict[str, str] = {}
+        for part in parts:
+            hits = re.findall(r"^  " + part + r": (\S+)$", text, re.M)
+            check(len(hits) == 1, rel + " names " + part + " once at workflow env",
+                  "{} occurrences".format(len(hits)))
+            if hits:
+                declared[part] = hits[0]
+        named[rel] = declared
+    check(named["ci.yml"] == named["nightly.yml"],
+          "the two workflows agree on the shared build",
+          "{} against {}".format(named["ci.yml"], named["nightly.yml"]))
+
+    ci_text = read(CI)
+    shared = named["ci.yml"]
+    template = ("${{ matrix.os }}-${{ matrix.cxx }}-${{ matrix.build_type }}")
+    check(("key: " + template) in ci_text,
+          "the build matrix still composes its key from the matrix",
+          "looked for " + template)
+
+    # A matrix leg has to produce exactly the key the other four ask for, or
+    # they share a cache nothing fills. Entries start at "- name:" and carry
+    # their three components before the next one begins.
+    entries = re.split(r"\n\s+- name: ", ci_text[ci_text.index("      include:"):])
+    wanted = {"os": shared.get("CACHE_OS"), "cxx": shared.get("CACHE_CXX"),
+              "build_type": shared.get("CACHE_BUILD_TYPE")}
+    matched = [e for e in entries
+               if all(re.search(r"^\s+" + k + r": " + re.escape(v) + r"\s*$", e, re.M)
+                      for k, v in wanted.items() if v)]
+    check(len(matched) == 1, "exactly one matrix leg fills the shared cache",
+          "{} legs carry {}".format(len(matched), wanted))
+
+    # No job may go back to a literal. The comment explaining why still names
+    # the old string, so this looks only at what a ccache-action step is given.
+    #
+    # The count is checked as well as the values, and that is the load-bearing
+    # half. The pattern requires key: to be the first input under with:, so a
+    # step that gained a max-size: above it would not be matched at all, and an
+    # unmatched step contributes no key and therefore never fails the test
+    # below. Comparing against the number of ccache-action steps in the file
+    # turns "this key is composed" into "every key is, and none was missed".
+    composed = ("${{ env.CACHE_OS }}-${{ env.CACHE_CXX }}-"
+                "${{ env.CACHE_BUILD_TYPE }}")
+    allowed = {template, composed, "sanitizers-${{ matrix.name }}"}
+    for rel, path in (("ci.yml", CI), ("nightly.yml", NIGHTLY)):
+        text = read(path)
+        steps = len(re.findall(r"uses: hendrikmuhs/ccache-action@", text))
+        keys = re.findall(r"uses: hendrikmuhs/ccache-action@[^\n]*\n"
+                          r"\s+with:\n\s+key: ([^\n]+)\n", text)
+        check(bool(keys), rel + " declares at least one ccache key")
+        check(len(keys) == steps,
+              rel + "'s ccache steps all had their key read",
+              "{} steps, {} keys read".format(steps, len(keys)))
+        typed = [k for k in keys if k not in allowed]
+        check(not typed, rel + "'s ccache keys are all composed rather than typed",
+              "typed: {}".format(typed))
+
+        # Every job that reuses the shared cache must run on the image the key
+        # says it does, since a key describing one runner and a job running on
+        # another is a cache that is filled and never read.
+        #
+        # The split accepts any identifier a job id may start with. Restricting
+        # it to a lowercase initial would merge a job named Publish: into the
+        # one above it, and that job's runs-on would then never be read: the
+        # check would pass by not seeing it.
+        for block in re.split(r"\n  (?=[A-Za-z_][\w-]*:\n)", text):
+            if composed not in block:
+                continue
+            job = block.strip().split(":")[0]
+            on = re.search(r"^    runs-on: (\S+)$", block, re.M)
+            runner = on.group(1) if on is not None else None
+            check(runner == shared.get("CACHE_OS"),
+                  rel + "'s " + job + " job runs on the image its cache key names",
+                  "runs-on {}, key says {}".format(runner, shared.get("CACHE_OS")))
+
+    # 6. The one pinned dependency, in the two places that name it.
+    #
+    # mypy is the only thing outside the standard library this project installs,
+    # and README tells a reader which version to install while ci.yml installs
+    # it. Two hand-kept copies of one version, and the version is the whole
+    # point of a pin: --strict changes between releases, so a README that names
+    # a different one sends a reader to a checker that disagrees with the gate.
+    pin = re.search(r"pip install mypy==(\S+)", read(CI))
+    check(pin is not None, "ci.yml pins the type checker")
+    if pin is not None:
+        said = re.search(r"pip install mypy==([^\s`]+)", read(README))
+        check(said is not None and said.group(1) == pin.group(1),
+              "README names the version ci.yml installs",
+              "README {}, ci.yml {}".format(
+                  said.group(1) if said is not None else None, pin.group(1)))
+
+    # 7. The tests allowed to skip in the report pipeline, against what can skip.
+    #
+    # That job runs the whole fast label and fails on any skip it does not
+    # name, which is what stops a SKIPPABLE test skipping on every runner
+    # forever. The names were typed into the workflow and again into
+    # docs/CI.md, and the first version of both got the list wrong: it said six
+    # where thirteen fast tests carry SKIPPABLE, and omitted static_types, which
+    # is one of the two that actually skips there.
+    #
+    # So both sides are derived here. Every name the workflow allows must be a
+    # fast SKIPPABLE test, or the allowance covers nothing. Every fast SKIPPABLE
+    # test must be either in the figure-data gate list or in docs/CI.md's list
+    # of the ones this step protects, so a new SKIPPABLE test cannot be added
+    # without appearing in one of them.
+    # mf_tests() runs each body to the NEXT registration, which is good enough
+    # for counting and wrong here: the comment introducing the following test
+    # falls inside the previous test's body, so stats and stated_counts both
+    # came back SKIPPABLE off the word in the paragraph beneath them. This reads
+    # the call itself, closing paren and all, and checks it found as many
+    # registrations as the looser parse did so a body with a paren in it cannot
+    # be skipped silently.
+    calls = re.findall(r"mf_test\(\s*([\w-]+)((?:[^()]|\([^()]*\))*)\)", cmake, re.S)
+    check(len(calls) == len(tests),
+          "every registration parses as a complete mf_test call",
+          "{} complete against {} found".format(len(calls), len(tests)))
+    skippable = {name for name, body in calls
+                 if "SKIPPABLE" in body and re.search(r"LABEL\s+fast\b", body)}
+    check(len(skippable) > 5, "the fast label's SKIPPABLE tests were located",
+          "{} found".format(len(skippable)))
+
+    m = re.search(r'allowed = \{([^}]*)\}', read(NIGHTLY))
+    check(m is not None, "the report pipeline names the skips it allows")
+    if m is not None:
+        allow = {s.strip().strip('"') for s in m.group(1).split(",") if s.strip()}
+        stray = sorted(allow - skippable)
+        check(not stray, "every allowed skip is a fast SKIPPABLE test",
+              "not skippable: {}".format(stray))
+
+        # The two it allows are the two that skip on a Linux runner with no
+        # mypy. Naming more than that would let a real skip through.
+        check(allow == {"platform", "static_types"},
+              "the allowed skips are the two that skip there by construction",
+              "allows {}".format(sorted(allow)))
+
+        protected = sorted(skippable - set(figure_gated) - allow)
+        doc = read(CI_DOC)
+        documented = [n for n in protected if "`" + n + "`" in doc]
+        check(documented == protected,
+              "docs/CI.md names every SKIPPABLE test the step protects",
+              "missing: {}".format(sorted(set(protected) - set(documented))))
+
+        # And the counts those two paragraphs open with, which the names alone
+        # do not cover. Adding a SKIPPABLE fast test and dutifully adding it to
+        # docs/CI.md's list left every check above green while both paragraphs
+        # went on saying thirteen and seven, in the one place docs/CI.md claims
+        # to hold no hand-kept copy of them.
+        outside = len(skippable) - len(figure_gated)
+        for text, pattern, actual, what in (
+                (doc, r"([\w-]+) tests in the fast label are\s*\n?\s*`SKIPPABLE`",
+                 len(skippable), "docs/CI.md's SKIPPABLE count"),
+                (doc, r"other ([\w-]+) were in no protected list", outside,
+                 "docs/CI.md's count of the ones no list covered"),
+                (read(NIGHTLY), r"([\w-]+) fast tests are SKIPPABLE",
+                 len(skippable), "nightly.yml's SKIPPABLE count"),
+                (read(NIGHTLY), r"the other ([\w-]+) were in no protected",
+                 outside, "nightly.yml's count of the ones no list covered")):
+            got = stated(text, pattern)
+            check(got == actual, what + " matches the registrations",
+                  "prose says {}, the registrations give {}".format(got, actual))
+
+    # 8. The interpreter floors, against every version either workflow installs.
+    #
+    # CMakeLists.txt warns below a floor, README advertises one, and the
+    # workflows install what CI actually runs on. Four hand-kept numbers for two
+    # facts. Move a leg to a newer interpreter and the warning, the README table
+    # and the gate would disagree with nothing going red.
+    #
+    # Both files, and both spellings. The first version of this read ci.yml
+    # alone and matched only `node-version:`, which misses the build matrix's
+    # own `node:` entries feeding `node-version: ${{ matrix.node }}` and misses
+    # nightly.yml entirely. It would have said "the lowest version CI installs"
+    # while reading a strict subset of them, which is the shape of a check that
+    # passes for the wrong reason.
+    floors = {}
+    for name, pattern in (("python", r"set\(MF_PYTHON_FLOOR ([\d.]+)\)"),
+                          ("node", r"set\(MF_NODE_FLOOR (\d+)\)")):
+        m = re.search(pattern, read(CMAKE))
+        check(m is not None, "CMakeLists.txt states the " + name + " floor")
+        if m is not None:
+            floors[name] = m.group(1)
+
+    both = read(CI) + "\n" + read(NIGHTLY)
+    pinned = {
+        "python": sorted(set(re.findall(r"python-version: '?([\d.]+)'?", both))),
+        "node": sorted(set(re.findall(r"node(?:-version)?: '?(\d+)'?", both))),
+    }
+    for name in ("python", "node"):
+        check(bool(pinned[name]), "the workflows install a " + name + " version")
+        if not pinned[name]:
+            continue
+        lowest = min(pinned[name], key=lambda v: [int(p) for p in v.split(".")])
+        check(lowest == floors.get(name),
+              "the " + name + " floor is the lowest version CI installs",
+              "floor {}, CI installs {}".format(floors.get(name), pinned[name]))
+        # Anchored to the table cell, since an unanchored search would accept a
+        # floor that is a prefix of the number README states.
+        check(re.search(r"\|\s*" + name.capitalize() + r"\s*\|\s*>= "
+                        + re.escape(str(floors.get(name))) + r"\b", readme)
+              is not None,
+              "README states the " + name + " floor CMakeLists.txt warns on",
+              "looked for a table row saying >= {}".format(floors.get(name)))
+
+    # 9. The werror preset, against every copy of the flags it reproduces.
+    #
+    # The preset exists so a warning that would fail CI fails locally first.
+    # That holds only while the two carry the same flags, and the preset was a
+    # fifth hand-kept copy of the string: add a -Wno-error= to the matrix after
+    # a runner image bump and the preset would turn a warning CI tolerates into
+    # a local hard error, which is the inversion the preset is meant to prevent.
+    #
+    # Every copy, not one of them. Comparing against nightly.yml's env alone
+    # left the three in ci.yml unchecked, including the two matrix legs the
+    # paragraph above names as the thing that moves. The clang leg carries a
+    # bare -Werror and is deliberately excluded: clang rejects the two
+    # -Wno-error names outright, which is why the flags are per compiler.
+    presets = json.loads(read(os.path.join(ROOT, "CMakePresets.json")))
+    werror = next((p for p in presets["configurePresets"]
+                   if p.get("name") == "werror"), None)
+    check(werror is not None, "CMakePresets.json carries a werror preset")
+    copies = re.findall(r"^\s*(?:WERROR|werror): (-Werror .*-Wno-error.*)$",
+                        both, re.M)
+    check(len(copies) == 4, "the four gcc -Werror copies were located",
+          "{} found: {}".format(len(copies), copies))
+    if werror is not None:
+        have = werror["cacheVariables"].get("CMAKE_CXX_FLAGS")
+        check({c.strip() for c in copies} == {have},
+              "every gcc -Werror copy is the one the werror preset passes",
+              "copies {}, preset {!r}".format(sorted({c.strip() for c in copies}),
+                                              have))
+        # And the other half of reproducing that leg. CMAKE_ARGS is where the
+        # workflows turn -march=native off, so the preset is compared against
+        # it rather than against a remembered value.
+        native = re.findall(r"^  CMAKE_ARGS: (.+)$", both, re.M)
+        check(len(native) == 2 and set(native) == {"-DMF_NATIVE=OFF"},
+              "both workflows build with -march=native off",
+              "found {}".format(native))
+        check(werror["cacheVariables"].get("MF_NATIVE") == "OFF",
+              "and the werror preset does too")
+
+    # 10. The actions published by someone other than GitHub.
+    #
+    # Those are pinned to a digest, and three files say there are exactly two of
+    # them. A third would be prose that is wrong and a pin that was never made,
+    # and neither shows up as a failure anywhere else.
+    #
+    # The whole `uses:` value is read rather than an owner/repo pair, because an
+    # action may be a sub-path (github/codeql-action/init) or a docker image,
+    # and a pattern that matches only owner/repo skips both. Skipping them here
+    # means skipping them in the count as well, so the one addition this check
+    # exists to catch is the one it would not see.
+    for rel, path in (("ci.yml", CI), ("nightly.yml", NIGHTLY)):
+        for line in read(path).splitlines():
+            m = re.search(r"uses:\s*(\S+)(.*)$", line)
+            if m is None:
+                continue
+            spec, tail = m.group(1), m.group(2)
+            if spec.startswith("actions/") or spec.startswith("./"):
+                continue
+            ref = spec.partition("@")[2]
+            check(re.fullmatch(r"[0-9a-f]{40}", ref) is not None,
+                  rel + " pins " + spec.partition("@")[0] + " to a commit",
+                  "pinned to {!r}".format(ref or spec))
+            check(re.search(r"#\s*v[\d.]+", tail) is not None,
+                  rel + " records which release that is, for "
+                  + spec.partition("@")[0],
+                  "trailing text {!r}".format(tail.strip()))
+    third_party = set()
+    for path in (CI, NIGHTLY):
+        for line in read(path).splitlines():
+            m = re.search(r"uses:\s*(\S+)", line)
+            if m is not None and not m.group(1).startswith(("actions/", "./")):
+                third_party.add(m.group(1).partition("@")[0])
+    # The number is read from the prose rather than typed a fourth time, so a
+    # reword to "the three actions" fails here instead of shipping.
+    counted = stated(read(CI_DOC),
+                     r"the ([\w-]+) actions not published by GitHub")
+    check(counted == len(third_party),
+          "docs/CI.md counts the non-GitHub actions the workflows use",
+          "prose says {}, workflows use {}".format(counted, sorted(third_party)))
+
+    # 11. The mutation campaign's score, in the two places that quote it.
+    #
+    # tools/mutants.json is the record: a fault with a non-empty witness list in
+    # any label is one the suite catches. README and docs/CORRECTNESS.md both
+    # state that score in words, and both were wrong within an hour of being
+    # written, because closing one survival moved it and neither sentence was
+    # read by anything. That is this file's whole subject, arriving in the
+    # document that describes the project's verification.
+    mutants = json.loads(read(MUTANTS))["mutants"]
+    check(len(mutants) > 3, "tools/mutants.json carries the campaign",
+          "{} entries".format(len(mutants)))
+    taken = sum(1 for m in mutants
+                if any(v for v in m["expect"].values() if v is not None))
+    for path, rel in ((README, "README"), (CORRECTNESS, "docs/CORRECTNESS.md")):
+        text = read(path)
+        m = re.search(r"([\w-]+) of the ([\w-]+) are caught", text, re.I)
+        check(m is not None, rel + " states the campaign's score")
+        if m is not None:
+            check(WORDS.get(m.group(1).lower()) == taken
+                  and WORDS.get(m.group(2).lower()) == len(mutants),
+                  rel + "'s campaign score matches tools/mutants.json",
+                  "prose says {} of {}, the record says {} of {}".format(
+                      m.group(1), m.group(2), taken, len(mutants)))
+
+    # And the table under it, which names the witnesses row by row. The score
+    # alone would not catch a row crediting the wrong test, and one of them did:
+    # the unrank row named test_uniformity where the witness is sampler.
+    witnesses = {w for entry in mutants for names in entry["expect"].values()
+                 if names for w in names}
+    table = re.search(r"\| the fault planted \|.*?\n\n", read(CORRECTNESS), re.S)
+    check(table is not None, "docs/CORRECTNESS.md carries the campaign table")
+    if table is not None:
+        drawn = set()
+        for row in table.group(0).splitlines()[2:]:   # past the header and rule
+            cells = [c.strip() for c in row.split("|")]
+            if len(cells) < 4:
+                continue
+            for cell in cells[2:4]:
+                for word in re.findall(r"[\w_]+", cell.replace("**", "")):
+                    if word != "nothing":
+                        drawn.add(word)
+        check(drawn == witnesses,
+              "every witness the table draws is one the record measured",
+              "table {}, record {}".format(sorted(drawn), sorted(witnesses)))
+
     print("  ({} fast, {} gated on the figure data, {} interpreter-gated, "
-          "{} needing Node, {} guard lists agreeing, fleet {})".format(
+          "{} needing Node, {} guard lists agreeing, fleet {}, cache {})".format(
               len(fast), len(figure_gated), len(names), len(node_gated), len(lists),
-              ",".join(fleet)))
+              ",".join(fleet),
+              "-".join(shared.get(p, "?") for p in parts)))
     return report()
 
 
