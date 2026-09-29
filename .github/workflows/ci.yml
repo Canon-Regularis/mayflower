@@ -116,7 +116,7 @@ jobs:
           node-version: ${{ matrix.node }}
 
       - name: Cache compilation
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2.20
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d  # v1.2.24
         with:
           key: ${{ matrix.os }}-${{ matrix.cxx }}-${{ matrix.build_type }}
 
@@ -264,7 +264,7 @@ jobs:
           node-version: '20'
 
       - name: Cache compilation
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2.20
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d  # v1.2.24
         with:
           key: sanitizers-${{ matrix.name }}
 
@@ -331,7 +331,7 @@ jobs:
           node-version: '20'
 
       - name: Cache compilation
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2.20
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d  # v1.2.24
         with:
           key: ${{ env.CACHE_OS }}-${{ env.CACHE_CXX }}-${{ env.CACHE_BUILD_TYPE }}
 
