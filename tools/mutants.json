@@ -1,0 +1,135 @@
+{
+  "_": [
+    "The mutation campaign, as data.",
+    "",
+    "Each entry is one fault, the exact edit that plants it, and per ctest",
+    "label the tests that must fail because of it. tools/mutate.py applies them",
+    "one at a time, so this file is a check rather than a record of one.",
+    "",
+    "An empty list is a finding, not an omission: it says that label does not",
+    "catch that fault, and names which fault. Do not clear a list to make a run",
+    "green. Either the test that should catch it is written, or the survival is",
+    "reported. null means the verdict has not been established yet, which is",
+    "what --record is for.",
+    "",
+    "A mutant with only a fast line is one the per-push suite catches, so there",
+    "is no question left for the pr label to answer. The four with both are the",
+    "ones fast misses.",
+    "",
+    "provenance never appears here. It fails under every mutant by construction,",
+    "because planting a fault edits an engine source and that is exactly what it",
+    "watches for; tools/mutate.py excludes it from every verdict and says why.",
+    "",
+    "find must occur exactly once in file, or the driver refuses. That is what",
+    "keeps an entry honest across a refactor: a fault whose site has moved stops",
+    "the run instead of silently planting nothing and reporting the suite clean."
+  ],
+  "mutants": [
+    {
+      "id": "gate-h",
+      "file": "src/core/detail/placement_gate.hpp",
+      "what": "the per-placement horizontal gate is dropped, so every sweep counts placements the observation record forbids",
+      "find": "return col + length <= width && (allowH == nullptr || allowH[li]);",
+      "replace": "return col + length <= width;",
+      "expect": {
+        "fast": [
+          "fuzz",
+          "gated",
+          "ladder",
+          "observations",
+          "sampler"
+        ]
+      }
+    },
+    {
+      "id": "gate-v",
+      "file": "src/core/detail/placement_gate.hpp",
+      "what": "the per-placement vertical gate is dropped, the same fault on the other axis",
+      "find": "return length > 1 && row + length <= height && (allowV == nullptr || allowV[li]);",
+      "replace": "return length > 1 && row + length <= height;",
+      "expect": {
+        "fast": [
+          "fuzz",
+          "gated",
+          "ladder",
+          "observations",
+          "sampler"
+        ]
+      }
+    },
+    {
+      "id": "fold-split",
+      "file": "include/mayflower/folds.hpp",
+      "what": "the TRAIN boundary moves, so a board changes fold and the 60/20/20 split is no longer what every measurement assumes",
+      "find": "inline constexpr double kTrainShare = 0.60;",
+      "replace": "inline constexpr double kTrainShare = 0.55;",
+      "expect": {
+        "fast": [
+          "folds"
+        ]
+      }
+    },
+    {
+      "id": "info-binary",
+      "file": "src/core/outcomes.cpp",
+      "what": "informationBits ignores the sunk announcements, so the information-gain objective is scored over a binary channel rather than the six-outcome one",
+      "find": "    for (std::uint64_t v : sunk) term(v);\n    return h;",
+      "replace": "    return h;",
+      "expect": {
+        "fast": [],
+        "pr": [
+          "outcomes"
+        ]
+      }
+    },
+    {
+      "id": "tiebreak",
+      "file": "include/mayflower/policy.hpp",
+      "what": "the density policy breaks a tie towards the highest cell index rather than the lowest, which changes which cell every tied opening shoots",
+      "find": "if (best < 0 || v > bestScore) { best = c; bestScore = v; }",
+      "replace": "if (best < 0 || v >= bestScore) { best = c; bestScore = v; }",
+      "expect": {
+        "fast": [],
+        "pr": [
+          "harness"
+        ]
+      }
+    },
+    {
+      "id": "star1-floor",
+      "file": "src/search/exact_solver.cpp",
+      "what": "the star1 floor is inflated past the true remainder, so it stops being admissible and the search may cut a branch that held the optimum",
+      "find": "        return static_cast<double>(sum) / static_cast<double>(support.size());\n    }",
+      "replace": "        return 1.5 * static_cast<double>(sum) / static_cast<double>(support.size());\n    }",
+      "expect": {
+        "fast": [],
+        "pr": [
+          "exact"
+        ]
+      }
+    },
+    {
+      "id": "weighted-exact",
+      "file": "src/core/weighted.cpp",
+      "what": "the exactness flag stops watching for underflow, so a run that lost configurations still reports itself bit-trustworthy",
+      "find": "    result.exact = weights.trivial() && !result.rescaled && !result.underflowed &&",
+      "replace": "    result.exact = weights.trivial() && !result.rescaled &&",
+      "expect": {
+        "fast": [],
+        "pr": []
+      }
+    },
+    {
+      "id": "unrank-bound",
+      "file": "src/core/sampler.cpp",
+      "what": "unrank accepts a rank one past the end rather than refusing it, which is the guard standing between the board generator and a non-uniform pool",
+      "find": "if (rank >= im.total) throw std::out_of_range(\"rank must lie in [0, total())\");",
+      "replace": "if (rank > im.total) throw std::out_of_range(\"rank must lie in [0, total())\");",
+      "expect": {
+        "fast": [
+          "sampler"
+        ]
+      }
+    }
+  ]
+}
