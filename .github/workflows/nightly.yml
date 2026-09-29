@@ -19,6 +19,33 @@ env:
   CMAKE_ARGS: -DMF_NATIVE=OFF
   WERROR: -Werror -Wno-error=stringop-overread -Wno-error=array-bounds
 
+  # The build that every job sharing one ccache key configures, named once
+  # rather than typed per job. The key was written out four times across the two
+  # workflows as the literal ubuntu-24.04-g++-13-Release, which is what the build
+  # matrix's own key template computes for its first leg two hundred lines away.
+  # Move the matrix to another runner or compiler and those four jobs, three of
+  # them with budgets between 180 and 300 minutes, stop hitting the cache the
+  # matrix leg fills, with nothing anywhere to say so.
+  #
+  # runs-on cannot read the env context, so CACHE_OS is still spelled out there.
+  # tests/test_stated_counts.py checks that repetition, checks the two workflows
+  # agree, and checks that no job has gone back to a literal key.
+  CACHE_OS: ubuntu-24.04
+  CACHE_CXX: g++-13
+  CACHE_BUILD_TYPE: Release
+
+# ccache-action is the only action here published by anyone other than GitHub.
+# It is pinned to a commit rather than a tag, with the release that commit
+# carried in the trailing comment, because a tag is a mutable pointer: v1 can be
+# moved onto a different commit by whoever owns it, and a pinned digest cannot.
+# ci.yml pins setup-msys2 on the same argument, and records there that the
+# actions are not the whole third-party surface.
+#
+# actions/* stays on its major tag deliberately. The same argument applies less
+# forcefully there, since GitHub publishes them and a pin costs the automatic
+# security patching that moving tag is for, which is the trade this project has
+# already taken by letting Dependabot bump those majors.
+
 jobs:
   extended:
     name: extended suite
@@ -30,6 +57,12 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
+        with:
+          # No job here pushes, fetches or calls the API, so the token has no
+          # use after the clone. Left in .git/config it is readable by every
+          # step that follows, which in most of these jobs includes a
+          # third-party action and in one of them a package fetched from PyPI.
+          persist-credentials: false
 
       - uses: actions/setup-python@v7
         with:
@@ -40,15 +73,15 @@ jobs:
           node-version: '20'
 
       - name: Cache compilation
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2.20
         with:
-          key: ubuntu-24.04-g++-13-Release
+          key: ${{ env.CACHE_OS }}-${{ env.CACHE_CXX }}-${{ env.CACHE_BUILD_TYPE }}
 
       - name: Configure and build
         run: |
           cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_BUILD_TYPE=${{ env.CACHE_BUILD_TYPE }} \
+            -DCMAKE_CXX_COMPILER=${{ env.CACHE_CXX }} \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_FLAGS="$WERROR" \
             $CMAKE_ARGS
@@ -69,6 +102,12 @@ jobs:
     timeout-minutes: 210
     steps:
       - uses: actions/checkout@v7
+        with:
+          # No job here pushes, fetches or calls the API, so the token has no
+          # use after the clone. Left in .git/config it is readable by every
+          # step that follows, which in most of these jobs includes a
+          # third-party action and in one of them a package fetched from PyPI.
+          persist-credentials: false
 
       # live_exact drives node through Python. This job had neither, and
       # worked only because the runner image happens to ship both: CMake
@@ -83,15 +122,15 @@ jobs:
           node-version: 20
 
       - name: Cache compilation
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2.20
         with:
-          key: ubuntu-24.04-g++-13-Release
+          key: ${{ env.CACHE_OS }}-${{ env.CACHE_CXX }}-${{ env.CACHE_BUILD_TYPE }}
 
       - name: Configure and build
         run: |
           cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_BUILD_TYPE=${{ env.CACHE_BUILD_TYPE }} \
+            -DCMAKE_CXX_COMPILER=${{ env.CACHE_CXX }} \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_FLAGS="$WERROR" \
             $CMAKE_ARGS
@@ -110,6 +149,12 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
+        with:
+          # No job here pushes, fetches or calls the API, so the token has no
+          # use after the clone. Left in .git/config it is readable by every
+          # step that follows, which in most of these jobs includes a
+          # third-party action and in one of them a package fetched from PyPI.
+          persist-credentials: false
 
       - uses: actions/setup-python@v7
         with:
@@ -120,15 +165,15 @@ jobs:
           node-version: '20'
 
       - name: Cache compilation
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639  # v1.2.20
         with:
-          key: ubuntu-24.04-g++-13-Release
+          key: ${{ env.CACHE_OS }}-${{ env.CACHE_CXX }}-${{ env.CACHE_BUILD_TYPE }}
 
       - name: Configure and build
         run: |
           cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_BUILD_TYPE=${{ env.CACHE_BUILD_TYPE }} \
+            -DCMAKE_CXX_COMPILER=${{ env.CACHE_CXX }} \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_FLAGS="$WERROR" \
             $CMAKE_ARGS
@@ -194,10 +239,10 @@ jobs:
       - name: The figure-data contract
         run: |
           ctest --test-dir build -R '^(report_data|results|scrubber_js|provenance|figure_marks|pool)$' \
-            -V --no-tests=error > figure-data.log 2>&1 \
-            || { cat figure-data.log; exit 1; }
-          cat figure-data.log
-          if grep -q Skipped figure-data.log; then
+            -V --no-tests=error > out/figure-data.log 2>&1 \
+            || { cat out/figure-data.log; exit 1; }
+          cat out/figure-data.log
+          if grep -q Skipped out/figure-data.log; then
             echo 'a figure-data test skipped in the job that exists to run it'
             exit 1
           fi
@@ -212,10 +257,73 @@ jobs:
           # runs to a couple of hundred lines for this list, which is a
           # count deliberately not written down: the line above it corrected
           # one such number and this one stayed stale in the same step.
-          if grep -q 'CHECKS OMITTED' figure-data.log; then
+          if grep -q 'CHECKS OMITTED' out/figure-data.log; then
             echo 'a figure-data test passed with checks left out; see the line above'
             exit 1
           fi
+
+      # The rest of the label, in the one job where its inputs exist.
+      #
+      # ci.yml proves twenty-one tests are registered, on its two per-push build
+      # legs, and the step above proves six of them ran. Nothing proved the rest
+      # of the fast label ran anywhere. Thirteen fast tests are SKIPPABLE; six
+      # are the figure-data list above, and the other seven were in no protected
+      # list at all: platform, static_types, selfplay_fold, run_headline,
+      # render_results, tool_cli and live_js. Being registered says nothing about
+      # having run, and a skip exits zero, so any of those could have skipped on
+      # every runner and reported green every time. CMakeLists.txt says of
+      # platform that every number in docs/BENCHMARKS.md assumes the pin took.
+      #
+      # So rather than adding seven more names to a list, this asserts the
+      # complement: which tests are allowed to skip here, and why each one is.
+      # Anything else that skips is a test that has quietly stopped running, and
+      # tests/test_stated_counts.py derives both sides of that from the
+      # registrations rather than trusting this comment.
+      #
+      # One caveat worth keeping, because it is a finding rather than a
+      # correction: run_headline carries SKIPPABLE and has no code path that
+      # returns 77, so it could not have skipped. The flag claims a behaviour
+      # the test does not have.
+      - name: The rest of the fast label, with the skips accounted for
+        run: |
+          ctest --test-dir build -L fast --output-on-failure --no-tests=error \
+            > out/fast.log 2>&1 || { cat out/fast.log; exit 1; }
+          tail -30 out/fast.log
+          python - <<'EOF'
+          import io, re, sys
+
+          # platform: the thread pinning it checks is implemented for Windows
+          #   only, and this runner is Linux, so the test says so and returns 77.
+          #   The MSYS2 UCRT64 leg in ci.yml is where it runs for real.
+          # static_types: mypy is the one dependency outside the standard
+          #   library. The reference-models job installs it and treats a skip
+          #   there as a failure, which is the hard gate; it is not installed
+          #   here and this job is not the place to make it one.
+          allowed = {"platform", "static_types"}
+
+          log = io.open("out/fast.log", encoding="utf-8", errors="replace").read()
+          skipped = set(re.findall(r"^\s*\d+ - (\S+) \(Skipped\)", log, re.M))
+          print("skipped here:", ", ".join(sorted(skipped)) or "nothing")
+
+          stray = sorted(skipped - allowed)
+          if stray:
+              sys.exit("these skipped in the job that supplies what they are "
+                       "gated on: {}".format(stray))
+
+          # The positive control, and the reason this step can fail rather than
+          # only report. Everything above reads one thing: ctest's trailing
+          # "did not run" block. If that block moves, is reworded, or stops
+          # being printed, `skipped` is empty, `stray` is empty, and the step
+          # passes having asserted nothing about any of the seven tests it
+          # exists to protect. Both names in `allowed` skip here by
+          # construction, so their absence means the parse changed and not that
+          # the suite improved.
+          missing = sorted(allowed - skipped)
+          if missing:
+              sys.exit("expected to skip here and did not, so this step is "
+                       "no longer reading ctest's summary rather than the "
+                       "suite having improved: {}".format(missing))
+          EOF
 
       # The captured transcripts, against the tools that print them.
       #
@@ -317,6 +425,30 @@ jobs:
               size / 1024, figures, len(embedded) // 5))
           EOF
 
+      # The deliverable, made public.
+      #
+      # README calls out/report.html the deliverable, and until this existed the
+      # only way to see it was a twelve minute report_data run after a full
+      # toolchain install, or a fourteen day artifact behind a GitHub login.
+      #
+      # report.html becomes index.html because it IS the front page: the site is
+      # the two rendered artefacts and nothing hand-written, so there is no
+      # third page to keep in step with them. This runs after the assertions
+      # above, so a page that failed its own size, figure-count and pool-identity
+      # checks is never published.
+      - name: Assemble the site
+        run: |
+          python tools/render_results.py
+          mkdir -p out/site
+          cp out/report.html  out/site/index.html
+          cp out/results.html out/site/results.html
+          ls -l out/site
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out/site
+
       # Keep the output whether or not the checks passed, so a failure can be
       # inspected rather than only described.
       - name: Keep the report
@@ -326,6 +458,57 @@ jobs:
           name: report
           path: |
             out/report.html
+            out/results.html
             out/figures.json
+            out/figure-data.log
+            out/fast.log
           retention-days: 14
           if-no-files-found: ignore
+
+  # Publishing is a separate job so the write scope it needs is confined to it.
+  # The workflow default is contents: read and the other three jobs keep it;
+  # only this one can write Pages, and it builds nothing and runs no test.
+  #
+  # It needs all three, not just the job that built the page. report-pipeline
+  # proves the page renders and that its own figure-data tests pass; it does not
+  # run the sampler at 300,000 draws or the heavy solver cross-check. With
+  # `needs: report-pipeline` alone, a night where uniformity found the board
+  # generator biased would have gone red on the badge and refreshed the public
+  # page from that same run. A reader following the badge to the page would then
+  # be reading numbers the run had just failed to stand behind.
+  #
+  # The ref guard matters because workflow_dispatch takes one. Without it,
+  # anyone who can dispatch this workflow can publish any branch's report to the
+  # public site.
+  pages:
+    name: publish the report
+    needs: [extended, uniformity, report-pipeline]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # Not 10. actions/deploy-pages polls for its own deployment with a ten
+    # minute timeout of its own, so a budget of ten means a slow night is
+    # cancelled by GitHub at the same moment the action would have reported what
+    # went wrong, leaving a red job with no diagnostic. This is the fault the
+    # uniformity job above records finding on itself: a budget set exactly at
+    # the worst case reports nothing when it is reached.
+    timeout-minutes: 20
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    # This job needs one thing a workflow cannot do for itself: the repository's
+    # Pages source has to be set to GitHub Actions, under Settings then Pages.
+    # Until it is, the deploy below fails with a 404, because a repository with
+    # Pages disabled has no deployments endpoint to post to.
+    #
+    # actions/configure-pages does have an `enablement` input that would turn it
+    # on, and it was tried here and removed: its own action.yml says that input
+    # needs a token carrying administration:write, which the job token cannot be
+    # given. A step that claims to enable Pages and cannot is worse than no step,
+    # because the failure would arrive one action further from its cause.
+    steps:
+      - name: Deploy to Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
