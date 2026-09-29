@@ -1,0 +1,35 @@
+# What git may translate, decided here rather than left to a per-clone guess.
+#
+# text=auto does not fix the working-tree ending: that still follows each
+# clone's core.autocrlf and core.eol. What it fixes is which files are eligible
+# for translation at all, and that is the part that was a guess. This machine
+# has core.autocrlf=true and the CI runners do not, so every file has been
+# round-tripping through a setting recorded nowhere, with git deciding text from
+# binary by a heuristic over the first 8000 bytes. The index is normalised to LF
+# either way; what this line settles is that the decision is the same in every
+# clone.
+* text=auto
+
+# web/pool.bin is the load-bearing line. It is 1,000,000 bytes that
+# tests/test_tools_output.py compares byte for byte against a fresh export, and
+# tests/test_pool.py and web/live.js both decode. It survives core.autocrlf
+# today only because git's heuristic found NUL bytes early enough to call it
+# binary, which is a safe inference for 200,000 packed boards and stops being
+# one the moment someone exports a small debug pool. CRLF translation on it
+# would shift every offset past the first 0x0A and the decoders would read
+# nonsense.
+*.bin binary
+
+# Deliberately absent: any eol=crlf rule on *.txt.
+#
+# docs/ holds four captured tool transcripts as .txt, and the nightly
+# regenerates three of them and prints the byte diff against the committed
+# copies. WEIGHTED_MARGINALS.txt is the fourth and is left out deliberately: it
+# reports its own wall-clock seconds, so it cannot be compared byte for byte,
+# and no published number depends on it.
+#
+# Forcing CRLF here would make that diff report every line of all three
+# regenerated transcripts as changed, every night, while the job stayed green,
+# because the gate is the collected values rather than the bytes. The
+# diagnostic would be destroyed and nothing would say so, which is the exact
+# failure shape this repository keeps finding.

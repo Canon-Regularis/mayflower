@@ -9,6 +9,15 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
+# compile_commands.json, without which no editor can navigate the C++ at all.
+# Ninja emits it and every generator this project uses is Ninja.
+#
+# Set here rather than in CMakePresets.json so that it does not depend on which
+# way the tree was configured. The two workflows configure seven times between
+# them and none of those goes through a preset, so a preset-only setting would
+# have covered the local trees and nothing else.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # MinGW-w64 GCC 13.2 ships no ASan/UBSan/TSan runtime, so -fsanitize=address
 # fails at link time. -fsanitize=undefined -fsanitize-trap=undefined works and
 # needs no runtime library. _GLIBCXX_ASSERTIONS is on for all build types since
@@ -37,6 +46,39 @@ if(NOT Python3_Interpreter_FOUND)
 endif()
 if(NOT MF_NODE)
   message(STATUS "Node not found: the JavaScript engine test will not be registered")
+endif()
+
+# The versions the suite is tested against, stated rather than left to be
+# inferred from a failure. README once said "Python 3 and Node" with no number
+# against a CI matrix that pins 3.12 and runs Node 20 and 22 deliberately.
+#
+# Neither is a hard floor, and that is the decision rather than an omission.
+# Refusing to register the interpreter-gated tests below the floor would turn
+# the registration guard in ci.yml red on any leg whose interpreter is not
+# pinned, which is a failure about the runner image rather than about the
+# suite. That guard stays the hard gate. This says the number out loud, so a
+# newcomer on 3.9 reads a floor instead of twenty-one tracebacks.
+set(MF_PYTHON_FLOOR 3.12)
+set(MF_NODE_FLOOR 20)
+if(Python3_Interpreter_FOUND AND Python3_VERSION VERSION_LESS MF_PYTHON_FLOOR)
+  message(WARNING
+    "Python ${Python3_VERSION} is below the ${MF_PYTHON_FLOOR} every pinned CI "
+    "leg uses. The interpreter-gated tests are registered anyway, so a failure "
+    "here may be about the interpreter rather than about the code.")
+endif()
+if(MF_NODE)
+  execute_process(COMMAND ${MF_NODE} --version
+                  OUTPUT_VARIABLE MF_NODE_VERSION
+                  OUTPUT_STRIP_TRAILING_WHITESPACE
+                  ERROR_QUIET)
+  string(REGEX MATCH "[0-9]+" MF_NODE_MAJOR "${MF_NODE_VERSION}")
+  if(MF_NODE_MAJOR AND MF_NODE_MAJOR LESS MF_NODE_FLOOR)
+    message(WARNING
+      "Node ${MF_NODE_VERSION} is below the ${MF_NODE_FLOOR} CI runs. Node 22 "
+      "and later infer a module's type from its syntax where 20 reads the "
+      "extension and needs web/package.json to say so, which is why the matrix "
+      "carries both; below 20 neither path is covered.")
+  endif()
 endif()
 
 add_library(mayflower_core

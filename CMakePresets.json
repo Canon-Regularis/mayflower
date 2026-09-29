@@ -1,0 +1,162 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build"
+    },
+
+    {
+      "name": "release",
+      "inherits": "base",
+      "displayName": "release",
+      "description": "The default tree, at build/. It sets no MF_NATIVE, so a fresh tree takes the default of ON and dp_bench measures this machine rather than a portable baseline; a tree already configured with it off keeps it off, since a preset that names no value cannot change one. This is the local build, not a CI one: no workflow configures through a preset, and CI turns MF_NATIVE off because a runner is not one machine. Use werror to reproduce a per-push leg.",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+
+    {
+      "name": "debug",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-debug",
+      "displayName": "debug",
+      "description": "Unoptimised, for a debugger. _GLIBCXX_ASSERTIONS is on in every build type, not only this one.",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+
+    {
+      "name": "werror",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-werror",
+      "displayName": "werror",
+      "description": "The flags the per-push Linux gcc leg configures, so a warning that would fail CI fails here first. The compiler is pinned because the two -Wno-error names are gcc spellings and clang rejects them outright, which fails the configure step rather than the build; ci.yml records the same reason. tests/test_stated_counts.py checks these flags against the WERROR the workflows use.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MF_NATIVE": "OFF",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_CXX_FLAGS": "-Werror -Wno-error=stringop-overread -Wno-error=array-bounds"
+      }
+    },
+
+    {
+      "name": "ubsan-trap",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-ub",
+      "displayName": "ubsan-trap",
+      "description": "The only sanitizer MinGW can run: it traps through ud2 and needs no runtime library. On a toolchain that ships libubsan, prefer asan-ubsan.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MF_NATIVE": "OFF",
+        "CMAKE_CXX_FLAGS": "-fsanitize=undefined -fsanitize-trap=undefined"
+      }
+    },
+
+    {
+      "name": "asan-ubsan",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-asan",
+      "displayName": "asan-ubsan",
+      "description": "The sanitizers leg. The flags reach the linker as well as the compiler; without that the binaries build and then fail to start.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MF_NATIVE": "OFF",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+      }
+    },
+
+    {
+      "name": "tsan",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-tsan",
+      "displayName": "tsan",
+      "description": "RelWithDebInfo, because the only concurrency worth a race detector is the V3 merge pool and it has to be optimised to schedule like the real thing.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "MF_NATIVE": "OFF",
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread -g"
+      }
+    },
+
+    {
+      "name": "coverage",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build-cov",
+      "displayName": "coverage",
+      "description": "gcov instrumentation. Run a label, then gcovr or lcov over build-cov.",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MF_NATIVE": "OFF",
+        "CMAKE_CXX_FLAGS": "--coverage -O0 -g",
+        "CMAKE_EXE_LINKER_FLAGS": "--coverage"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    { "name": "release",    "configurePreset": "release" },
+    { "name": "debug",      "configurePreset": "debug" },
+    { "name": "werror",     "configurePreset": "werror" },
+    { "name": "ubsan-trap", "configurePreset": "ubsan-trap" },
+    { "name": "asan-ubsan", "configurePreset": "asan-ubsan" },
+    { "name": "tsan",       "configurePreset": "tsan" },
+    { "name": "coverage",   "configurePreset": "coverage" }
+  ],
+
+  "testPresets": [
+    {
+      "name": "fast",
+      "configurePreset": "release",
+      "description": "The per-push suite.",
+      "filter": { "include": { "label": "fast" } },
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    },
+    {
+      "name": "pr",
+      "configurePreset": "release",
+      "description": "The gate a merge waits on. Budget for the worst case, not the observed one.",
+      "filter": { "include": { "label": "pr" } },
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    },
+    {
+      "name": "nightly",
+      "configurePreset": "release",
+      "description": "Uniformity at scale, the live exact widget, and the heavy solver cross-check.",
+      "filter": { "include": { "label": "nightly" } },
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    },
+    {
+      "name": "fast-werror",
+      "inherits": "fast",
+      "configurePreset": "werror",
+      "description": "The same suite against the tree CI builds."
+    },
+    {
+      "name": "fast-asan-ubsan",
+      "inherits": "fast",
+      "configurePreset": "asan-ubsan",
+      "description": "What the sanitizers leg runs under address and undefined."
+    },
+    {
+      "name": "fast-ubsan-trap",
+      "inherits": "fast",
+      "configurePreset": "ubsan-trap",
+      "description": "The MinGW stand-in for the leg above."
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "description": "The two tests that exercise the merge pool. Nothing else in the engine is concurrent.",
+      "filter": { "include": { "name": "^(parallel|ladder)$" } },
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    }
+  ]
+}
